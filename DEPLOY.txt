@@ -1,0 +1,105 @@
+DESPLIEGUE DEL FRONTEND (GitHub Pages) — swu_app
+==================================================
+
+Tu proyecto ya incluye un flujo automático de despliegue en
+.github/workflows/deploy.yml. Solo hay que activarlo y darle las claves
+de Supabase. Sigue estos pasos en orden.
+
+
+PASO 0 — Subir el cambio que acabo de hacer al workflow
+--------------------------------------------------------
+Acabo de añadir las variables de Supabase al workflow de despliegue.
+Debes confirmarme que haga commit + push de ese cambio antes de seguir
+(o pídemelo tú directamente: "sube ese cambio").
+
+
+PASO 1 — Activar GitHub Pages en el repositorio
+--------------------------------------------------------
+1. Ve a https://github.com/OconnelDan/swu_app
+2. Entra en la pestaña "Settings" (arriba del todo del repo).
+3. En el menú lateral izquierdo, pulsa "Pages".
+4. En "Build and deployment" -> "Source", elige "GitHub Actions"
+   (NO "Deploy from a branch").
+5. Guarda. No hace falta hacer nada más aquí, el workflow ya está listo.
+
+
+PASO 2 — Añadir tus claves de Supabase como secretos del repositorio
+--------------------------------------------------------
+Esto es imprescindible para que la función de Amigos funcione también
+en la web publicada (no solo en tu ordenador).
+
+1. En el mismo repositorio, ve a "Settings" -> "Secrets and variables"
+   -> "Actions".
+2. Pulsa "New repository secret".
+3. Crea el primer secreto:
+     Name:  VITE_SUPABASE_URL
+     Value: https://ozwiwtgrhrlcrzhqxswc.supabase.co
+4. Pulsa "Add secret".
+5. Repite y crea el segundo secreto:
+     Name:  VITE_SUPABASE_ANON_KEY
+     Value: sb_publishable_L2JxH5IInpvRdJXA4WNvfQ_zmag1HT8
+   (Es la clave pública, segura de guardar aquí; NUNCA pongas la
+   "secret key" de Supabase en ningún secreto de GitHub ni en el código).
+
+
+PASO 3 — Disparar el despliegue
+--------------------------------------------------------
+El workflow ya está configurado para ejecutarse automáticamente en cada
+push a la rama "main". Como ya hicimos push antes, puedes:
+
+  Opción A (automática): haz cualquier commit nuevo y push a main,
+  el despliegue se disparará solo.
+
+  Opción B (manual, sin esperar a un commit): en GitHub, ve a la
+  pestaña "Actions" del repo -> selecciona el workflow "Deploy a
+  GitHub Pages" en la lista de la izquierda -> botón "Run workflow"
+  -> "Run workflow" de nuevo para confirmar.
+
+
+PASO 4 — Esperar y comprobar
+--------------------------------------------------------
+1. En la pestaña "Actions", verás el workflow ejecutándose (icono
+   amarillo/naranja mientras corre, verde si sale bien, rojo si falla).
+2. Tarda 1-2 minutos (instala dependencias, corre tests, compila,
+   publica).
+3. Si sale en rojo, pincha en el job para ver el log del error y
+   dímelo, lo arreglamos.
+4. Cuando esté en verde, ve otra vez a "Settings" -> "Pages": arriba
+   verás la URL pública de tu app, algo como:
+     https://oconneldan.github.io/swu_app/
+5. Abre esa URL desde cualquier dispositivo (móvil, otro ordenador...).
+
+
+NOTA SOBRE INSTALAR LA APP (PWA)
+--------------------------------------------------------
+La app es una PWA: desde el móvil, al abrir esa URL en Chrome/Safari,
+te dejará "Añadir a pantalla de inicio" para que se comporte como una
+app instalada, con icono propio.
+
+
+SI QUIERES UN DOMINIO PROPIO (opcional, más adelante)
+--------------------------------------------------------
+GitHub Pages permite un dominio personalizado gratis (ej. tuapp.com en
+vez de oconneldan.github.io/swu_app/):
+1. Compra el dominio donde quieras (Namecheap, Google Domains, etc.).
+2. En "Settings" -> "Pages" -> "Custom domain", escribe tu dominio.
+3. En el panel de tu proveedor de dominio, añade los registros DNS que
+   GitHub te indique (normalmente un CNAME apuntando a
+   oconneldan.github.io).
+4. Espera a que se propague (minutos a horas) y activa "Enforce HTTPS"
+   en esa misma pantalla de GitHub Pages.
+
+Esto es opcional: sin dominio propio, la URL de GitHub Pages ya es
+pública y accesible desde cualquier lugar.
+
+
+ALTERNATIVAS A GITHUB PAGES (si lo prefieres)
+--------------------------------------------------------
+El proyecto también se puede desplegar tal cual en Cloudflare Pages,
+Netlify o Vercel (build: "npm run build", carpeta de salida: "dist"),
+conectando directamente tu repositorio de GitHub desde el panel de
+cualquiera de esos servicios. En ese caso, añade las mismas variables
+de entorno (VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY) en el panel de
+esa plataforma en vez de en los secretos de GitHub. Suelen dar un
+subdominio gratuito al instante (ej. tuapp.pages.dev) y permiten
+conectar un dominio propio igual de fácil.
