@@ -1,6 +1,6 @@
 # SWU Deck Collection Checker
 
-Pass:supabase "AroDan123_09" o"rEx9E&d%47pa*mT"
+
 Aplicación web (PWA) que comprueba si tu colección de **Star Wars: Unlimited**
 cubre las cartas necesarias para un mazo, a partir de tu Excel/CSV/JSON de
 colección y el JSON del mazo (por ejemplo, exportado desde una deck-builder).
