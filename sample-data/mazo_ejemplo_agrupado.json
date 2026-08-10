@@ -1,0 +1,18 @@
+{
+  "name": "STAR WARS DAD Ahsoka Blue",
+  "base_id": "ASH_020",
+  "leader_id": "JTL_001",
+  "deck_grouped": {
+    "ASH": [
+      { "id": "ASH_062", "count": 3 }
+    ],
+    "LAW": [
+      { "id": "LAW_038", "count": 3 }
+    ]
+  },
+  "sideboard_grouped": {
+    "LAW": [
+      { "id": "LAW_149", "count": 2 }
+    ]
+  }
+}

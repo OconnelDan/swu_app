@@ -1,0 +1,42 @@
+{
+  "metadata": {
+    "name": "Asajj Red Roja V3",
+    "author": "Oconnel"
+  },
+  "leader": {
+    "id": "JTL_001",
+    "count": 1
+  },
+  "base": {
+    "id": "SEC_024",
+    "count": 1
+  },
+  "deck": [
+    {
+      "id": "ASH_188",
+      "count": 3
+    },
+    {
+      "id": "ASH_147",
+      "count": 3
+    },
+    {
+      "id": "LAW_038",
+      "count": 3
+    }
+  ],
+  "sideboard": [
+    {
+      "id": "SEC_162",
+      "count": 2
+    },
+    {
+      "id": "ASH_032",
+      "count": 2
+    },
+    {
+      "id": "LAW_149",
+      "count": 2
+    }
+  ]
+}
