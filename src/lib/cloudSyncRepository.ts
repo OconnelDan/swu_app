@@ -12,6 +12,9 @@ interface SyncStateRow {
   updated_at: string;
 }
 
+const COLLECTION_PAGE_SIZE = 1_000;
+const COLLECTION_COLUMNS = "card_id, set_code, card_number, name, owned_count, free_count";
+
 export interface CloudDataSnapshot {
   userId: string;
   hasCloudData: boolean;
@@ -38,17 +41,41 @@ function parseUpdatedAt(value: unknown): string {
   return new Date(value).toISOString();
 }
 
+/**
+ * Supabase limita por defecto cada respuesta a 1.000 filas. La colección se
+ * recupera por páginas para no perder las cartas que queden después de ese
+ * límite (por ejemplo, los sets SEC de una colección grande).
+ */
+async function loadAllCloudCollectionRows(
+  client: NonNullable<typeof supabase>,
+  userId: string
+): Promise<unknown[]> {
+  const rows: unknown[] = [];
+
+  for (let from = 0; ; from += COLLECTION_PAGE_SIZE) {
+    const { data, error } = await client
+      .from("collection_cards")
+      .select(COLLECTION_COLUMNS)
+      .eq("user_id", userId)
+      .order("card_id")
+      .range(from, from + COLLECTION_PAGE_SIZE - 1);
+
+    if (error) throw new Error(error.message);
+
+    const page = (data ?? []) as unknown[];
+    rows.push(...page);
+
+    if (page.length < COLLECTION_PAGE_SIZE) return rows;
+  }
+}
+
 /** Carga colección y mazos exclusivamente desde la cuenta autenticada. */
 export async function loadCloudDataSnapshot(): Promise<CloudDataSnapshot> {
   const client = requireClient();
   const userId = await requireUserId();
 
-  const [collectionResult, decksResult, stateResult] = await Promise.all([
-    client
-      .from("collection_cards")
-      .select("card_id, set_code, card_number, name, owned_count, free_count")
-      .eq("user_id", userId)
-      .order("card_id"),
+  const [collectionRows, decksResult, stateResult] = await Promise.all([
+    loadAllCloudCollectionRows(client, userId),
     client
       .from("favorite_decks")
       .select(
@@ -59,14 +86,13 @@ export async function loadCloudDataSnapshot(): Promise<CloudDataSnapshot> {
     client.from("user_sync_state").select("updated_at").eq("user_id", userId).maybeSingle()
   ]);
 
-  if (collectionResult.error) throw new Error(collectionResult.error.message);
   if (decksResult.error) throw new Error(decksResult.error.message);
   if (stateResult.error) throw new Error(stateResult.error.message);
 
   const state = stateResult.data as SyncStateRow | null;
 
   try {
-    const collection = parseCloudCollectionRows((collectionResult.data ?? []) as unknown[]);
+    const collection = parseCloudCollectionRows(collectionRows);
     const favoriteDecks = parseCloudFavoriteDeckRows((decksResult.data ?? []) as unknown[]);
 
     return {
