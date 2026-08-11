@@ -8,7 +8,7 @@ import type {
   NormalizedDeckCard
 } from "@/types/deck";
 import { computeCollectionFingerprint } from "./collectionFingerprint";
-import { getCardImageUrl } from "./cardImageUrl";
+import { tryGetCardImageUrl } from "./cardImageUrl";
 
 function toOwnedMap(collection: CollectionCard[]): Map<string, number> {
   const map = new Map<string, number>();
@@ -40,7 +40,9 @@ function compareCard(
   return {
     cardId: card.cardId,
     cardName: cardInfos?.get(card.cardId)?.name ?? collectionNames?.get(card.cardId),
-    imageUrl: cardInfos?.get(card.cardId)?.imageUrl ?? getCardImageUrl(card.cardId),
+    imageUrl:
+  cardInfos?.get(card.cardId)?.imageUrl ??
+  tryGetCardImageUrl(card.cardId),
     requiredCount: card.requiredCount,
     ownedCount,
     missingCount,
