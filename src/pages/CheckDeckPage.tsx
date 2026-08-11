@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { AlertTriangle, ClipboardPaste, FileUp } from "lucide-react";
+import { SkeletonLines } from "@/components/Skeleton";
 import { parseDeckJsonText } from "@/schemas/deckSchema";
 import { normalizeDeckJson } from "@/lib/normalizeDeckJson";
 import { compareDeckWithCollection } from "@/lib/compareDeckWithCollection";
@@ -23,6 +24,10 @@ export function CheckDeckPage({ onResult }: CheckDeckPageProps) {
   const favorites = useFavorites();
   const navigate = useNavigate();
 
+  if (collection === undefined || favorites === undefined) {
+    return <SkeletonLines count={5} />;
+  }
+
   const runCheck = async () => {
     setError(null);
     setBusy(true);
@@ -33,9 +38,9 @@ export function CheckDeckPage({ onResult }: CheckDeckPageProps) {
       const cardIds = deck.allRequiredCards.map((c) => c.cardId);
       const cardProvider = new SwUnlimitedDbCardProvider();
       const cardInfos = await cardProvider.getCards(cardIds);
-      const allocations = computeCardAllocations(collection?.cards ?? [], favorites ?? []);
+      const allocations = computeCardAllocations(collection.cards, favorites);
 
-      const result = compareDeckWithCollection(deck, collection?.cards ?? [], cardInfos, allocations);
+      const result = compareDeckWithCollection(deck, collection.cards, cardInfos, allocations);
       onResult(deck, result);
       navigate("/resultado");
     } catch (e) {
@@ -63,7 +68,11 @@ export function CheckDeckPage({ onResult }: CheckDeckPageProps) {
     <div className="space-y-4">
       {collection?.isEmpty && (
         <div role="alert" className="card flex items-start gap-2 border-saber-yellow/50 text-sm">
-          <AlertTriangle size={18} className="mt-0.5 shrink-0 text-saber-yellow" aria-hidden="true" />
+          <AlertTriangle
+            size={18}
+            className="mt-0.5 shrink-0 text-saber-yellow"
+            aria-hidden="true"
+          />
           <p>Aún no has importado tu colección: todas las cartas aparecerán como faltantes.</p>
         </div>
       )}
@@ -76,7 +85,11 @@ export function CheckDeckPage({ onResult }: CheckDeckPageProps) {
               <ClipboardPaste size={16} />
               Pegar
             </button>
-            <button type="button" className="btn-secondary" onClick={() => fileInputRef.current?.click()}>
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={() => fileInputRef.current?.click()}
+            >
               <FileUp size={16} />
               Archivo
             </button>
@@ -106,13 +119,22 @@ export function CheckDeckPage({ onResult }: CheckDeckPageProps) {
       </section>
 
       {error && (
-        <div id="deck-json-error" role="alert" className="card flex items-start gap-2 border-saber-red/50 text-sm">
+        <div
+          id="deck-json-error"
+          role="alert"
+          className="card flex items-start gap-2 border-saber-red/50 text-sm"
+        >
           <AlertTriangle size={18} className="mt-0.5 shrink-0 text-saber-red" aria-hidden="true" />
           <p>{error}</p>
         </div>
       )}
 
-      <button type="button" className="btn-primary w-full" disabled={busy || !text.trim()} onClick={runCheck}>
+      <button
+        type="button"
+        className="btn-primary w-full"
+        disabled={busy || !text.trim()}
+        onClick={runCheck}
+      >
         Comprobar mazo
       </button>
     </div>

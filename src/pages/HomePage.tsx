@@ -1,10 +1,12 @@
 import { Link } from "react-router-dom";
 import { Upload, ClipboardCheck, Star } from "lucide-react";
+import { useDataSource } from "@/contexts/DataSourceContext";
 import { useCollection } from "@/hooks/useCollection";
 import { SkeletonLines } from "@/components/Skeleton";
 
 export function HomePage() {
   const collection = useCollection();
+  const { mode } = useDataSource();
 
   return (
     <div className="space-y-4">
@@ -27,7 +29,9 @@ export function HomePage() {
               <dd className="text-lg font-semibold">{collection.totalCopies}</dd>
             </div>
             <div className="col-span-2">
-              <dt className="text-slate-400">Última importación</dt>
+              <dt className="text-slate-400">
+                {mode === "account" ? "Última actualización de la cuenta" : "Última importación"}
+              </dt>
               <dd className="font-medium">
                 {collection.lastImport
                   ? new Date(collection.lastImport.importedAt).toLocaleString("es-ES")
@@ -54,8 +58,9 @@ export function HomePage() {
       </div>
 
       <p className="text-center text-xs text-slate-500">
-        Tus datos se guardan localmente en este dispositivo y no se envían a ningún servidor,
-        salvo que actives voluntariamente una sincronización externa.
+        {mode === "account"
+          ? "Colección y mazos cargados desde tu cuenta. No se usa la colección local de este navegador."
+          : "Modo invitado: colección y mazos guardados solo en este dispositivo. Las funciones de amigos requieren iniciar sesión."}
       </p>
     </div>
   );

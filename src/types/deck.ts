@@ -70,7 +70,7 @@ export interface DeckComparisonResult {
   collectionFingerprint: string;
 }
 
-/** Favorito guardado en IndexedDB. */
+/** Favorito guardado en el origen activo (cuenta o modo invitado). */
 export interface FavoriteDeck {
   id: string;
   name: string;
