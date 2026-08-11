@@ -24,11 +24,20 @@ function pickBestSheet(workbook: XLSX.WorkBook): string {
     for (const row of rows.slice(0, 50)) {
       const a = row?.[0];
       const b = row?.[1];
-      if (typeof a === "string" && a.trim().length >= 2 && a.trim().length <= 5) {
-        if (b !== undefined && b !== "" && !Number.isNaN(Number(b))) {
-          score += 1;
-        }
-      }
+      if (
+  typeof a === "string" &&
+  /^[A-Za-z][A-Za-z0-9]{1,9}$/.test(a.trim())
+) {
+  if (
+    b !== undefined &&
+    b !== "" &&
+    /^(?:\d{1,4}|[A-Za-z]{1,3}\d{1,4})$/.test(
+      String(b).trim()
+    )
+  ) {
+    score += 1;
+  }
+}
     }
     if (score > bestScore) {
       bestScore = score;
@@ -65,7 +74,10 @@ export class ExcelCollectionProvider implements CollectionProvider {
     // Detecta si la primera fila es cabecera (columna A no parece un código de set)
     const firstRow = matrix[0];
     const looksLikeHeader =
-      typeof firstRow?.[0] === "string" && !/^[A-Za-z]{2,5}$/.test(String(firstRow[0]).trim());
+      typeof firstRow?.[0] === "string" &&
+      !/^[A-Za-z][A-Za-z0-9]{1,9}$/.test(
+        String(firstRow[0]).trim()
+      );
     const dataRows = looksLikeHeader ? matrix.slice(1) : matrix;
 
     if (dataRows.length === 0) {
