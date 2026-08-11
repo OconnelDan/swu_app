@@ -47,7 +47,7 @@ export function processCollectionRows(rows: RawCollectionRow[]): ProcessRowsOutc
       rowsIgnored += 1;
       warnings.push({
         type: "empty_row",
-        message: `Fila ${row.rowRef}: sin colección/set en la columna A, se ignora.`,
+        message: `Fila ${row.rowRef}: código de carta "${setRaw}_${numberRaw}" no válido, se ignora.`,
         rowRef: row.rowRef
       });
       continue;
