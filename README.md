@@ -1,13 +1,13 @@
 # SWU Deck Collection Checker
 
-
 Aplicación web (PWA) que comprueba si tu colección de **Star Wars: Unlimited**
 cubre las cartas necesarias para un mazo, a partir de tu Excel/CSV/JSON de
 colección y el JSON del mazo (por ejemplo, exportado desde una deck-builder).
 
-Funciona completamente en el navegador: no hay backend, y todos tus datos
-(colección, mazos favoritos, ajustes) se guardan localmente en tu dispositivo
-mediante IndexedDB.
+Tiene dos modos de persistencia separados. Sin iniciar sesión, la colección y
+los mazos se guardan localmente en IndexedDB. Con una cuenta, Supabase es la
+única fuente de verdad para colección y mazos, que se recuperan al entrar desde
+cualquier navegador; los datos locales de invitado no se mezclan con ellos.
 
 ## Índice
 
@@ -47,16 +47,16 @@ Abre `http://localhost:5173`.
 
 ## Scripts disponibles
 
-| Script              | Descripción                                      |
-| ------------------- | ------------------------------------------------- |
-| `npm run dev`        | Servidor de desarrollo con recarga en caliente    |
-| `npm run build`       | Compila TypeScript y genera el build de producción |
-| `npm run preview`     | Sirve el build de producción localmente            |
-| `npm test`            | Ejecuta la suite de tests con Vitest (una vez)     |
-| `npm run test:watch`  | Tests en modo observador                           |
-| `npm run lint`        | ESLint                                             |
-| `npm run typecheck`   | Comprueba tipos sin generar archivos               |
-| `npm run format`      | Formatea el proyecto con Prettier                  |
+| Script               | Descripción                                        |
+| -------------------- | -------------------------------------------------- |
+| `npm run dev`        | Servidor de desarrollo con recarga en caliente     |
+| `npm run build`      | Compila TypeScript y genera el build de producción |
+| `npm run preview`    | Sirve el build de producción localmente            |
+| `npm test`           | Ejecuta la suite de tests con Vitest (una vez)     |
+| `npm run test:watch` | Tests en modo observador                           |
+| `npm run lint`       | ESLint                                             |
+| `npm run typecheck`  | Comprueba tipos sin generar archivos               |
+| `npm run format`     | Formatea el proyecto con Prettier                  |
 
 ## Cómo usar la app
 
@@ -73,13 +73,14 @@ Abre `http://localhost:5173`.
 5. **Buscar**: localiza cualquier carta de tu colección por código o nombre y
    comprueba al instante si está libre, en qué mazo(s) favorito(s) está usada
    (con cuántas copias en cada uno), o si no la tienes.
-6. **Ajustes**: tema, mostrar/ocultar imágenes, copia de seguridad completa
-   (exportar/importar todo en un `.json`), y borrado de datos.
-7. **Amigos** *(opcional, requiere configurar Supabase)*: crea una cuenta,
-   genera un código de invitación para un amigo o introduce el suyo, y
-   sincroniza tu colección con la nube. Desde el resultado de un mazo
-   incompleto, puedes consultar cuáles de tus amigos tienen las cartas que
-   te faltan y cuántas copias.
+6. **Ajustes**: tema y mostrar/ocultar imágenes. En modo invitado también
+   permite exportar/importar una copia local y borrar los datos del dispositivo.
+7. **Cuenta y amigos** _(opcional, requiere configurar Supabase)_: accede con
+   un enlace mágico enviado a tu email. Desde ese momento, las importaciones de
+   colección y todos los cambios de mazos se guardan directamente en la cuenta.
+   También puedes generar un código de invitación o introducir el de otra
+   persona y consultar qué amigos tienen las cartas que te faltan, cuántas
+   poseen y cuántas conservan libres tras descontar sus mazos.
 
 ### Reparto de cartas entre mazos favoritos
 
@@ -96,7 +97,7 @@ En `sample-data/` encontrarás un Excel de colección de ejemplo
 `mazo_ejemplo_agrupado.json`) ya preparados para probar la app: el resultado
 mostrará intencionadamente algunas cartas faltantes.
 
-### Amigos y colección compartida (opcional)
+### Cuenta, datos y amigos (opcional)
 
 Esta función es **opcional** y requiere un proyecto propio y gratuito de
 [Supabase](https://supabase.com) (Postgres + Auth). Sin configurarlo, el resto
@@ -105,17 +106,35 @@ de la app funciona igual, 100% local.
 1. Crea un proyecto en Supabase y copia su **Project URL** y su clave pública
    ("anon"/"publishable key") en un archivo `.env` en la raíz del proyecto
    (usa `.env.example` como plantilla). **Nunca** uses la `service_role`/`secret
-   key` en el frontend.
+key` en el frontend.
 2. En el **SQL Editor** de Supabase, pega y ejecuta todo el contenido de
    [`supabase/schema.sql`](./supabase/schema.sql). Crea las tablas de
-   perfiles, códigos de invitación, amistades y colección compartida, todas
-   con Row Level Security.
-3. En la app, ve a **Amigos**: crea una cuenta, sincroniza tu colección, y
-   genera o canjea un código de invitación.
+   perfiles, códigos de invitación, amistades, colecciones y mazos por usuario,
+   todas con Row Level Security.
+3. En **Authentication → URL Configuration**, usa como Site URL
+   `https://oconneldan.github.io/swu_app/` y añade como Redirect URL
+   `https://oconneldan.github.io/swu_app/**` (añade también la URL local que
+   uses durante el desarrollo).
+4. En la app, ve a **Amigos**, solicita el enlace de acceso y ábrelo en el
+   mismo navegador. Si la cuenta está vacía, importa la colección desde
+   **Colección**. En cualquier otro navegador basta con iniciar sesión para
+   recuperar automáticamente esa colección y los mazos guardados.
+5. Para GitHub Pages, crea los secretos de Actions `VITE_SUPABASE_URL` y
+   `VITE_SUPABASE_ANON_KEY`. El despliegue se detiene con un mensaje claro si
+   falta alguno, evitando publicar accidentalmente la pantalla de cuentas
+   deshabilitada.
 
 **Modelo de privacidad**: por defecto, un amigo aceptado solo puede saber
-"¿tienes esta carta puntual y cuántas copias?" cuando tú comprueba un mazo
-incompleto — nunca puede listar tu colección completa sin más.
+"¿tienes esta carta puntual, cuántas copias y cuántas están libres?" cuando
+comprueba un mazo incompleto; nunca puede listar tu colección completa ni tus
+mazos. La invitación caduca a los siete días y solo puede utilizarse una vez.
+
+No existe sincronización manual ni una copia local de respaldo para una cuenta:
+una importación sustituye únicamente la colección de Supabase; guardar,
+actualizar o borrar un favorito modifica únicamente ese mazo. De esta forma un
+navegador con una vista antigua no reemplaza por accidente el resto de los
+datos. El modo invitado y sus copias de seguridad JSON siguen disponibles sin
+crear una cuenta, pero no permiten utilizar Amigos.
 
 ## Formatos de datos admitidos
 
@@ -178,8 +197,9 @@ src/
 │  │                    (LocalCardCacheProvider, SwUnlimitedDbCardProvider)
 │  └─ collectionProvider/ Interfaz CollectionProvider + implementaciones
 │                          (Excel, Csv, Json, y el stub remoto documentado)
-├─ db/                Dexie (IndexedDB): colección, favoritos, caché,
-│                       historial de comprobaciones, ajustes
+├─ contexts/          Sesión global y selección estricta del origen de datos
+├─ db/                Dexie (IndexedDB): colección/favoritos del invitado,
+│                       caché, historial de comprobaciones y ajustes
 ├─ hooks/             useCollection, useFavorites, useSettings, useAuth,
 │                       useOnlineStatus (todos reactivos vía Dexie liveQuery
 │                       salvo useAuth, que usa la sesión de Supabase)
@@ -190,7 +210,7 @@ src/
 ```
 
 supabase/schema.sql contiene el esquema SQL (tablas + Row Level Security +
-funciones) para la sincronización opcional de amigos, pensado para pegarse
+funciones) para cuentas, persistencia remota y amigos, pensado para pegarse
 directamente en el SQL Editor de Supabase.
 
 **Principios de diseño:**
@@ -200,9 +220,9 @@ directamente en el SQL Editor de Supabase.
 - `CardProvider` y `CollectionProvider` son interfaces: se puede añadir un
   nuevo origen de datos (otra web, otro formato de archivo, Supabase...) sin
   tocar el resto de la aplicación.
-- La app funciona **completamente offline** tras la primera visita para todo
-  lo esencial (colección, favoritos, comprobación de mazos). La función de
-  amigos es la única pieza que necesita red y una cuenta.
+- El modo invitado funciona **completamente offline** tras la primera visita.
+  El modo cuenta necesita conexión para cargar y modificar colección/mazos; si
+  Supabase no responde, nunca usa IndexedDB como sustitución silenciosa.
 
 ## Integración con catálogos externos
 
@@ -230,9 +250,9 @@ diferentes:
 
 ## Privacidad y seguridad
 
-- Toda tu colección, tus mazos favoritos y tus ajustes se guardan **solo en
-  tu dispositivo** (IndexedDB del navegador), salvo que actives
-  voluntariamente la función de Amigos (ver más abajo).
+- En modo invitado, colección y mazos se guardan **solo en tu dispositivo**.
+  Con sesión iniciada, colección y mazos se guardan exclusivamente en Supabase;
+  borrar la caché local no los elimina y vuelven a cargarse tras iniciar sesión.
 - Para mostrar nombres e imágenes de cartas, la app **consulta
   automáticamente** el catálogo público de `swu-db.com` cuando hay conexión
   (ver "Integración con catálogos externos"). Esa consulta solo envía el
@@ -240,17 +260,18 @@ diferentes:
   mazos. No hay forma de desactivar esta consulta desde Ajustes; si prefieres
   que la app no haga ninguna petición de red, desconéctate: seguirá
   funcionando igualmente solo con los códigos de carta.
-- Si activas **Amigos**, tu email y tu colección (recuento por carta) se
-  guardan en tu propio proyecto de Supabase, protegidos con Row Level
-  Security: solo tú puedes leer/editar tu fila, y tus amigos aceptados solo
-  pueden consultar, carta por carta, si tienes copias de las que a ellos les
-  faltan (nunca listar tu colección completa). La clave `service_role` de
-  Supabase nunca debe usarse en el frontend.
+- Si activas **Cuenta y amigos**, tu email, tu colección y tus mazos favoritos
+  se guardan en tu proyecto de Supabase, protegidos con Row Level Security:
+  solo tú puedes leer o sustituir tus datos. Los amigos aceptados únicamente
+  consultan el total y las copias libres de los códigos concretos que les
+  faltan; no pueden enumerar tu colección ni leer tus mazos. La clave
+  `service_role` de Supabase nunca debe usarse en el frontend.
 - No se almacena ninguna contraseña ni token de terceros en el código; las
-  contraseñas de la función Amigos las gestiona el sistema de autenticación
-  de Supabase.
-- La copia de seguridad exportable es un único archivo `.json` bajo tu
-  control; puedes guardarla donde quieras.
+  sesiones por enlace mágico las gestiona Supabase. El SDK guarda su sesión
+  en una base IndexedDB separada, no en `localStorage` ni dentro del archivo de
+  copia de seguridad de SWU Deck Vault.
+- La copia de seguridad exportable corresponde al modo invitado y es un único
+  archivo `.json` bajo tu control.
 
 ## Despliegue
 
@@ -274,11 +295,12 @@ ejemplo `/mi-repo/` para GitHub Pages).
   prioridad de un mazo sobre otro.
 - No hay integración de colección con `sw-unlimited-db.com` (ver más arriba
   por qué, y cómo activarla si en el futuro existe una API oficial).
-- La función de Amigos requiere que sincronices tu colección manualmente
-  (botón "Sincronizar colección con la nube" en Amigos); no se sincroniza
-  automáticamente todavía cada vez que la actualizas.
-- No hay un rol de administrador ni restablecimiento de contraseña integrado
-  en la UI de la app: eso lo gestiona el panel de Supabase de cada proyecto.
-- El listado de sets conocidos (`SOR, SHD, TWI, JTL, LOF, SEC, LAW, ASH`) se
+- Las cuentas no tienen modo offline para colección y mazos: se evita mantener
+  una segunda copia local que pueda quedar desactualizada o sobrescribir la
+  base de datos al volver la conexión.
+- El acceso usa enlaces mágicos de un solo uso; no existe una contraseña propia
+  de SWU Deck Vault que restablecer.
+- El listado de sets conocidos (`SOR, SHD, TWI, JTL, LOF, SEC, LAW, ASH, IBH,
+HMW, TS26`) se
   usa solo para avisos informativos; sets desconocidos igualmente se
   importan y comparan sin problema.

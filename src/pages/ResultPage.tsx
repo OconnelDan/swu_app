@@ -3,7 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { Users } from "lucide-react";
 import { DeckSummary } from "@/components/DeckSummary";
 import { DeckResultTable } from "@/components/DeckResultTable";
-import { saveFavoriteDeck } from "@/lib/favoritesRepository";
+import { useDataSource } from "@/contexts/DataSourceContext";
+import { useAuth } from "@/hooks/useAuth";
 import { isSupabaseConfigured } from "@/lib/supabaseClient";
 import { getFriendsCardAvailability, type FriendCardAvailability } from "@/lib/friendsRepository";
 import type { DeckComparisonResult, NormalizedDeck } from "@/types/deck";
@@ -17,11 +18,14 @@ interface ResultPageProps {
 export function ResultPage({ deck, result, isFavorite = false }: ResultPageProps) {
   const [showAll, setShowAll] = useState(false);
   const [savedAsFavorite, setSavedAsFavorite] = useState(isFavorite);
-  const [friendAvailability, setFriendAvailability] = useState<Map<string, FriendCardAvailability[]>>(
-    new Map()
-  );
+  const [friendAvailability, setFriendAvailability] = useState<
+    Map<string, FriendCardAvailability[]>
+  >(new Map());
   const [friendLookupError, setFriendLookupError] = useState<string | null>(null);
   const [friendLookupBusy, setFriendLookupBusy] = useState(false);
+  const [favoriteError, setFavoriteError] = useState<string | null>(null);
+  const { session } = useAuth();
+  const { saveFavoriteDeck } = useDataSource();
   const navigate = useNavigate();
 
   if (!deck || !result) {
@@ -36,8 +40,13 @@ export function ResultPage({ deck, result, isFavorite = false }: ResultPageProps
   }
 
   const handleSaveFavorite = async () => {
-    await saveFavoriteDeck(deck, result);
-    setSavedAsFavorite(true);
+    setFavoriteError(null);
+    try {
+      await saveFavoriteDeck(deck, result);
+      setSavedAsFavorite(true);
+    } catch (cause) {
+      setFavoriteError(cause instanceof Error ? cause.message : "No se ha podido guardar el mazo.");
+    }
   };
 
   const handleCheckFriends = async () => {
@@ -54,7 +63,9 @@ export function ResultPage({ deck, result, isFavorite = false }: ResultPageProps
       }
       setFriendAvailability(map);
     } catch (e) {
-      setFriendLookupError(e instanceof Error ? e.message : "No se ha podido consultar a tus amigos.");
+      setFriendLookupError(
+        e instanceof Error ? e.message : "No se ha podido consultar a tus amigos."
+      );
     } finally {
       setFriendLookupBusy(false);
     }
@@ -68,6 +79,12 @@ export function ResultPage({ deck, result, isFavorite = false }: ResultPageProps
         isFavorite={savedAsFavorite}
         onRecheck={() => navigate("/comprobar")}
       />
+
+      {favoriteError && (
+        <p role="alert" className="card border-saber-red/50 text-sm text-saber-red">
+          {favoriteError}
+        </p>
+      )}
 
       <div className="flex gap-2" role="group" aria-label="Filtro de cartas">
         <button
@@ -94,10 +111,12 @@ export function ResultPage({ deck, result, isFavorite = false }: ResultPageProps
             type="button"
             className="btn-secondary"
             disabled={friendLookupBusy}
-            onClick={handleCheckFriends}
+            onClick={session ? handleCheckFriends : () => navigate("/amigos")}
           >
             <Users size={16} />
-            Ver si mis amigos tienen las cartas que me faltan
+            {session
+              ? "Ver si mis amigos tienen las cartas que me faltan"
+              : "Inicia sesión para consultar a tus amigos"}
           </button>
           {friendLookupError && (
             <p role="alert" className="text-sm text-saber-red">
@@ -107,7 +126,11 @@ export function ResultPage({ deck, result, isFavorite = false }: ResultPageProps
         </div>
       )}
 
-      <DeckResultTable comparisons={result.comparisons} showAll={showAll} friendAvailability={friendAvailability} />
+      <DeckResultTable
+        comparisons={result.comparisons}
+        showAll={showAll}
+        friendAvailability={friendAvailability}
+      />
     </div>
   );
 }

@@ -10,6 +10,7 @@ import {
 import { tryGetCardImageUrl } from "@/lib/cardImageUrl";
 import { searchCards } from "@/lib/cardSearch";
 import { CardImageThumbnail } from "@/components/CardImageThumbnail";
+import { SkeletonLines } from "@/components/Skeleton";
 import { SwUnlimitedDbCardProvider } from "@/providers/cardProvider/SwUnlimitedDbCardProvider";
 import type { CardInfo } from "@/types/card";
 
@@ -127,6 +128,10 @@ export function CardFinderPage() {
     () => (hasQuery ? searchCards(candidates, query) : []),
     [candidates, hasQuery, query]
   );
+
+  if (collection === undefined || favorites === undefined) {
+    return <SkeletonLines count={5} />;
+  }
 
   return (
     <div className="space-y-4">

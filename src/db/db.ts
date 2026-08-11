@@ -17,8 +17,8 @@ export interface DeckCheckRecord {
 }
 
 /**
- * Base de datos local. Todo se guarda en el dispositivo del usuario
- * (ver sección 20 de la especificación: privacidad y seguridad).
+ * Base local del modo invitado y cachés del dispositivo. La colección y los
+ * mazos de usuarios autenticados se leen y escriben únicamente en Supabase.
  */
 export class SwuDatabase extends Dexie {
   cards!: Table<CardInfo, string>;

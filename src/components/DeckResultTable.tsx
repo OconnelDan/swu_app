@@ -21,7 +21,11 @@ function usedElsewhereLabel(row: CardComparison): string | undefined {
 
 function friendsLabel(entries: FriendCardAvailability[] | undefined): string | undefined {
   if (!entries || entries.length === 0) return undefined;
-  return entries.map((f) => `${f.friendUsername}: ${f.ownedCount}`).join(", ");
+  return entries
+    .map(
+      (friend) => `${friend.friendUsername}: ${friend.freeCount} libre(s) de ${friend.ownedCount}`
+    )
+    .join(", ");
 }
 
 interface DeckResultTableProps {
@@ -30,7 +34,11 @@ interface DeckResultTableProps {
   friendAvailability?: Map<string, FriendCardAvailability[]>;
 }
 
-export function DeckResultTable({ comparisons, showAll, friendAvailability }: DeckResultTableProps) {
+export function DeckResultTable({
+  comparisons,
+  showAll,
+  friendAvailability
+}: DeckResultTableProps) {
   const { settings } = useSettings();
   const rows = showAll ? comparisons : comparisons.filter((c) => c.status === "missing");
 
@@ -45,17 +53,36 @@ export function DeckResultTable({ comparisons, showAll, friendAvailability }: De
   return (
     <>
       {/* Tabla en pantallas medianas y grandes */}
-      <table className="hidden w-full border-collapse text-left text-sm sm:table" aria-label="Resultado de la comprobación del mazo">
+      <table
+        className="hidden w-full border-collapse text-left text-sm sm:table"
+        aria-label="Resultado de la comprobación del mazo"
+      >
         <thead>
           <tr className="border-b border-space-700 text-xs uppercase tracking-wide text-slate-400">
-            <th scope="col" className="py-2 pr-2">Código</th>
-            <th scope="col" className="py-2 pr-2">Carta</th>
-            <th scope="col" className="py-2 pr-2 text-right">Necesitas</th>
-            <th scope="col" className="py-2 pr-2 text-right">Tienes</th>
-            <th scope="col" className="py-2 pr-2 text-right">Te faltan</th>
-            <th scope="col" className="py-2 pr-2">Zona</th>
-            <th scope="col" className="py-2 pr-2">Usadas en otros mazos</th>
-            <th scope="col" className="py-2 pr-2">Amigos con esta carta</th>
+            <th scope="col" className="py-2 pr-2">
+              Código
+            </th>
+            <th scope="col" className="py-2 pr-2">
+              Carta
+            </th>
+            <th scope="col" className="py-2 pr-2 text-right">
+              Necesitas
+            </th>
+            <th scope="col" className="py-2 pr-2 text-right">
+              Tienes
+            </th>
+            <th scope="col" className="py-2 pr-2 text-right">
+              Te faltan
+            </th>
+            <th scope="col" className="py-2 pr-2">
+              Zona
+            </th>
+            <th scope="col" className="py-2 pr-2">
+              Usadas en otros mazos
+            </th>
+            <th scope="col" className="py-2 pr-2">
+              Amigos con esta carta
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -124,7 +151,9 @@ export function DeckResultTable({ comparisons, showAll, friendAvailability }: De
               </div>
             </dl>
             {usedElsewhereLabel(row) && (
-              <p className="mt-2 text-xs text-slate-400">Usadas en otros mazos: {usedElsewhereLabel(row)}</p>
+              <p className="mt-2 text-xs text-slate-400">
+                Usadas en otros mazos: {usedElsewhereLabel(row)}
+              </p>
             )}
             {friendsLabel(friendAvailability?.get(row.cardId)) && (
               <p className="mt-1 text-xs text-saber-green">

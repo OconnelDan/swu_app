@@ -3,7 +3,7 @@ import { AlertTriangle, FileUp } from "lucide-react";
 import { ExcelCollectionProvider } from "@/providers/collectionProvider/ExcelCollectionProvider";
 import { CsvCollectionProvider } from "@/providers/collectionProvider/CsvCollectionProvider";
 import { JsonCollectionProvider } from "@/providers/collectionProvider/JsonCollectionProvider";
-import { replaceCollection } from "@/db/db";
+import { useDataSource } from "@/contexts/DataSourceContext";
 import type { CollectionImportResult } from "@/types/collection";
 
 type Mode = "excel" | "csv" | "json";
@@ -17,12 +17,15 @@ function detectMode(fileName: string): Mode {
 export function ImportCollectionPage() {
   const [pendingResult, setPendingResult] = useState<CollectionImportResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [jsonText, setJsonText] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const { mode, collection, replaceCollection } = useDataSource();
 
   const handleFile = async (file: File) => {
     setError(null);
+    setMessage(null);
     setBusy(true);
     try {
       const mode = detectMode(file.name);
@@ -55,6 +58,7 @@ export function ImportCollectionPage() {
 
   const handlePasteJson = async () => {
     setError(null);
+    setMessage(null);
     setBusy(true);
     try {
       const result = await new JsonCollectionProvider().importFromSource({ text: jsonText });
@@ -68,9 +72,23 @@ export function ImportCollectionPage() {
 
   const confirmImport = async () => {
     if (!pendingResult) return;
-    await replaceCollection(pendingResult.cards, pendingResult);
-    setPendingResult(null);
-    setJsonText("");
+    setError(null);
+    setMessage(null);
+    setBusy(true);
+    try {
+      await replaceCollection(pendingResult.cards, pendingResult);
+      setPendingResult(null);
+      setJsonText("");
+      setMessage(
+        mode === "account"
+          ? "Colección actualizada en tu cuenta. Ya estará disponible al iniciar sesión en otro dispositivo."
+          : "Colección guardada en este dispositivo."
+      );
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "No se ha podido guardar la colección.");
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -78,7 +96,9 @@ export function ImportCollectionPage() {
       <section className="card">
         <h2 className="mb-2 font-display text-base">Importar desde archivo</h2>
         <p className="mb-3 text-sm text-slate-400">
-          Arrastra o selecciona el Excel (.xlsx) o CSV exportado de tu colección.
+          {mode === "account"
+            ? "El nuevo archivo sustituirá la colección guardada en tu cuenta. Tus mazos no se modificarán."
+            : "Arrastra o selecciona el Excel (.xlsx), CSV o JSON de tu colección. Se guardará solo en este dispositivo."}
         </p>
         <div
           className="flex min-h-[120px] cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-space-600 p-4 text-center text-sm text-slate-300 hover:border-saber-blue"
@@ -140,6 +160,12 @@ export function ImportCollectionPage() {
         </div>
       )}
 
+      {message && (
+        <div role="status" className="card border-saber-green/50 text-sm text-saber-green">
+          {message}
+        </div>
+      )}
+
       {pendingResult && (
         <section className="card space-y-2" aria-live="polite">
           <h2 className="font-display text-base text-saber-blue">Previsualización</h2>
@@ -177,8 +203,17 @@ export function ImportCollectionPage() {
               </ul>
             </details>
           )}
-          <button type="button" className="btn-primary w-full" onClick={confirmImport}>
-            Guardar como mi colección
+          <button
+            type="button"
+            className="btn-primary w-full"
+            disabled={busy || mode === "loading" || collection === undefined}
+            onClick={confirmImport}
+          >
+            {busy
+              ? "Guardando…"
+              : mode === "account"
+                ? "Actualizar colección de mi cuenta"
+                : "Guardar como mi colección local"}
           </button>
         </section>
       )}

@@ -4,16 +4,22 @@ import { HashRouter } from "react-router-dom";
 import App from "./App";
 import "./index.css";
 import { registerSW } from "virtual:pwa-register";
+import { AuthProvider } from "@/contexts/AuthProvider";
+import { DataSourceProvider } from "@/contexts/DataSourceProvider";
 
 // Actualiza el service worker automáticamente en segundo plano; no interrumpe
-// al usuario con confirmaciones (ver sección 15: la app debe funcionar offline
-// sin fricción tras la primera visita).
+// al usuario con confirmaciones. La interfaz queda disponible tras la primera
+// visita; los datos offline corresponden exclusivamente al modo invitado.
 registerSW({ immediate: true });
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <HashRouter>
-     <App />
-    </HashRouter>
+    <AuthProvider>
+      <DataSourceProvider>
+        <HashRouter>
+          <App />
+        </HashRouter>
+      </DataSourceProvider>
+    </AuthProvider>
   </React.StrictMode>
 );

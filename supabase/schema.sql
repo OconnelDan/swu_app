@@ -1,57 +1,124 @@
--- Esquema para la sincronización opcional de amigos y colección compartida.
--- Pega este archivo completo en Supabase → SQL Editor → New query → Run.
+-- Backend opcional de SWU Deck Vault: cuentas, copia en la nube y amigos.
 --
--- Modelo de privacidad (ver conversación de diseño):
---   - Por defecto, un amigo aceptado solo puede saber "¿tienes esta carta
---     puntual y cuántas copias?" a través de get_friends_card_availability,
---     nunca listar tu colección completa sin más.
---   - share_full_collection_a_to_b / _b_to_a quedan reservadas para una
---     futura función de "ver la colección completa de un amigo", que debe
---     activarse explícitamente por cada usuario, por amigo.
+-- Este archivo sirve tanto para una instalación nueva como para actualizar el
+-- esquema inicial. Ejecútalo completo desde Supabase -> SQL Editor.
+-- La aplicación continúa funcionando solo con IndexedDB si Supabase no está
+-- configurado.
 
--- 1) Perfiles (uno por usuario autenticado)
+-- Las funciones que necesitan atravesar RLS viven en un esquema no expuesto
+-- por la API. En public solo se publican envoltorios SECURITY INVOKER.
+create schema if not exists private;
+revoke all on schema private from public, anon, authenticated;
+grant usage on schema private to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- 1) Perfiles
+-- ---------------------------------------------------------------------------
+
 create table if not exists public.profiles (
   id uuid primary key references auth.users (id) on delete cascade,
   username text unique not null,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
 );
+
+alter table public.profiles
+  add column if not exists updated_at timestamptz not null default now();
+
+create unique index if not exists profiles_username_lower_unique
+  on public.profiles (lower(username));
 
 alter table public.profiles enable row level security;
 
-create policy "los perfiles son visibles por cualquier usuario autenticado"
+drop policy if exists "los perfiles son visibles por cualquier usuario autenticado"
+  on public.profiles;
+drop policy if exists "cada usuario crea su propio perfil" on public.profiles;
+drop policy if exists "cada usuario edita su propio perfil" on public.profiles;
+drop policy if exists profiles_select_own on public.profiles;
+drop policy if exists profiles_update_own on public.profiles;
+
+create policy profiles_select_own
   on public.profiles for select
   to authenticated
-  using (true);
+  using ((select auth.uid()) = id);
 
-create policy "cada usuario crea su propio perfil"
-  on public.profiles for insert
-  to authenticated
-  with check (auth.uid() = id);
-
-create policy "cada usuario edita su propio perfil"
+create policy profiles_update_own
   on public.profiles for update
   to authenticated
-  using (auth.uid() = id);
+  using ((select auth.uid()) = id)
+  with check ((select auth.uid()) = id);
 
--- 2) Códigos de invitación de amistad
+-- El perfil se crea desde la base de datos, también cuando el usuario confirma
+-- un enlace mágico y todavía no existe una sesión en el navegador.
+create or replace function public.handle_new_user()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_username text;
+begin
+  v_username := coalesce(
+    nullif(btrim(new.raw_user_meta_data ->> 'username'), ''),
+    'Jugador-' || upper(substr(replace(new.id::text, '-', ''), 1, 8))
+  );
+
+  insert into public.profiles (id, username)
+  values (new.id, v_username)
+  on conflict (id) do nothing;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute function public.handle_new_user();
+
+revoke all on function public.handle_new_user() from public, anon, authenticated;
+
+-- Cubre usuarios creados antes de instalar esta versión del esquema.
+insert into public.profiles (id, username)
+select
+  users.id,
+  'Jugador-' || upper(substr(replace(users.id::text, '-', ''), 1, 8))
+from auth.users as users
+on conflict (id) do nothing;
+
+-- ---------------------------------------------------------------------------
+-- 2) Invitaciones y amistades
+-- ---------------------------------------------------------------------------
+
 create table if not exists public.friend_invite_codes (
   code text primary key,
   owner_id uuid not null references public.profiles (id) on delete cascade,
   created_at timestamptz not null default now(),
-  expires_at timestamptz,
+  expires_at timestamptz not null default (now() + interval '7 days'),
   used_by uuid references public.profiles (id),
   used_at timestamptz
 );
 
+alter table public.friend_invite_codes
+  alter column expires_at set default (now() + interval '7 days');
+update public.friend_invite_codes
+set expires_at = created_at + interval '7 days'
+where expires_at is null;
+alter table public.friend_invite_codes alter column expires_at set not null;
+
 alter table public.friend_invite_codes enable row level security;
 
-create policy "el dueño gestiona sus propios códigos"
+drop policy if exists "el dueño gestiona sus propios códigos"
+  on public.friend_invite_codes;
+drop policy if exists friend_codes_manage_own on public.friend_invite_codes;
+
+create policy friend_codes_manage_own
   on public.friend_invite_codes for all
   to authenticated
-  using (auth.uid() = owner_id)
-  with check (auth.uid() = owner_id);
+  using ((select auth.uid()) = owner_id)
+  with check ((select auth.uid()) = owner_id);
 
--- 3) Amistades (una fila por pareja, orden estable user_a_id < user_b_id)
 create table if not exists public.friendships (
   id uuid primary key default gen_random_uuid(),
   user_a_id uuid not null references public.profiles (id) on delete cascade,
@@ -64,45 +131,612 @@ create table if not exists public.friendships (
   unique (user_a_id, user_b_id)
 );
 
+create index if not exists friendships_user_a_idx on public.friendships (user_a_id);
+create index if not exists friendships_user_b_idx on public.friendships (user_b_id);
+
 alter table public.friendships enable row level security;
 
-create policy "cada usuario ve sus propias amistades"
+drop policy if exists "cada usuario ve sus propias amistades" on public.friendships;
+drop policy if exists "cada usuario ajusta su propia preferencia de compartir"
+  on public.friendships;
+drop policy if exists friendships_select_own on public.friendships;
+drop policy if exists friendships_delete_own on public.friendships;
+
+create policy friendships_select_own
   on public.friendships for select
   to authenticated
-  using (auth.uid() = user_a_id or auth.uid() = user_b_id);
+  using ((select auth.uid()) = user_a_id or (select auth.uid()) = user_b_id);
 
-create policy "cada usuario ajusta su propia preferencia de compartir"
-  on public.friendships for update
+create policy friendships_delete_own
+  on public.friendships for delete
   to authenticated
-  using (auth.uid() = user_a_id or auth.uid() = user_b_id);
+  using ((select auth.uid()) = user_a_id or (select auth.uid()) = user_b_id);
 
--- 4) Espejo en la nube de la colección local (solo lo necesario para
---    responder consultas de amigos; el origen de verdad sigue siendo
---    IndexedDB en el dispositivo).
+-- ---------------------------------------------------------------------------
+-- 3) Copia de la colección y los mazos por usuario
+-- ---------------------------------------------------------------------------
+
 create table if not exists public.collection_cards (
   user_id uuid not null references public.profiles (id) on delete cascade,
   card_id text not null,
+  set_code text not null,
+  card_number text not null,
+  name text,
   owned_count integer not null default 0,
+  free_count integer not null default 0,
   updated_at timestamptz not null default now(),
-  primary key (user_id, card_id)
+  primary key (user_id, card_id),
+  constraint collection_owned_nonnegative check (owned_count >= 0),
+  constraint collection_free_valid check (free_count >= 0 and free_count <= owned_count)
 );
+
+-- Migración desde el primer prototipo, que solo tenía card_id y owned_count.
+alter table public.collection_cards add column if not exists set_code text;
+alter table public.collection_cards add column if not exists card_number text;
+alter table public.collection_cards add column if not exists name text;
+alter table public.collection_cards add column if not exists free_count integer;
+
+update public.collection_cards
+set
+  set_code = coalesce(set_code, split_part(card_id, '_', 1)),
+  card_number = coalesce(card_number, split_part(card_id, '_', 2)),
+  free_count = coalesce(free_count, owned_count)
+where set_code is null or card_number is null or free_count is null;
+
+alter table public.collection_cards alter column set_code set not null;
+alter table public.collection_cards alter column card_number set not null;
+alter table public.collection_cards alter column free_count set default 0;
+alter table public.collection_cards alter column free_count set not null;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.collection_cards'::regclass
+      and conname = 'collection_owned_nonnegative'
+  ) then
+    alter table public.collection_cards
+      add constraint collection_owned_nonnegative check (owned_count >= 0);
+  end if;
+
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.collection_cards'::regclass
+      and conname = 'collection_free_valid'
+  ) then
+    alter table public.collection_cards
+      add constraint collection_free_valid
+      check (free_count >= 0 and free_count <= owned_count);
+  end if;
+end;
+$$;
+
+create index if not exists collection_cards_card_id_idx
+  on public.collection_cards (card_id);
 
 alter table public.collection_cards enable row level security;
 
-create policy "cada usuario gestiona solo su propia colección en la nube"
+drop policy if exists "cada usuario gestiona solo su propia colección en la nube"
+  on public.collection_cards;
+drop policy if exists collection_cards_manage_own on public.collection_cards;
+
+create policy collection_cards_manage_own
   on public.collection_cards for all
   to authenticated
-  using (auth.uid() = user_id)
-  with check (auth.uid() = user_id);
+  using ((select auth.uid()) = user_id)
+  with check ((select auth.uid()) = user_id);
 
--- 5) Canjear un código de invitación: crea la amistad si el código es
---    válido y no ha sido usado. SECURITY DEFINER porque el código
---    pertenece a otro usuario (RLS normal no dejaría verlo).
-create or replace function public.redeem_friend_invite_code(p_code text)
+create table if not exists public.favorite_decks (
+  user_id uuid not null references public.profiles (id) on delete cascade,
+  id uuid not null,
+  name text not null,
+  author text,
+  original_json jsonb not null,
+  normalized_deck jsonb not null,
+  created_at timestamptz not null,
+  updated_at timestamptz not null,
+  last_result jsonb,
+  last_result_fingerprint text,
+  primary key (user_id, id)
+);
+
+create index if not exists favorite_decks_user_updated_idx
+  on public.favorite_decks (user_id, updated_at desc);
+
+alter table public.favorite_decks enable row level security;
+
+drop policy if exists favorite_decks_manage_own on public.favorite_decks;
+create policy favorite_decks_manage_own
+  on public.favorite_decks for all
+  to authenticated
+  using ((select auth.uid()) = user_id)
+  with check ((select auth.uid()) = user_id);
+
+create table if not exists public.user_sync_state (
+  user_id uuid primary key references public.profiles (id) on delete cascade,
+  updated_at timestamptz not null default now()
+);
+
+alter table public.user_sync_state enable row level security;
+
+drop policy if exists user_sync_state_manage_own on public.user_sync_state;
+create policy user_sync_state_manage_own
+  on public.user_sync_state for all
+  to authenticated
+  using ((select auth.uid()) = user_id)
+  with check ((select auth.uid()) = user_id);
+
+-- Privilegios mínimos para el cliente web. RLS sigue filtrando cada fila.
+revoke all on public.profiles from anon;
+revoke all on public.friend_invite_codes from anon;
+revoke all on public.friendships from anon;
+revoke all on public.collection_cards from anon;
+revoke all on public.favorite_decks from anon;
+revoke all on public.user_sync_state from anon;
+
+revoke all on public.profiles from authenticated;
+revoke all on public.friend_invite_codes from authenticated;
+revoke all on public.friendships from authenticated;
+revoke all on public.collection_cards from authenticated;
+revoke all on public.favorite_decks from authenticated;
+revoke all on public.user_sync_state from authenticated;
+
+grant select, update on public.profiles to authenticated;
+grant select, insert, delete on public.friend_invite_codes to authenticated;
+grant select, delete on public.friendships to authenticated;
+grant select, insert, update, delete on public.collection_cards to authenticated;
+grant select, insert, update, delete on public.favorite_decks to authenticated;
+grant select, insert, update, delete on public.user_sync_state to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- 4) Funciones de cuenta y sincronización
+-- ---------------------------------------------------------------------------
+
+-- Sustituye colección y mazos juntos. Si cualquier fila es inválida, Postgres
+-- revierte toda la llamada y la copia anterior permanece intacta.
+create or replace function public.replace_my_data(
+  p_collection jsonb,
+  p_favorite_decks jsonb
+)
+returns timestamptz
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+declare
+  v_user_id uuid := auth.uid();
+  v_now timestamptz := clock_timestamp();
+begin
+  if v_user_id is null then
+    raise exception 'No autenticado';
+  end if;
+
+  if p_collection is null
+    or p_favorite_decks is null
+    or jsonb_typeof(p_collection) <> 'array'
+    or jsonb_typeof(p_favorite_decks) <> 'array' then
+    raise exception 'Formato de sincronización inválido';
+  end if;
+
+  if jsonb_array_length(p_collection) > 5000 then
+    raise exception 'La colección supera el límite permitido';
+  end if;
+
+  if jsonb_array_length(p_favorite_decks) > 500 then
+    raise exception 'El número de mazos supera el límite permitido';
+  end if;
+
+  if exists (
+    select 1
+    from jsonb_to_recordset(p_collection) as card(
+      card_id text,
+      set_code text,
+      card_number text,
+      name text,
+      owned_count integer,
+      free_count integer
+    )
+    where card.card_id is null
+      or card.set_code is null
+      or card.card_number is null
+      or card.card_id <> card.set_code || '_' || card.card_number
+      or card.card_id !~ '^[A-Z][A-Z0-9]{1,9}_[A-Z]{0,3}[0-9]{1,4}$'
+      or card.owned_count is null
+      or card.owned_count < 0
+      or card.free_count is null
+      or card.free_count < 0
+      or card.free_count > card.owned_count
+  ) then
+    raise exception 'La colección contiene una carta inválida';
+  end if;
+
+  if exists (
+    select 1
+    from jsonb_to_recordset(p_favorite_decks) as deck(
+      id uuid,
+      name text,
+      author text,
+      original_json jsonb,
+      normalized_deck jsonb,
+      created_at timestamptz,
+      updated_at timestamptz,
+      last_result jsonb,
+      last_result_fingerprint text
+    )
+    where deck.id is null
+      or nullif(btrim(deck.name), '') is null
+      or char_length(deck.name) > 200
+      or deck.original_json is null
+      or deck.normalized_deck is null
+      or jsonb_typeof(deck.normalized_deck) <> 'object'
+      or deck.created_at is null
+      or deck.updated_at is null
+  ) then
+    raise exception 'Los mazos contienen un registro inválido';
+  end if;
+
+  delete from public.collection_cards where user_id = v_user_id;
+
+  insert into public.collection_cards (
+    user_id,
+    card_id,
+    set_code,
+    card_number,
+    name,
+    owned_count,
+    free_count,
+    updated_at
+  )
+  select
+    v_user_id,
+    card.card_id,
+    card.set_code,
+    card.card_number,
+    nullif(btrim(card.name), ''),
+    card.owned_count,
+    card.free_count,
+    v_now
+  from jsonb_to_recordset(p_collection) as card(
+    card_id text,
+    set_code text,
+    card_number text,
+    name text,
+    owned_count integer,
+    free_count integer
+  );
+
+  delete from public.favorite_decks where user_id = v_user_id;
+
+  insert into public.favorite_decks (
+    user_id,
+    id,
+    name,
+    author,
+    original_json,
+    normalized_deck,
+    created_at,
+    updated_at,
+    last_result,
+    last_result_fingerprint
+  )
+  select
+    v_user_id,
+    deck.id,
+    btrim(deck.name),
+    nullif(btrim(deck.author), ''),
+    deck.original_json,
+    deck.normalized_deck,
+    deck.created_at,
+    deck.updated_at,
+    deck.last_result,
+    deck.last_result_fingerprint
+  from jsonb_to_recordset(p_favorite_decks) as deck(
+    id uuid,
+    name text,
+    author text,
+    original_json jsonb,
+    normalized_deck jsonb,
+    created_at timestamptz,
+    updated_at timestamptz,
+    last_result jsonb,
+    last_result_fingerprint text
+  );
+
+  insert into public.user_sync_state (user_id, updated_at)
+  values (v_user_id, v_now)
+  on conflict (user_id)
+  do update set updated_at = excluded.updated_at;
+
+  return v_now;
+end;
+$$;
+
+revoke all on function public.replace_my_data(jsonb, jsonb) from public, anon;
+grant execute on function public.replace_my_data(jsonb, jsonb) to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- 5) Escritura directa: Supabase es la fuente de verdad de las cuentas
+-- ---------------------------------------------------------------------------
+
+-- Recalcula las copias libres con los mazos que existen realmente en la base
+-- de datos. Solo actúa sobre auth.uid(), incluso si se invoca directamente.
+create or replace function private.refresh_my_free_counts_impl()
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_user_id uuid := auth.uid();
+begin
+  if v_user_id is null then
+    raise exception 'No autenticado';
+  end if;
+
+  update public.collection_cards as collection
+  set
+    free_count = greatest(
+      collection.owned_count - coalesce((
+        select sum(required_card."requiredCount")::integer
+        from public.favorite_decks as deck
+        cross join lateral jsonb_to_recordset(
+          case
+            when jsonb_typeof(deck.normalized_deck -> 'allRequiredCards') = 'array'
+              then deck.normalized_deck -> 'allRequiredCards'
+            else '[]'::jsonb
+          end
+        ) as required_card("cardId" text, "requiredCount" integer)
+        where deck.user_id = v_user_id
+          and required_card."cardId" = collection.card_id
+          and required_card."requiredCount" > 0
+      ), 0),
+      0
+    ),
+    updated_at = clock_timestamp()
+  where collection.user_id = v_user_id;
+end;
+$$;
+
+revoke all on function private.refresh_my_free_counts_impl()
+  from public, anon, authenticated;
+grant execute on function private.refresh_my_free_counts_impl() to authenticated;
+
+-- Una nueva importación sustituye únicamente la colección. Los mazos que se
+-- hayan creado desde otro navegador permanecen intactos.
+create or replace function public.replace_my_collection(p_collection jsonb)
+returns timestamptz
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+declare
+  v_user_id uuid := auth.uid();
+  v_now timestamptz := clock_timestamp();
+begin
+  if v_user_id is null then
+    raise exception 'No autenticado';
+  end if;
+
+  if p_collection is null or jsonb_typeof(p_collection) <> 'array' then
+    raise exception 'Formato de colección inválido';
+  end if;
+
+  if jsonb_array_length(p_collection) > 5000 then
+    raise exception 'La colección supera el límite permitido';
+  end if;
+
+  if exists (
+    select 1
+    from jsonb_to_recordset(p_collection) as card(
+      card_id text,
+      set_code text,
+      card_number text,
+      name text,
+      owned_count integer
+    )
+    where card.card_id is null
+      or card.set_code is null
+      or card.card_number is null
+      or card.card_id <> card.set_code || '_' || card.card_number
+      or card.card_id !~ '^[A-Z][A-Z0-9]{1,9}_[A-Z]{0,3}[0-9]{1,4}$'
+      or card.owned_count is null
+      or card.owned_count < 0
+  ) then
+    raise exception 'La colección contiene una carta inválida';
+  end if;
+
+  delete from public.collection_cards where user_id = v_user_id;
+
+  insert into public.collection_cards (
+    user_id,
+    card_id,
+    set_code,
+    card_number,
+    name,
+    owned_count,
+    free_count,
+    updated_at
+  )
+  select
+    v_user_id,
+    card.card_id,
+    card.set_code,
+    card.card_number,
+    nullif(btrim(card.name), ''),
+    card.owned_count,
+    card.owned_count,
+    v_now
+  from jsonb_to_recordset(p_collection) as card(
+    card_id text,
+    set_code text,
+    card_number text,
+    name text,
+    owned_count integer
+  );
+
+  perform private.refresh_my_free_counts_impl();
+
+  insert into public.user_sync_state (user_id, updated_at)
+  values (v_user_id, v_now)
+  on conflict (user_id)
+  do update set updated_at = excluded.updated_at;
+
+  return v_now;
+end;
+$$;
+
+revoke all on function public.replace_my_collection(jsonb) from public, anon;
+grant execute on function public.replace_my_collection(jsonb) to authenticated;
+
+-- Inserta o actualiza un único mazo. No sustituye los demás favoritos y
+-- recalcula las copias libres de la colección en la misma transacción.
+create or replace function public.upsert_my_favorite_deck(p_favorite_deck jsonb)
+returns timestamptz
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+declare
+  v_user_id uuid := auth.uid();
+  v_now timestamptz := clock_timestamp();
+  v_id uuid;
+  v_name text;
+  v_created_at timestamptz;
+  v_normalized_deck jsonb;
+begin
+  if v_user_id is null then
+    raise exception 'No autenticado';
+  end if;
+
+  if p_favorite_deck is null or jsonb_typeof(p_favorite_deck) <> 'object' then
+    raise exception 'Formato de mazo inválido';
+  end if;
+
+  v_id := nullif(p_favorite_deck ->> 'id', '')::uuid;
+  v_name := btrim(p_favorite_deck ->> 'name');
+  v_created_at := (p_favorite_deck ->> 'created_at')::timestamptz;
+  v_normalized_deck := p_favorite_deck -> 'normalized_deck';
+
+  if v_id is null
+    or nullif(v_name, '') is null
+    or char_length(v_name) > 200
+    or p_favorite_deck -> 'original_json' is null
+    or p_favorite_deck -> 'original_json' = 'null'::jsonb
+    or v_normalized_deck is null
+    or jsonb_typeof(v_normalized_deck) <> 'object'
+    or jsonb_typeof(v_normalized_deck -> 'allRequiredCards') is distinct from 'array'
+    or v_created_at is null then
+    raise exception 'El mazo contiene un registro inválido';
+  end if;
+
+  if exists (
+    select 1
+    from jsonb_to_recordset(v_normalized_deck -> 'allRequiredCards')
+      as required_card("cardId" text, "requiredCount" integer)
+    where required_card."cardId" is null
+      or required_card."requiredCount" is null
+      or required_card."requiredCount" < 0
+  ) then
+    raise exception 'El mazo contiene una carta inválida';
+  end if;
+
+  insert into public.favorite_decks (
+    user_id,
+    id,
+    name,
+    author,
+    original_json,
+    normalized_deck,
+    created_at,
+    updated_at,
+    last_result,
+    last_result_fingerprint
+  )
+  values (
+    v_user_id,
+    v_id,
+    v_name,
+    nullif(btrim(p_favorite_deck ->> 'author'), ''),
+    p_favorite_deck -> 'original_json',
+    v_normalized_deck,
+    v_created_at,
+    v_now,
+    case
+      when p_favorite_deck -> 'last_result' is null
+        or p_favorite_deck -> 'last_result' = 'null'::jsonb then null
+      else p_favorite_deck -> 'last_result'
+    end,
+    nullif(p_favorite_deck ->> 'last_result_fingerprint', '')
+  )
+  on conflict (user_id, id)
+  do update set
+    name = excluded.name,
+    author = excluded.author,
+    original_json = excluded.original_json,
+    normalized_deck = excluded.normalized_deck,
+    created_at = excluded.created_at,
+    updated_at = excluded.updated_at,
+    last_result = excluded.last_result,
+    last_result_fingerprint = excluded.last_result_fingerprint;
+
+  perform private.refresh_my_free_counts_impl();
+
+  insert into public.user_sync_state (user_id, updated_at)
+  values (v_user_id, v_now)
+  on conflict (user_id)
+  do update set updated_at = excluded.updated_at;
+
+  return v_now;
+end;
+$$;
+
+revoke all on function public.upsert_my_favorite_deck(jsonb) from public, anon;
+grant execute on function public.upsert_my_favorite_deck(jsonb) to authenticated;
+
+-- Elimina solo el mazo indicado y libera sus cartas para las consultas de
+-- amigos sin alterar ningún otro mazo.
+create or replace function public.delete_my_favorite_deck(p_id uuid)
+returns timestamptz
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+declare
+  v_user_id uuid := auth.uid();
+  v_now timestamptz := clock_timestamp();
+begin
+  if v_user_id is null then
+    raise exception 'No autenticado';
+  end if;
+
+  delete from public.favorite_decks
+  where user_id = v_user_id and id = p_id;
+
+  perform private.refresh_my_free_counts_impl();
+
+  insert into public.user_sync_state (user_id, updated_at)
+  values (v_user_id, v_now)
+  on conflict (user_id)
+  do update set updated_at = excluded.updated_at;
+
+  return v_now;
+end;
+$$;
+
+revoke all on function public.delete_my_favorite_deck(uuid) from public, anon;
+grant execute on function public.delete_my_favorite_deck(uuid) to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- 6) Funciones de amistad
+-- ---------------------------------------------------------------------------
+
+-- El UPDATE con condición hace que el canje sea atómico: dos personas no
+-- pueden utilizar a la vez el mismo código.
+create or replace function private.redeem_friend_invite_code_impl(p_code text)
 returns public.friendships
 language plpgsql
 security definer
-set search_path = public
+set search_path = ''
 as $$
 declare
   v_owner_id uuid;
@@ -115,23 +749,17 @@ begin
     raise exception 'No autenticado';
   end if;
 
-  select owner_id into v_owner_id
-  from public.friend_invite_codes
-  where code = p_code
+  update public.friend_invite_codes
+  set used_by = v_caller_id, used_at = now()
+  where code = upper(btrim(p_code))
+    and owner_id <> v_caller_id
     and used_by is null
-    and (expires_at is null or expires_at > now());
+    and expires_at > now()
+  returning owner_id into v_owner_id;
 
   if v_owner_id is null then
-    raise exception 'Código inválido o ya usado';
+    raise exception 'Código inválido, caducado o ya utilizado';
   end if;
-
-  if v_owner_id = v_caller_id then
-    raise exception 'No puedes usar tu propio código';
-  end if;
-
-  update public.friend_invite_codes
-    set used_by = v_caller_id, used_at = now()
-    where code = p_code;
 
   if v_owner_id < v_caller_id then
     v_user_a := v_owner_id;
@@ -145,44 +773,151 @@ begin
   values (v_user_a, v_user_b)
   on conflict (user_a_id, user_b_id) do nothing;
 
-  select * into v_friendship
-  from public.friendships
-  where user_a_id = v_user_a and user_b_id = v_user_b;
+  select friendship.* into v_friendship
+  from public.friendships as friendship
+  where friendship.user_a_id = v_user_a
+    and friendship.user_b_id = v_user_b;
 
   return v_friendship;
 end;
 $$;
 
+revoke all on function private.redeem_friend_invite_code_impl(text)
+  from public, anon, authenticated;
+grant execute on function private.redeem_friend_invite_code_impl(text) to authenticated;
+
+create or replace function public.redeem_friend_invite_code(p_code text)
+returns public.friendships
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+begin
+  return private.redeem_friend_invite_code_impl(p_code);
+end;
+$$;
+
+revoke all on function public.redeem_friend_invite_code(text) from public, anon;
 grant execute on function public.redeem_friend_invite_code(text) to authenticated;
 
--- 6) Consultar, entre tus amigos aceptados, quién tiene copias de unas
---    cartas concretas y cuántas. SECURITY DEFINER: cada amigo solo expone
---    las cartas puntuales que se piden, nunca su colección entera.
+create or replace function private.list_my_friends_impl()
+returns table (
+  friendship_id uuid,
+  friend_id uuid,
+  friend_username text
+)
+language sql
+security definer
+set search_path = ''
+stable
+as $$
+  select
+    friendship.id,
+    profile.id,
+    profile.username
+  from public.friendships as friendship
+  join public.profiles as profile
+    on profile.id = case
+      when friendship.user_a_id = auth.uid() then friendship.user_b_id
+      else friendship.user_a_id
+    end
+  where auth.uid() is not null
+    and (friendship.user_a_id = auth.uid() or friendship.user_b_id = auth.uid())
+  order by lower(profile.username);
+$$;
+
+revoke all on function private.list_my_friends_impl()
+  from public, anon, authenticated;
+grant execute on function private.list_my_friends_impl() to authenticated;
+
+create or replace function public.list_my_friends()
+returns table (
+  friendship_id uuid,
+  friend_id uuid,
+  friend_username text
+)
+language sql
+security invoker
+set search_path = ''
+stable
+as $$
+  select * from private.list_my_friends_impl();
+$$;
+
+revoke all on function public.list_my_friends() from public, anon;
+grant execute on function public.list_my_friends() to authenticated;
+
+-- Un amigo nunca puede listar la colección completa de otra persona. Solo
+-- pregunta por los card_id concretos que faltan en el mazo que está revisando.
+create or replace function private.get_friends_card_availability_impl(p_card_ids text[])
+returns table (
+  friend_id uuid,
+  friend_username text,
+  card_id text,
+  owned_count integer,
+  free_count integer
+)
+language plpgsql
+security definer
+set search_path = ''
+stable
+as $$
+begin
+  if auth.uid() is null then
+    raise exception 'No autenticado';
+  end if;
+
+  if coalesce(cardinality(p_card_ids), 0) > 500 then
+    raise exception 'Demasiadas cartas en una sola consulta';
+  end if;
+
+  return query
+  select
+    profile.id,
+    profile.username,
+    card.card_id,
+    card.owned_count,
+    card.free_count
+  from public.friendships as friendship
+  join public.profiles as profile
+    on profile.id = case
+      when friendship.user_a_id = auth.uid() then friendship.user_b_id
+      else friendship.user_a_id
+    end
+  join public.collection_cards as card on card.user_id = profile.id
+  where (friendship.user_a_id = auth.uid() or friendship.user_b_id = auth.uid())
+    and card.card_id = any (p_card_ids)
+    and card.owned_count > 0
+  order by card.card_id, lower(profile.username);
+end;
+$$;
+
+revoke all on function private.get_friends_card_availability_impl(text[])
+  from public, anon, authenticated;
+grant execute on function private.get_friends_card_availability_impl(text[])
+  to authenticated;
+
+-- La primera versión pública devolvía cuatro columnas. PostgreSQL no permite
+-- añadir free_count mediante CREATE OR REPLACE porque cambia el tipo de fila
+-- definido por los parámetros OUT. Eliminar solo la función (no sus datos)
+-- permite recrearla con la firma actual y mantiene este script reutilizable.
+drop function if exists public.get_friends_card_availability(text[]);
+
 create or replace function public.get_friends_card_availability(p_card_ids text[])
 returns table (
   friend_id uuid,
   friend_username text,
   card_id text,
-  owned_count integer
+  owned_count integer,
+  free_count integer
 )
 language sql
-security definer
-set search_path = public
+security invoker
+set search_path = ''
 stable
 as $$
-  select
-    p.id as friend_id,
-    p.username as friend_username,
-    cc.card_id,
-    cc.owned_count
-  from public.friendships f
-  join public.profiles p
-    on p.id = (case when f.user_a_id = auth.uid() then f.user_b_id else f.user_a_id end)
-  join public.collection_cards cc
-    on cc.user_id = p.id
-  where (f.user_a_id = auth.uid() or f.user_b_id = auth.uid())
-    and cc.card_id = any (p_card_ids)
-    and cc.owned_count > 0;
+  select * from private.get_friends_card_availability_impl(p_card_ids);
 $$;
 
+revoke all on function public.get_friends_card_availability(text[]) from public, anon;
 grant execute on function public.get_friends_card_availability(text[]) to authenticated;

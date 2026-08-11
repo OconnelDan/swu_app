@@ -24,7 +24,7 @@ jobs:
       - name: Configurar Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "24"
           cache: "npm"
 
       - name: Instalar dependencias
@@ -32,6 +32,14 @@ jobs:
 
       - name: Ejecutar tests
         run: npm test
+
+      - name: Verificar configuración de cuentas
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: |
+          test -n "$VITE_SUPABASE_URL" || { echo "Falta VITE_SUPABASE_URL"; exit 1; }
+          test -n "$VITE_SUPABASE_ANON_KEY" || { echo "Falta VITE_SUPABASE_ANON_KEY"; exit 1; }
 
       - name: Compilar
         run: npm run build

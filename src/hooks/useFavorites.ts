@@ -1,7 +1,6 @@
-import { useLiveQuery } from "dexie-react-hooks";
-import { db } from "@/db/db";
-import type { FavoriteDeck } from "@/types/deck";
+import { useDataSource } from "@/contexts/DataSourceContext";
 
-export function useFavorites(): FavoriteDeck[] | undefined {
-  return useLiveQuery(() => db.favoriteDecks.orderBy("updatedAt").reverse().toArray(), []);
+/** Mazos del origen activo: Supabase con cuenta, IndexedDB como invitado. */
+export function useFavorites() {
+  return useDataSource().favorites;
 }

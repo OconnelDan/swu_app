@@ -1,5 +1,16 @@
 import { NavLink, Outlet } from "react-router-dom";
-import { Home, Upload, ClipboardCheck, Star, Search, Users, Settings } from "lucide-react";
+import {
+  AlertTriangle,
+  ClipboardCheck,
+  Home,
+  RefreshCw,
+  Search,
+  Settings,
+  Star,
+  Upload,
+  Users
+} from "lucide-react";
+import { useDataSource } from "@/contexts/DataSourceContext";
 import { OfflineBanner } from "./OfflineBanner";
 
 const NAV_ITEMS = [
@@ -13,6 +24,8 @@ const NAV_ITEMS = [
 ];
 
 export function Layout() {
+  const { mode, error, refresh, refreshing } = useDataSource();
+
   return (
     <div className="mx-auto flex min-h-dvh max-w-3xl flex-col pb-20">
       <OfflineBanner />
@@ -22,6 +35,33 @@ export function Layout() {
         </h1>
       </header>
       <main className="flex-1 px-4 pb-6">
+        {mode === "account" && error && (
+          <div
+            role="alert"
+            className="card mb-4 flex items-start gap-2 border-saber-red/50 text-sm"
+          >
+            <AlertTriangle
+              size={18}
+              className="mt-0.5 shrink-0 text-saber-red"
+              aria-hidden="true"
+            />
+            <div className="flex-1">
+              <p>{error}</p>
+              <p className="mt-1 text-xs text-slate-400">
+                No se usarán los datos locales como sustitución de los datos de tu cuenta.
+              </p>
+              <button
+                type="button"
+                className="btn-secondary mt-2"
+                disabled={refreshing}
+                onClick={() => void refresh().catch(() => undefined)}
+              >
+                <RefreshCw size={14} className={refreshing ? "animate-spin" : ""} />
+                Reintentar
+              </button>
+            </div>
+          </div>
+        )}
         <Outlet />
       </main>
       <nav
