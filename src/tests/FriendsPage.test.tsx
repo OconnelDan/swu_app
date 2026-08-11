@@ -1,45 +1,41 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({
-  signInWithOtp: vi.fn().mockResolvedValue({ error: null })
-}));
-
 vi.mock("@/hooks/useAuth", () => ({
-  useAuth: () => ({ session: null, loading: false })
+  useAuth: () => ({
+    session: null,
+    loading: false,
+    passwordRecovery: false,
+    finishPasswordFlow: vi.fn()
+  })
 }));
 
 vi.mock("@/lib/supabaseClient", () => ({
   isSupabaseConfigured: true,
-  supabase: {
-    auth: {
-      signInWithOtp: mocks.signInWithOtp,
-      signOut: vi.fn()
-    }
-  }
+  supabase: {}
 }));
 
 import { FriendsPage } from "@/pages/FriendsPage";
 
 describe("acceso a cuenta y amigos", () => {
-  it("solicita un enlace mágico que regresa a la ruta de Amigos", async () => {
-    render(<FriendsPage />);
+  it("ofrece iniciar sesión o crear cuenta sin solicitar enlaces desde Amigos", () => {
+    render(
+      <MemoryRouter>
+        <FriendsPage />
+      </MemoryRouter>
+    );
 
     expect(screen.queryByRole("button", { name: "Generar código de invitación" })).toBeNull();
-    expect(screen.getByText(/no las funciones de amigos/i)).toBeInTheDocument();
-
-    fireEvent.change(screen.getByLabelText("Email"), {
-      target: { value: "dani@example.com" }
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Enviarme el enlace de acceso" }));
-
-    await waitFor(() => expect(mocks.signInWithOtp).toHaveBeenCalledTimes(1));
-    expect(mocks.signInWithOtp).toHaveBeenCalledWith({
-      email: "dani@example.com",
-      options: {
-        emailRedirectTo: expect.stringMatching(/\?auth=magic-link#\/amigos$/)
-      }
-    });
-    expect(screen.getByRole("status")).toHaveTextContent("Te hemos enviado un enlace");
+    expect(screen.getByText(/amigos requiere una cuenta/i)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Iniciar sesión" })).toHaveAttribute(
+      "href",
+      "/cuenta?vista=iniciar"
+    );
+    expect(screen.getByRole("link", { name: "Crear cuenta" })).toHaveAttribute(
+      "href",
+      "/cuenta?vista=crear"
+    );
+    expect(screen.getByText(/datos de invitado permanecen separados/i)).toBeInTheDocument();
   });
 });

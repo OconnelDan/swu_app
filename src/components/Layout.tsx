@@ -1,16 +1,27 @@
-import { NavLink, Outlet } from "react-router-dom";
+import { useRef, useState } from "react";
+import { Link, NavLink, Outlet } from "react-router-dom";
 import {
   AlertTriangle,
+  ChevronDown,
   ClipboardCheck,
   Home,
+  KeyRound,
+  Loader2,
+  LogIn,
+  LogOut,
   RefreshCw,
   Search,
   Settings,
   Star,
   Upload,
+  UserRound,
+  UserPlus,
   Users
 } from "lucide-react";
 import { useDataSource } from "@/contexts/DataSourceContext";
+import { useAuth } from "@/hooks/useAuth";
+import { getAuthErrorMessage, signOutCurrentSession } from "@/lib/auth";
+import { isSupabaseConfigured } from "@/lib/supabaseClient";
 import { OfflineBanner } from "./OfflineBanner";
 
 const NAV_ITEMS = [
@@ -25,14 +36,107 @@ const NAV_ITEMS = [
 
 export function Layout() {
   const { mode, error, refresh, refreshing } = useDataSource();
+  const { session, loading: authLoading } = useAuth();
+  const accountMenu = useRef<HTMLDetailsElement>(null);
+  const [signingOut, setSigningOut] = useState(false);
+  const [signOutError, setSignOutError] = useState<string | null>(null);
+
+  const closeAccountMenu = () => accountMenu.current?.removeAttribute("open");
+
+  const handleSignOut = async () => {
+    setSignOutError(null);
+    setSigningOut(true);
+    try {
+      await signOutCurrentSession();
+      closeAccountMenu();
+    } catch (cause) {
+      setSignOutError(getAuthErrorMessage(cause, "No se ha podido cerrar la sesión."));
+    } finally {
+      setSigningOut(false);
+    }
+  };
+
+  const userLabel = session?.user.email?.split("@")[0] ?? "Mi cuenta";
 
   return (
     <div className="mx-auto flex min-h-dvh max-w-3xl flex-col pb-20">
       <OfflineBanner />
-      <header className="px-4 pb-2 pt-6">
-        <h1 className="font-display text-lg tracking-wide text-saber-blue">
-          SWU Deck Collection Checker
-        </h1>
+      <header className="flex items-start justify-between gap-3 px-4 pb-3 pt-6">
+        <Link
+          to="/"
+          className="min-w-0 pt-2 font-display text-base tracking-wide text-saber-blue sm:text-lg"
+        >
+          SWU Deck Vault
+        </Link>
+
+        {isSupabaseConfigured && (
+          <details ref={accountMenu} className="relative z-30 shrink-0">
+            <summary className="btn-secondary cursor-pointer list-none px-3 [&::-webkit-details-marker]:hidden">
+              {authLoading ? (
+                <Loader2 size={17} className="animate-spin" />
+              ) : session ? (
+                <UserRound size={17} />
+              ) : (
+                <LogIn size={17} />
+              )}
+              <span className="max-w-[8rem] truncate">
+                {authLoading ? "Cuenta" : session ? userLabel : "Iniciar sesión"}
+              </span>
+              <ChevronDown size={14} />
+            </summary>
+
+            <div className="absolute right-0 mt-2 w-64 space-y-2 rounded-xl border border-space-700 bg-space-900 p-3 shadow-xl">
+              {session ? (
+                <>
+                  <p className="truncate px-1 text-xs text-slate-400" title={session.user.email}>
+                    {session.user.email}
+                  </p>
+                  <Link to="/cuenta" className="btn-secondary w-full" onClick={closeAccountMenu}>
+                    <UserRound size={16} />
+                    Mi cuenta
+                  </Link>
+                  <button
+                    type="button"
+                    className="btn-danger w-full"
+                    disabled={signingOut}
+                    onClick={handleSignOut}
+                  >
+                    {signingOut ? (
+                      <Loader2 size={16} className="animate-spin" />
+                    ) : (
+                      <LogOut size={16} />
+                    )}
+                    Cerrar sesión
+                  </button>
+                </>
+              ) : (
+                <>
+                  <Link
+                    to="/cuenta?vista=iniciar"
+                    className="btn-primary w-full"
+                    onClick={closeAccountMenu}
+                  >
+                    <KeyRound size={16} />
+                    Iniciar sesión
+                  </Link>
+                  <Link
+                    to="/cuenta?vista=crear"
+                    className="btn-secondary w-full"
+                    onClick={closeAccountMenu}
+                  >
+                    <UserPlus size={16} />
+                    Crear cuenta
+                  </Link>
+                </>
+              )}
+              {signOutError && (
+                <p role="alert" className="text-xs text-saber-red">
+                  {signOutError}
+                </p>
+              )}
+            </div>
+          </details>
+        )}
       </header>
       <main className="flex-1 px-4 pb-6">
         {mode === "account" && error && (

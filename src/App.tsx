@@ -8,6 +8,7 @@ import { ResultPage } from "@/pages/ResultPage";
 import { FavoritesPage } from "@/pages/FavoritesPage";
 import { CardFinderPage } from "@/pages/CardFinderPage";
 import { FriendsPage } from "@/pages/FriendsPage";
+import { AccountPage } from "@/pages/AccountPage";
 import { SettingsPage } from "@/pages/SettingsPage";
 import type { DeckComparisonResult, NormalizedDeck } from "@/types/deck";
 
@@ -46,6 +47,7 @@ export default function App() {
         <Route path="/favoritos" element={<FavoritesPage onOpenResult={setResult} />} />
         <Route path="/buscar" element={<CardFinderPage />} />
         <Route path="/amigos" element={<FriendsPage />} />
+        <Route path="/cuenta" element={<AccountPage />} />
         <Route path="/ajustes" element={<SettingsPage />} />
       </Route>
     </Routes>

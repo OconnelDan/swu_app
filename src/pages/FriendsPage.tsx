@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { Copy, Database, Loader2, RefreshCw, Trash2, UserPlus, Users } from "lucide-react";
 import { useDataSource } from "@/contexts/DataSourceContext";
 import { useAuth } from "@/hooks/useAuth";
@@ -12,112 +13,16 @@ import {
   type FriendSummary,
   type UserProfile
 } from "@/lib/friendsRepository";
-import { isSupabaseConfigured, supabase } from "@/lib/supabaseClient";
-
-function getAuthRedirectUrl(): string {
-  const redirectUrl = new URL(import.meta.env.BASE_URL, window.location.origin);
-  redirectUrl.searchParams.set("auth", "magic-link");
-  redirectUrl.hash = "/amigos";
-  return redirectUrl.toString();
-}
+import { isSupabaseConfigured } from "@/lib/supabaseClient";
 
 function formatDate(value: string | null): string {
   if (!value) return "Todavía no hay datos guardados";
   return new Date(value).toLocaleString("es-ES");
 }
 
-function AuthForm() {
-  const [email, setEmail] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  const handleSubmit = async (event: React.FormEvent) => {
-    event.preventDefault();
-    setError(null);
-    setMessage(null);
-    setBusy(true);
-
-    try {
-      const { error: authError } = await supabase!.auth.signInWithOtp({
-        email: email.trim(),
-        options: { emailRedirectTo: getAuthRedirectUrl() }
-      });
-      if (authError) throw authError;
-      setMessage(
-        "Te hemos enviado un enlace de acceso. Ábrelo en este mismo navegador; si es tu primera vez, la cuenta se creará automáticamente."
-      );
-    } catch (cause) {
-      setError(
-        cause instanceof Error ? cause.message : "No se ha podido enviar el enlace de acceso."
-      );
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <div className="space-y-4">
-      <section className="card space-y-3">
-        <h2 className="font-display text-base">Tu cuenta de SWU Deck Vault</h2>
-        <p className="text-sm text-slate-400">
-          Escribe tu email y recibirás un enlace de un solo uso. No necesitas crear ni recordar otra
-          contraseña.
-        </p>
-
-        <form className="space-y-3" onSubmit={handleSubmit}>
-          <div>
-            <label htmlFor="auth-email" className="mb-1 block text-sm text-slate-400">
-              Email
-            </label>
-            <input
-              id="auth-email"
-              type="email"
-              autoComplete="email"
-              required
-              className="w-full rounded-lg border border-space-600 bg-space-950 p-2 text-sm"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-            />
-          </div>
-
-          {error && (
-            <p role="alert" className="text-sm text-saber-red">
-              {error}
-            </p>
-          )}
-          {message && (
-            <p role="status" className="text-sm text-saber-green">
-              {message}
-            </p>
-          )}
-
-          <button type="submit" className="btn-primary w-full" disabled={busy || !email.trim()}>
-            {busy && <Loader2 size={16} className="animate-spin" />}
-            Enviarme el enlace de acceso
-          </button>
-        </form>
-      </section>
-
-      <p className="card text-xs text-slate-400">
-        Sin cuenta puedes seguir usando la colección y los mazos guardados en este dispositivo, pero
-        no las funciones de amigos. Al iniciar sesión se mostrarán únicamente los datos de tu
-        cuenta; los datos de invitado no se mezclan ni se suben automáticamente.
-      </p>
-    </div>
-  );
-}
-
 function AccountManager() {
-  const {
-    collection,
-    favorites,
-    accountUpdatedAt,
-    hasAccountData,
-    error: dataError,
-    refresh,
-    refreshing
-  } = useDataSource();
+  const { collection, favorites, accountUpdatedAt, hasAccountData, refresh, refreshing } =
+    useDataSource();
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [username, setUsername] = useState("");
   const [friends, setFriends] = useState<FriendSummary[] | null>(null);
@@ -230,9 +135,9 @@ function AccountManager() {
 
   return (
     <div className="space-y-4">
-      {(error || dataError) && (
+      {error && (
         <div role="alert" className="card border-saber-red/50 text-sm text-saber-red">
-          {error ?? dataError}
+          {error}
         </div>
       )}
       {message && (
@@ -402,7 +307,35 @@ export function FriendsPage() {
     );
   }
 
-  if (!session) return <AuthForm />;
+  if (!session) {
+    return (
+      <div className="space-y-4">
+        <section className="card space-y-4 text-center">
+          <div>
+            <Users size={28} className="mx-auto text-saber-blue" />
+            <h2 className="mt-2 font-display text-base">Amigos requiere una cuenta</h2>
+            <p className="mt-2 text-sm text-slate-400">
+              Inicia sesión si ya tienes contraseña o crea una cuenta verificando primero tu email.
+            </p>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <Link to="/cuenta?vista=iniciar" className="btn-primary">
+              Iniciar sesión
+            </Link>
+            <Link to="/cuenta?vista=crear" className="btn-secondary">
+              Crear cuenta
+            </Link>
+          </div>
+        </section>
+
+        <p className="card text-xs text-slate-400">
+          Sin cuenta puedes seguir usando la colección y los mazos guardados en este dispositivo,
+          pero no las funciones de amigos. Los datos de invitado permanecen separados y no se suben
+          automáticamente al iniciar sesión.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -410,13 +343,9 @@ export function FriendsPage() {
         <span className="min-w-0 truncate">
           Sesión iniciada como <strong>{session.user.email}</strong>
         </span>
-        <button
-          type="button"
-          className="btn-secondary shrink-0"
-          onClick={() => supabase!.auth.signOut()}
-        >
-          Cerrar sesión
-        </button>
+        <Link to="/cuenta" className="btn-secondary shrink-0">
+          Mi cuenta
+        </Link>
       </div>
       <AccountManager />
     </div>

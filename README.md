@@ -75,12 +75,13 @@ Abre `http://localhost:5173`.
    (con cuántas copias en cada uno), o si no la tienes.
 6. **Ajustes**: tema y mostrar/ocultar imágenes. En modo invitado también
    permite exportar/importar una copia local y borrar los datos del dispositivo.
-7. **Cuenta y amigos** _(opcional, requiere configurar Supabase)_: accede con
-   un enlace mágico enviado a tu email. Desde ese momento, las importaciones de
-   colección y todos los cambios de mazos se guardan directamente en la cuenta.
-   También puedes generar un código de invitación o introducir el de otra
-   persona y consultar qué amigos tienen las cartas que te faltan, cuántas
-   poseen y cuántas conservan libres tras descontar sus mazos.
+7. **Cuenta y amigos** _(opcional, requiere configurar Supabase)_: crea una
+   cuenta verificando primero tu email y asignando después una contraseña. Los
+   accesos posteriores utilizan email y contraseña, con recuperación por
+   correo si la olvidas. Desde ese momento, las importaciones de colección y
+   todos los cambios de mazos se guardan directamente en la cuenta. También
+   puedes generar o canjear códigos de amistad y consultar qué amigos tienen
+   las cartas que te faltan, incluidas sus copias libres.
 
 ### Reparto de cartas entre mazos favoritos
 
@@ -115,11 +116,16 @@ key` en el frontend.
    `https://oconneldan.github.io/swu_app/` y añade como Redirect URL
    `https://oconneldan.github.io/swu_app/**` (añade también la URL local que
    uses durante el desarrollo).
-4. En la app, ve a **Amigos**, solicita el enlace de acceso y ábrelo en el
-   mismo navegador. Si la cuenta está vacía, importa la colección desde
-   **Colección**. En cualquier otro navegador basta con iniciar sesión para
-   recuperar automáticamente esa colección y los mazos guardados.
-5. Para GitHub Pages, crea los secretos de Actions `VITE_SUPABASE_URL` y
+4. En la cabecera, pulsa **Iniciar sesión → Crear cuenta**, introduce el email
+   y abre el enlace de verificación en el mismo navegador. La app regresará a
+   **Cuenta** para crear y repetir la contraseña. A partir de entonces podrás
+   entrar desde cualquier navegador con email y contraseña y recuperar
+   automáticamente la colección y los mazos guardados.
+5. Una cuenta creada anteriormente con enlace mágico conserva su mismo usuario
+   y sus datos: basta con abrir **Mi cuenta → Crear o cambiar contraseña**. La
+   recuperación desde **He olvidado mi contraseña** también vuelve a esa
+   pantalla mediante un enlace de un solo uso.
+6. Para GitHub Pages, crea los secretos de Actions `VITE_SUPABASE_URL` y
    `VITE_SUPABASE_ANON_KEY`. El despliegue se detiene con un mensaje claro si
    falta alguno, evitando publicar accidentalmente la pantalla de cuentas
    deshabilitada.
@@ -204,7 +210,7 @@ src/
 │                       useOnlineStatus (todos reactivos vía Dexie liveQuery
 │                       salvo useAuth, que usa la sesión de Supabase)
 ├─ components/        UI reutilizable (Layout, tabla de resultados, resumen…)
-├─ pages/             Las 8 pantallas de la app (incluye buscador y amigos)
+├─ pages/             Las 9 pantallas de la app (incluye cuenta y amigos)
 ├─ tests/             Suite de Vitest (normalización, comparación, providers,
 │                       favoritos, backup, reparto de cartas entre mazos)
 ```
@@ -266,8 +272,8 @@ diferentes:
   consultan el total y las copias libres de los códigos concretos que les
   faltan; no pueden enumerar tu colección ni leer tus mazos. La clave
   `service_role` de Supabase nunca debe usarse en el frontend.
-- No se almacena ninguna contraseña ni token de terceros en el código; las
-  sesiones por enlace mágico las gestiona Supabase. El SDK guarda su sesión
+- La app nunca almacena ni puede leer las contraseñas: Supabase Auth las recibe
+  por conexión segura y guarda únicamente su hash. El SDK conserva la sesión
   en una base IndexedDB separada, no en `localStorage` ni dentro del archivo de
   copia de seguridad de SWU Deck Vault.
 - La copia de seguridad exportable corresponde al modo invitado y es un único
@@ -298,8 +304,10 @@ ejemplo `/mi-repo/` para GitHub Pages).
 - Las cuentas no tienen modo offline para colección y mazos: se evita mantener
   una segunda copia local que pueda quedar desactualizada o sobrescribir la
   base de datos al volver la conexión.
-- El acceso usa enlaces mágicos de un solo uso; no existe una contraseña propia
-  de SWU Deck Vault que restablecer.
+- El alta y la recuperación de contraseña dependen del envío de emails de
+  Supabase. Su servicio de correo integrado tiene límites bajos y está pensado
+  para pruebas; una publicación con más usuarios debería configurar SMTP
+  propio.
 - El listado de sets conocidos (`SOR, SHD, TWI, JTL, LOF, SEC, LAW, ASH, IBH,
 HMW, TS26`) se
   usa solo para avisos informativos; sets desconocidos igualmente se

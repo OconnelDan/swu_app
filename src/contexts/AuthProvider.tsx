@@ -12,6 +12,7 @@ interface AuthProviderProps {
 export function AuthProvider({ children }: AuthProviderProps) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const [passwordRecovery, setPasswordRecovery] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -35,10 +36,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
         setLoading(false);
       });
 
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+    const { data: listener } = supabase.auth.onAuthStateChange((event, nextSession) => {
       if (!active) return;
       setSession(nextSession);
       setLoading(false);
+      if (event === "PASSWORD_RECOVERY") setPasswordRecovery(true);
+      if (event === "SIGNED_OUT") setPasswordRecovery(false);
     });
 
     return () => {
@@ -47,6 +50,14 @@ export function AuthProvider({ children }: AuthProviderProps) {
     };
   }, []);
 
-  const value = useMemo(() => ({ session, loading }), [session, loading]);
+  const value = useMemo(
+    () => ({
+      session,
+      loading,
+      passwordRecovery,
+      finishPasswordFlow: () => setPasswordRecovery(false)
+    }),
+    [session, loading, passwordRecovery]
+  );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
