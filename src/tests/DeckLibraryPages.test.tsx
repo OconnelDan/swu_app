@@ -2,11 +2,17 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DataSourceContext, type DataSourceValue } from "@/contexts/DataSourceContext";
+import { compareDeckWithCollection } from "@/lib/compareDeckWithCollection";
 import { normalizeDeckJson } from "@/lib/normalizeDeckJson";
 import { FavoritesPage } from "@/pages/FavoritesPage";
 import { MountedDecksPage } from "@/pages/MountedDecksPage";
+import { ResultPage } from "@/pages/ResultPage";
 import type { CollectionCard } from "@/types/collection";
 import type { FavoriteDeck } from "@/types/deck";
+
+vi.mock("@/hooks/useAuth", () => ({
+  useAuth: () => ({ session: null, loading: false })
+}));
 
 function savedDeck(
   id: string,
@@ -139,5 +145,45 @@ describe("Favoritos y mazos montados", () => {
 
     await waitFor(() => expect(unmountFavoriteDeck).toHaveBeenCalledWith("second"));
     expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining("volverá a Favoritos"));
+  });
+
+  it("permite montar el favorito sin salir de su pantalla de resultado", async () => {
+    const idea = savedDeck("idea", "Idea abierta", 2, false);
+    const alreadyMounted = savedDeck("mounted", "Mazo físico", 1, true, 1);
+    const mountFavoriteDeck = vi.fn().mockResolvedValue(undefined);
+    const result = compareDeckWithCollection(idea.normalizedDeck, collection);
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      value: vi.fn((query: string) => ({
+        matches: false,
+        media: query,
+        onchange: null,
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn()
+      }))
+    });
+
+    render(
+      <DataSourceContext.Provider
+        value={dataSource([idea, alreadyMounted], collection, { mountFavoriteDeck })}
+      >
+        <MemoryRouter>
+          <ResultPage deck={idea.normalizedDeck} result={result} favoriteId={idea.id} />
+        </MemoryRouter>
+      </DataSourceContext.Provider>
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Montar mazo" }));
+
+    await waitFor(() => expect(mountFavoriteDeck).toHaveBeenCalledWith("idea"));
+    expect(window.confirm).toHaveBeenCalledWith(
+      expect.stringContaining("1 copia(s) están en otros mazos montados")
+    );
+    expect(screen.getByRole("button", { name: "Mazo montado" })).toBeDisabled();
+    expect(screen.getByRole("status")).toHaveTextContent("ya está en Mazos montados");
   });
 });
