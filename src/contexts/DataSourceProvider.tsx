@@ -14,6 +14,7 @@ import {
   deleteCloudFavoriteDeck,
   loadCloudDataSnapshot,
   mountCloudFavoriteDeck,
+  prioritizeCloudFavoriteDeckCard,
   replaceCloudCollection,
   unmountCloudFavoriteDeck,
   upsertCloudFavoriteDeck,
@@ -24,6 +25,7 @@ import {
   deleteFavoriteDeck as deleteLocalFavoriteDeck,
   duplicateFavoriteDeck as duplicateLocalFavoriteDeck,
   mountFavoriteDeck as mountLocalFavoriteDeck,
+  prioritizeFavoriteDeckCard as prioritizeLocalFavoriteDeckCard,
   renameFavoriteDeck as renameLocalFavoriteDeck,
   saveFavoriteDeck as saveLocalFavoriteDeck,
   unmountFavoriteDeck as unmountLocalFavoriteDeck,
@@ -228,7 +230,8 @@ export function DataSourceProvider({ children }: DataSourceProviderProps) {
         updatedAt: now,
         lastResult: result,
         lastResultFingerprint: result?.collectionFingerprint,
-        isMounted: false
+        isMounted: false,
+        preferredCardIds: []
       };
       await commitAccountMutation(() => upsertCloudFavoriteDeck(favorite));
       return favorite;
@@ -307,7 +310,8 @@ export function DataSourceProvider({ children }: DataSourceProviderProps) {
         updatedAt: now,
         isMounted: false,
         mountedAt: undefined,
-        allocationPriority: undefined
+        allocationPriority: undefined,
+        preferredCardIds: []
       };
       await commitAccountMutation(() => upsertCloudFavoriteDeck(copy));
       return copy;
@@ -341,6 +345,19 @@ export function DataSourceProvider({ children }: DataSourceProviderProps) {
     [commitAccountMutation, requireAccountSnapshot, userId]
   );
 
+  const prioritizeFavoriteDeckCard = useCallback(
+    async (favoriteId: string, cardId: string) => {
+      if (!userId) {
+        await prioritizeLocalFavoriteDeckCard(favoriteId, cardId);
+        return;
+      }
+
+      requireAccountSnapshot();
+      await commitAccountMutation(() => prioritizeCloudFavoriteDeckCard(favoriteId, cardId));
+    },
+    [commitAccountMutation, requireAccountSnapshot, userId]
+  );
+
   const value = useMemo<DataSourceValue>(
     () => ({
       mode,
@@ -358,7 +375,8 @@ export function DataSourceProvider({ children }: DataSourceProviderProps) {
       deleteFavoriteDeck,
       duplicateFavoriteDeck,
       mountFavoriteDeck,
-      unmountFavoriteDeck
+      unmountFavoriteDeck,
+      prioritizeFavoriteDeckCard
     }),
     [
       activeCloudSnapshot,
@@ -369,6 +387,7 @@ export function DataSourceProvider({ children }: DataSourceProviderProps) {
       favorites,
       mountFavoriteDeck,
       mode,
+      prioritizeFavoriteDeckCard,
       refresh,
       refreshing,
       renameFavoriteDeck,
