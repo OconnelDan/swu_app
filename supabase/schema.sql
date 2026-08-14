@@ -240,6 +240,7 @@ create table if not exists public.favorite_decks (
   is_mounted boolean not null default false,
   mounted_at timestamptz,
   allocation_priority bigint,
+  preferred_card_ids jsonb not null default '[]'::jsonb,
   constraint favorite_decks_mount_state_valid check (
     (
       is_mounted
@@ -253,6 +254,10 @@ create table if not exists public.favorite_decks (
       and allocation_priority is null
     )
   ),
+  constraint favorite_decks_preferred_cards_valid check (
+    jsonb_typeof(preferred_card_ids) = 'array'
+    and (is_mounted or jsonb_array_length(preferred_card_ids) = 0)
+  ),
   primary key (user_id, id)
 );
 
@@ -260,6 +265,8 @@ create table if not exists public.favorite_decks (
 alter table public.favorite_decks add column if not exists is_mounted boolean;
 alter table public.favorite_decks add column if not exists mounted_at timestamptz;
 alter table public.favorite_decks add column if not exists allocation_priority bigint;
+alter table public.favorite_decks
+  add column if not exists preferred_card_ids jsonb not null default '[]'::jsonb;
 
 update public.favorite_decks
 set
@@ -270,6 +277,11 @@ where is_mounted is null;
 
 alter table public.favorite_decks alter column is_mounted set default false;
 alter table public.favorite_decks alter column is_mounted set not null;
+update public.favorite_decks
+set preferred_card_ids = '[]'::jsonb
+where preferred_card_ids is null;
+alter table public.favorite_decks alter column preferred_card_ids set default '[]'::jsonb;
+alter table public.favorite_decks alter column preferred_card_ids set not null;
 
 do $$
 begin
@@ -292,6 +304,23 @@ begin
           and mounted_at is null
           and allocation_priority is null
         )
+      );
+  end if;
+end;
+$$;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.favorite_decks'::regclass
+      and conname = 'favorite_decks_preferred_cards_valid'
+  ) then
+    alter table public.favorite_decks
+      add constraint favorite_decks_preferred_cards_valid
+      check (
+        jsonb_typeof(preferred_card_ids) = 'array'
+        and (is_mounted or jsonb_array_length(preferred_card_ids) = 0)
       );
   end if;
 end;
@@ -425,7 +454,8 @@ begin
       last_result_fingerprint text,
       is_mounted boolean,
       mounted_at timestamptz,
-      allocation_priority bigint
+      allocation_priority bigint,
+      preferred_card_ids jsonb
     )
     where deck.id is null
       or nullif(btrim(deck.name), '') is null
@@ -435,6 +465,15 @@ begin
       or jsonb_typeof(deck.normalized_deck) <> 'object'
       or deck.created_at is null
       or deck.updated_at is null
+      or jsonb_typeof(coalesce(deck.preferred_card_ids, '[]'::jsonb)) <> 'array'
+      or jsonb_array_length(coalesce(deck.preferred_card_ids, '[]'::jsonb)) > 500
+      or exists (
+        select 1
+        from jsonb_array_elements_text(
+          coalesce(deck.preferred_card_ids, '[]'::jsonb)
+        ) as preferred(card_id)
+        where preferred.card_id !~ '^[A-Z][A-Z0-9]{1,9}_[A-Z]{0,3}[0-9]{1,4}$'
+      )
       or (
         coalesce(deck.is_mounted, false)
         and (
@@ -445,7 +484,11 @@ begin
       )
       or (
         not coalesce(deck.is_mounted, false)
-        and (deck.mounted_at is not null or deck.allocation_priority is not null)
+        and (
+          deck.mounted_at is not null
+          or deck.allocation_priority is not null
+          or jsonb_array_length(coalesce(deck.preferred_card_ids, '[]'::jsonb)) > 0
+        )
       )
   ) then
     raise exception 'Los mazos contienen un registro inválido';
@@ -496,7 +539,8 @@ begin
     last_result_fingerprint,
     is_mounted,
     mounted_at,
-    allocation_priority
+    allocation_priority,
+    preferred_card_ids
   )
   select
     v_user_id,
@@ -511,7 +555,8 @@ begin
     deck.last_result_fingerprint,
     coalesce(deck.is_mounted, false),
     deck.mounted_at,
-    deck.allocation_priority
+    deck.allocation_priority,
+    coalesce(deck.preferred_card_ids, '[]'::jsonb)
   from jsonb_to_recordset(p_favorite_decks) as deck(
     id uuid,
     name text,
@@ -524,7 +569,8 @@ begin
     last_result_fingerprint text,
     is_mounted boolean,
     mounted_at timestamptz,
-    allocation_priority bigint
+    allocation_priority bigint,
+    preferred_card_ids jsonb
   );
 
   perform private.refresh_my_free_counts_impl();
@@ -860,6 +906,7 @@ begin
     is_mounted = true,
     mounted_at = v_now,
     allocation_priority = v_priority,
+    preferred_card_ids = '[]'::jsonb,
     updated_at = v_now
   where user_id = v_user_id
     and id = p_id
@@ -904,11 +951,21 @@ begin
     raise exception 'El mazo no existe';
   end if;
 
+  insert into public.user_sync_state (user_id, updated_at)
+  values (v_user_id, v_now)
+  on conflict (user_id) do nothing;
+
+  perform 1
+  from public.user_sync_state
+  where user_id = v_user_id
+  for update;
+
   update public.favorite_decks
   set
     is_mounted = false,
     mounted_at = null,
     allocation_priority = null,
+    preferred_card_ids = '[]'::jsonb,
     updated_at = v_now
   where user_id = v_user_id
     and id = p_id
@@ -917,10 +974,9 @@ begin
   if found then
     perform private.refresh_my_free_counts_impl();
 
-    insert into public.user_sync_state (user_id, updated_at)
-    values (v_user_id, v_now)
-    on conflict (user_id)
-    do update set updated_at = excluded.updated_at;
+    update public.user_sync_state
+    set updated_at = v_now
+    where user_id = v_user_id;
   end if;
 
   return v_now;
@@ -929,6 +985,107 @@ $$;
 
 revoke all on function public.unmount_my_favorite_deck(uuid) from public, anon;
 grant execute on function public.unmount_my_favorite_deck(uuid) to authenticated;
+
+-- Da prioridad a un mazo para una única carta. La composición de todos los
+-- mazos permanece intacta: solo cambia qué mazo recibe primero las copias
+-- físicas de ese card_id cuando el cliente calcula el reparto.
+create or replace function public.prioritize_my_mounted_deck_card(
+  p_id uuid,
+  p_card_id text
+)
+returns timestamptz
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+declare
+  v_user_id uuid := auth.uid();
+  v_now timestamptz := clock_timestamp();
+  v_card_id text := upper(btrim(p_card_id));
+begin
+  if v_user_id is null then
+    raise exception 'No autenticado';
+  end if;
+
+  if p_card_id is null
+    or v_card_id !~ '^[A-Z][A-Z0-9]{1,9}_[A-Z]{0,3}[0-9]{1,4}$' then
+    raise exception 'Código de carta inválido';
+  end if;
+
+  insert into public.user_sync_state (user_id, updated_at)
+  values (v_user_id, v_now)
+  on conflict (user_id) do nothing;
+
+  perform 1
+  from public.user_sync_state
+  where user_id = v_user_id
+  for update;
+
+  if not exists (
+    select 1
+    from public.favorite_decks
+    where user_id = v_user_id
+      and id = p_id
+      and is_mounted
+  ) then
+    raise exception 'El mazo no existe o no está montado';
+  end if;
+
+  if not exists (
+    select 1
+    from public.favorite_decks as deck
+    cross join lateral jsonb_to_recordset(
+      case
+        when jsonb_typeof(deck.normalized_deck -> 'allRequiredCards') = 'array'
+          then deck.normalized_deck -> 'allRequiredCards'
+        else '[]'::jsonb
+      end
+    ) as required_card("cardId" text, "requiredCount" integer)
+    where deck.user_id = v_user_id
+      and deck.id = p_id
+      and deck.is_mounted
+      and required_card."cardId" = v_card_id
+      and required_card."requiredCount" > 0
+  ) then
+    raise exception 'La carta no forma parte de este mazo';
+  end if;
+
+  update public.favorite_decks as deck
+  set
+    preferred_card_ids = coalesce((
+      select jsonb_agg(to_jsonb(preferred.card_id))
+      from jsonb_array_elements_text(deck.preferred_card_ids)
+        as preferred(card_id)
+      where preferred.card_id <> v_card_id
+    ), '[]'::jsonb),
+    updated_at = v_now
+  where deck.user_id = v_user_id
+    and deck.preferred_card_ids ? v_card_id;
+
+  update public.favorite_decks
+  set
+    preferred_card_ids = preferred_card_ids || jsonb_build_array(v_card_id),
+    updated_at = v_now
+  where user_id = v_user_id
+    and id = p_id
+    and is_mounted;
+
+  if not found then
+    raise exception 'El mazo ya no está montado';
+  end if;
+
+  update public.user_sync_state
+  set updated_at = v_now
+  where user_id = v_user_id;
+
+  return v_now;
+end;
+$$;
+
+revoke all on function public.prioritize_my_mounted_deck_card(uuid, text)
+  from public, anon;
+grant execute on function public.prioritize_my_mounted_deck_card(uuid, text)
+  to authenticated;
 
 -- ---------------------------------------------------------------------------
 -- 6) Funciones de amistad
