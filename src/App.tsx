@@ -6,6 +6,7 @@ import { ImportCollectionPage } from "@/pages/ImportCollectionPage";
 import { CheckDeckPage } from "@/pages/CheckDeckPage";
 import { ResultPage } from "@/pages/ResultPage";
 import { FavoritesPage } from "@/pages/FavoritesPage";
+import { MountedDecksPage } from "@/pages/MountedDecksPage";
 import { CardFinderPage } from "@/pages/CardFinderPage";
 import { FriendsPage } from "@/pages/FriendsPage";
 import { AccountPage } from "@/pages/AccountPage";
@@ -45,6 +46,7 @@ export default function App() {
           }
         />
         <Route path="/favoritos" element={<FavoritesPage onOpenResult={setResult} />} />
+        <Route path="/montados" element={<MountedDecksPage onOpenResult={setResult} />} />
         <Route path="/buscar" element={<CardFinderPage />} />
         <Route path="/amigos" element={<FriendsPage />} />
         <Route path="/cuenta" element={<AccountPage />} />
