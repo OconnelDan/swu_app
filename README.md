@@ -64,18 +64,21 @@ Abre `http://localhost:5173`.
    Verás una previsualización con avisos antes de confirmar.
 2. **Comprobar**: pega o carga el JSON de un mazo. El resultado indica, para
    cada carta que ya tienes, si hay copias libres o si están comprometidas en
-   otro mazo favorito (y en cuál).
+   otro mazo montado (y en cuál).
 3. **Resultado**: verás qué cartas te faltan, con opción de ver todas o solo
    las faltantes, copiar/descargar la lista, guardar el mazo como favorito, e
    imágenes de cada carta (si el catálogo de cartas está activo).
-4. **Favoritos**: vuelve a comprobar mazos guardados cuando actualices tu
-   colección; la app te avisa si el favorito quedó desactualizado.
-5. **Buscar**: localiza cualquier carta de tu colección por código o nombre y
-   comprueba al instante si está libre, en qué mazo(s) favorito(s) está usada
+4. **Mazos → Favoritos**: guarda ideas o mazos que quieras probar sin reservar
+   ninguna carta. Cuando decidas prepararlo físicamente, pulsa **Montar mazo**.
+5. **Mazos → Montados**: consulta los mazos que sí reservan cartas, su reparto
+   físico real y las copias pendientes. **Desmontar mazo** libera las cartas y
+   devuelve la lista a Favoritos sin borrar su JSON.
+6. **Buscar**: localiza cualquier carta de tu colección por código o nombre y
+   comprueba al instante si está libre, en qué mazo(s) montado(s) está usada
    (con cuántas copias en cada uno), o si no la tienes.
-6. **Ajustes**: tema y mostrar/ocultar imágenes. En modo invitado también
+7. **Ajustes**: tema y mostrar/ocultar imágenes. En modo invitado también
    permite exportar/importar una copia local y borrar los datos del dispositivo.
-7. **Cuenta y amigos** _(opcional, requiere configurar Supabase)_: crea una
+8. **Cuenta y amigos** _(opcional, requiere configurar Supabase)_: crea una
    cuenta verificando primero tu email y asignando después una contraseña. Los
    accesos posteriores utilizan email y contraseña, con recuperación por
    correo si la olvidas. Desde ese momento, las importaciones de colección y
@@ -83,15 +86,15 @@ Abre `http://localhost:5173`.
    puedes generar o canjear códigos de amistad y consultar qué amigos tienen
    las cartas que te faltan, incluidas sus copias libres.
 
-### Reparto de cartas entre mazos favoritos
+### Favoritos y reparto entre mazos montados
 
-Como cada carta física solo puede estar en un mazo a la vez, la app reparte
-las copias de tu colección entre tus mazos favoritos guardados (por orden de
-creación: el favorito más antiguo tiene prioridad). Así, al comprobar un mazo
-nuevo o revisar el buscador de cartas, sabrás no solo cuántas copias tienes en
-total, sino cuántas están **libres** y cuántas ya están **asignadas** a otro
-mazo guardado. Esto es orientativo: no bloquea nada, solo te ayuda a decidir
-si mover cartas de un mazo a otro antes de tu próxima partida o torneo.
+Guardar una lista en **Favoritos** solo conserva la idea: no descuenta copias
+libres. Como cada carta física solo puede estar en un mazo a la vez, la app
+reparte la colección exclusivamente entre los **Mazos montados**. Los que ya
+estaban montados mantienen prioridad y un nuevo mazo utiliza primero las
+copias que continúen libres, sin quitárselas automáticamente a otro. La pantalla
+de montados distingue las copias reservadas, las que están en otro mazo y las
+que realmente no existen en la colección.
 
 En `sample-data/` encontrarás un Excel de colección de ejemplo
 (`coleccion_ejemplo.xlsx`) y dos mazos de ejemplo (`mazo_ejemplo.json` y
@@ -112,6 +115,10 @@ key` en el frontend.
    [`supabase/schema.sql`](./supabase/schema.sql). Crea las tablas de
    perfiles, códigos de invitación, amistades, colecciones y mazos por usuario,
    todas con Row Level Security.
+   Si el proyecto ya estaba instalado antes de la separación entre Favoritos y
+   Montados, ejecuta únicamente
+   [`supabase/migrations/20260814_favoritos_y_mazos_montados.sql`](./supabase/migrations/20260814_favoritos_y_mazos_montados.sql)
+   antes de publicar esta versión.
 3. En **Authentication → URL Configuration**, usa como Site URL
    `https://oconneldan.github.io/swu_app/` y añade como Redirect URL
    `https://oconneldan.github.io/swu_app/**` (añade también la URL local que
@@ -266,7 +273,7 @@ diferentes:
   mazos. No hay forma de desactivar esta consulta desde Ajustes; si prefieres
   que la app no haga ninguna petición de red, desconéctate: seguirá
   funcionando igualmente solo con los códigos de carta.
-- Si activas **Cuenta y amigos**, tu email, tu colección y tus mazos favoritos
+- Si activas **Cuenta y amigos**, tu email, tu colección y tus mazos guardados
   se guardan en tu proyecto de Supabase, protegidos con Row Level Security:
   solo tú puedes leer o sustituir tus datos. Los amigos aceptados únicamente
   consultan el total y las copias libres de los códigos concretos que les
@@ -295,10 +302,9 @@ ejemplo `/mi-repo/` para GitHub Pages).
 
 ## Limitaciones conocidas y mejoras futuras
 
-- El reparto de cartas entre mazos favoritos (ver arriba) es orientativo: no
-  bloquea nada ni reserva copias de verdad, solo te informa. Se asigna por
-  orden de creación del favorito; no hay forma de fijar manualmente la
-  prioridad de un mazo sobre otro.
+- Un mazo nuevo se monta con prioridad inferior a los que ya estaban montados.
+  La reasignación controlada de cartas para dar prioridad a otro mazo es la
+  siguiente mejora prevista; por ahora puedes desmontar uno y montar otro.
 - No hay integración de colección con `sw-unlimited-db.com` (ver más arriba
   por qué, y cómo activarla si en el futuro existe una API oficial).
 - Las cuentas no tienen modo offline para colección y mazos: se evita mantener
