@@ -48,6 +48,12 @@ export interface CardComparison {
   freeCount?: number;
   /** Mazos montados donde ya se están usando copias de esta carta. */
   usedElsewhere?: CardAllocationEntry[];
+  /** Copias físicamente asignadas al mazo montado que se está consultando. */
+  assignedCount?: number;
+  /** Copias pendientes que existen, pero están asignadas a otros mazos montados. */
+  copiesInOtherMountedDecks?: number;
+  /** Copias pendientes que el usuario no posee en su colección. */
+  copiesMissingFromCollection?: number;
   zones: DeckZone[];
   zoneCounts: Partial<Record<DeckZone, number>>;
   status: "complete" | "missing";
@@ -75,7 +81,8 @@ export interface DeckComparisonResult {
  *
  * Un favorito conserva una idea de mazo, pero solo un mazo con `isMounted`
  * reserva físicamente copias de la colección. `allocationPriority` deja
- * preparado el reparto para poder trasladar cartas entre mazos más adelante.
+ * preparado el reparto general. `preferredCardIds` permite dar prioridad a
+ * este mazo para cartas concretas sin trasladar también las demás.
  */
 export interface FavoriteDeck {
   id: string;
@@ -90,4 +97,5 @@ export interface FavoriteDeck {
   isMounted: boolean;
   mountedAt?: string;
   allocationPriority?: number;
+  preferredCardIds?: string[];
 }
