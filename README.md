@@ -66,8 +66,9 @@ Abre `http://localhost:5173`.
    cada carta que ya tienes, si hay copias libres o si están comprometidas en
    otro mazo montado (y en cuál).
 3. **Resultado**: verás qué cartas te faltan, con opción de ver todas o solo
-   las faltantes, copiar/descargar la lista, guardar el mazo como favorito, e
-   imágenes de cada carta (si el catálogo de cartas está activo).
+   las faltantes, copiar la lista, descargarla en TXT o CSV y guardar el mazo
+   como favorito. Si ya está guardado, también puedes **Montar mazo** sin salir
+   del resultado. Se muestran imágenes si el catálogo de cartas está activo.
 4. **Mazos → Favoritos**: guarda ideas o mazos que quieras probar sin reservar
    ninguna carta. Cuando decidas prepararlo físicamente, pulsa **Montar mazo**.
 5. **Mazos → Montados**: consulta los mazos que sí reservan cartas, su reparto
