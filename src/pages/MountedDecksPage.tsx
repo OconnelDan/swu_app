@@ -158,8 +158,8 @@ export function MountedDecksPage({ onOpenResult }: MountedDecksPageProps) {
 
                 {status.copiesInOtherMountedDecks > 0 && (
                   <p className="mt-2 text-xs text-saber-yellow">
-                    Hay cartas en otros mazos montados. La siguiente función permitirá traerlas a
-                    este mazo de forma controlada.
+                    Hay cartas en otros mazos montados. Abre el detalle para traer únicamente las
+                    copias que quieras dar a este mazo.
                   </p>
                 )}
 

@@ -5,7 +5,14 @@ import { DeckSummary } from "@/components/DeckSummary";
 import { DeckResultTable } from "@/components/DeckResultTable";
 import { useDataSource } from "@/contexts/DataSourceContext";
 import { useAuth } from "@/hooks/useAuth";
-import { computeCardAllocations, summarizeMountAvailability } from "@/lib/cardAllocation";
+import {
+  buildMountedDeckComparisonResult,
+  computeCardAllocations,
+  planCardTransfer,
+  summarizeMountAvailability,
+  type CardTransferPlan
+} from "@/lib/cardAllocation";
+import { buildCardTransferConfirmationMessage } from "@/lib/cardTransfer";
 import { isSupabaseConfigured } from "@/lib/supabaseClient";
 import { buildMountDeckConfirmationMessage } from "@/lib/mountDeckConfirmation";
 import { getFriendsCardAvailability, type FriendCardAvailability } from "@/lib/friendsRepository";
@@ -25,6 +32,7 @@ export function ResultPage({ deck, result, favoriteId = null, onFavoriteSaved }:
   const [savedAsFavorite, setSavedAsFavorite] = useState(favoriteId !== null);
   const [mountedOnResult, setMountedOnResult] = useState(false);
   const [mounting, setMounting] = useState(false);
+  const [busyCardId, setBusyCardId] = useState<string | null>(null);
   const [friendAvailability, setFriendAvailability] = useState<
     Map<string, FriendCardAvailability[]>
   >(new Map());
@@ -33,7 +41,8 @@ export function ResultPage({ deck, result, favoriteId = null, onFavoriteSaved }:
   const [favoriteError, setFavoriteError] = useState<string | null>(null);
   const [favoriteMessage, setFavoriteMessage] = useState<string | null>(null);
   const { session } = useAuth();
-  const { collection, favorites, mountFavoriteDeck, saveFavoriteDeck } = useDataSource();
+  const { collection, favorites, mountFavoriteDeck, prioritizeFavoriteDeckCard, saveFavoriteDeck } =
+    useDataSource();
   const navigate = useNavigate();
   const favoriteFromSource = activeFavoriteId
     ? favorites?.find((favorite) => favorite.id === activeFavoriteId)
@@ -46,8 +55,32 @@ export function ResultPage({ deck, result, favoriteId = null, onFavoriteSaved }:
     [collection?.cards, favorites]
   );
   const isMounted = Boolean(activeFavorite?.isMounted || mountedOnResult);
+  const displayedResult = useMemo(() => {
+    if (!result) return null;
+    return activeFavorite?.isMounted
+      ? buildMountedDeckComparisonResult(result, activeFavorite, allocations)
+      : result;
+  }, [activeFavorite, allocations, result]);
+  const transferPlans = useMemo(() => {
+    const plans = new Map<string, CardTransferPlan>();
+    if (!activeFavorite?.isMounted) return plans;
 
-  if (!deck || !result) {
+    for (const card of activeFavorite.normalizedDeck.allRequiredCards) {
+      const plan = planCardTransfer(
+        collection?.cards ?? [],
+        favorites ?? [],
+        activeFavorite.id,
+        card.cardId
+      );
+      if (plan) plans.set(card.cardId, plan);
+    }
+    return plans;
+  }, [activeFavorite, collection?.cards, favorites]);
+  const hasMissingFromCollection = displayedResult?.missingCards.some(
+    (card) => card.copiesMissingFromCollection === undefined || card.copiesMissingFromCollection > 0
+  );
+
+  if (!deck || !displayedResult) {
     return (
       <div className="card text-center text-sm text-slate-300">
         Todavía no has comprobado ningún mazo.{" "}
@@ -62,7 +95,7 @@ export function ResultPage({ deck, result, favoriteId = null, onFavoriteSaved }:
     setFavoriteError(null);
     setFavoriteMessage(null);
     try {
-      const favorite = await saveFavoriteDeck(deck, result);
+      const favorite = await saveFavoriteDeck(deck, displayedResult);
       setActiveFavoriteId(favorite.id);
       setSavedFavoriteSnapshot(favorite);
       setSavedAsFavorite(true);
@@ -98,11 +131,38 @@ export function ResultPage({ deck, result, favoriteId = null, onFavoriteSaved }:
     }
   };
 
+  const handleMoveCard = async (cardId: string) => {
+    const plan = transferPlans.get(cardId);
+    if (!activeFavorite || !plan) return;
+    if (!confirm(buildCardTransferConfirmationMessage(plan))) return;
+
+    setFavoriteError(null);
+    setFavoriteMessage(null);
+    setBusyCardId(cardId);
+    try {
+      await prioritizeFavoriteDeckCard(activeFavorite.id, cardId);
+      setFavoriteMessage(
+        `Se han reasignado ${plan.copiesToMove} copia(s) de ${cardId} a «${activeFavorite.name}».`
+      );
+    } catch (cause) {
+      setFavoriteError(
+        cause instanceof Error ? cause.message : "No se han podido mover las cartas."
+      );
+    } finally {
+      setBusyCardId(null);
+    }
+  };
+
   const handleCheckFriends = async () => {
     setFriendLookupError(null);
     setFriendLookupBusy(true);
     try {
-      const missingCardIds = result.missingCards.map((c) => c.cardId);
+      const missingCardIds = displayedResult.missingCards
+        .filter(
+          (card) =>
+            card.copiesMissingFromCollection === undefined || card.copiesMissingFromCollection > 0
+        )
+        .map((card) => card.cardId);
       const availability = await getFriendsCardAvailability(missingCardIds);
       const map = new Map<string, FriendCardAvailability[]>();
       for (const entry of availability) {
@@ -123,7 +183,7 @@ export function ResultPage({ deck, result, favoriteId = null, onFavoriteSaved }:
   return (
     <div className="space-y-4">
       <DeckSummary
-        result={result}
+        result={displayedResult}
         onSaveFavorite={handleSaveFavorite}
         isFavorite={savedAsFavorite}
         isMounted={isMounted}
@@ -163,7 +223,7 @@ export function ResultPage({ deck, result, favoriteId = null, onFavoriteSaved }:
         </button>
       </div>
 
-      {isSupabaseConfigured && !result.complete && (
+      {isSupabaseConfigured && hasMissingFromCollection && (
         <div className="card space-y-2">
           <button
             type="button"
@@ -185,9 +245,12 @@ export function ResultPage({ deck, result, favoriteId = null, onFavoriteSaved }:
       )}
 
       <DeckResultTable
-        comparisons={result.comparisons}
+        comparisons={displayedResult.comparisons}
         showAll={showAll}
         friendAvailability={friendAvailability}
+        transferPlans={transferPlans}
+        onMoveCard={activeFavorite?.isMounted ? (cardId) => void handleMoveCard(cardId) : undefined}
+        busyCardId={busyCardId}
       />
     </div>
   );
