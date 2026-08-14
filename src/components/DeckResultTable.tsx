@@ -78,7 +78,7 @@ export function DeckResultTable({
               Zona
             </th>
             <th scope="col" className="py-2 pr-2">
-              Usadas en otros mazos
+              Usadas en mazos montados
             </th>
             <th scope="col" className="py-2 pr-2">
               Amigos con esta carta
@@ -152,7 +152,7 @@ export function DeckResultTable({
             </dl>
             {usedElsewhereLabel(row) && (
               <p className="mt-2 text-xs text-slate-400">
-                Usadas en otros mazos: {usedElsewhereLabel(row)}
+                Usadas en mazos montados: {usedElsewhereLabel(row)}
               </p>
             )}
             {friendsLabel(friendAvailability?.get(row.cardId)) && (

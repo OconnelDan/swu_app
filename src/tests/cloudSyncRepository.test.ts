@@ -4,7 +4,8 @@ import type { CloudCollectionRow } from "@/lib/cloudSyncData";
 const mocks = vi.hoisted(() => ({
   getUser: vi.fn(),
   from: vi.fn(),
-  range: vi.fn()
+  range: vi.fn(),
+  rpc: vi.fn()
 }));
 
 vi.mock("@/lib/supabaseClient", () => ({
@@ -12,19 +13,20 @@ vi.mock("@/lib/supabaseClient", () => ({
   supabase: {
     auth: { getUser: mocks.getUser },
     from: mocks.from,
-    rpc: vi.fn()
+    rpc: mocks.rpc
   }
 }));
 
-import { loadCloudDataSnapshot } from "@/lib/cloudSyncRepository";
+import {
+  loadCloudDataSnapshot,
+  mountCloudFavoriteDeck,
+  unmountCloudFavoriteDeck
+} from "@/lib/cloudSyncRepository";
 
 function buildLargeCollection(): CloudCollectionRow[] {
   return Array.from({ length: 2_255 }, (_, index) => {
     const setCode = index < 2_000 ? `S${String(Math.floor(index / 250)).padStart(2, "0")}` : "SEC";
-    const cardNumber = String(index < 2_000 ? (index % 250) + 1 : index - 1_999).padStart(
-      3,
-      "0"
-    );
+    const cardNumber = String(index < 2_000 ? (index % 250) + 1 : index - 1_999).padStart(3, "0");
 
     return {
       card_id: `${setCode}_${cardNumber}`,
@@ -86,6 +88,7 @@ describe("repositorio de datos de cuenta", () => {
     });
     mocks.from.mockReset();
     mocks.range.mockReset();
+    mocks.rpc.mockReset();
   });
 
   it("recupera una colección de más de 2.000 cartas sin truncar las cartas SEC", async () => {
@@ -105,6 +108,24 @@ describe("repositorio de datos de cuenta", () => {
       [0, 999],
       [1_000, 1_999],
       [2_000, 2_999]
+    ]);
+  });
+
+  it("monta y desmonta un mazo mediante las funciones atómicas de la cuenta", async () => {
+    mocks.rpc
+      .mockResolvedValueOnce({ data: "2026-08-14T10:00:00.000Z", error: null })
+      .mockResolvedValueOnce({ data: "2026-08-14T10:01:00.000Z", error: null });
+
+    await expect(mountCloudFavoriteDeck("11111111-1111-4111-8111-111111111111")).resolves.toBe(
+      "2026-08-14T10:00:00.000Z"
+    );
+    await expect(unmountCloudFavoriteDeck("11111111-1111-4111-8111-111111111111")).resolves.toBe(
+      "2026-08-14T10:01:00.000Z"
+    );
+
+    expect(mocks.rpc.mock.calls).toEqual([
+      ["mount_my_favorite_deck", { p_id: "11111111-1111-4111-8111-111111111111" }],
+      ["unmount_my_favorite_deck", { p_id: "11111111-1111-4111-8111-111111111111" }]
     ]);
   });
 });

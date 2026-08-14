@@ -49,7 +49,9 @@ export function DeckSummary({ result, onSaveFavorite, onRecheck, isFavorite }: D
     <div className="space-y-4">
       {result.complete ? (
         <div className="card border-saber-green/50 bg-saber-green/10 text-center">
-          <h2 className="font-display text-xl text-saber-green">Tienes todas las cartas necesarias</h2>
+          <h2 className="font-display text-xl text-saber-green">
+            Tienes todas las cartas necesarias
+          </h2>
         </div>
       ) : (
         <div className="card border-saber-red/50 bg-saber-red/10 text-center">
@@ -77,7 +79,9 @@ export function DeckSummary({ result, onSaveFavorite, onRecheck, isFavorite }: D
         <div>
           <dt className="text-slate-400">Líder</dt>
           <dd>
-            <span className={result.leaderStatus === "missing" ? "badge-missing" : "badge-complete"}>
+            <span
+              className={result.leaderStatus === "missing" ? "badge-missing" : "badge-complete"}
+            >
               {result.leaderStatus === "missing" ? "Pendiente" : "Cubierto"}
             </span>
           </dd>
@@ -103,6 +107,13 @@ export function DeckSummary({ result, onSaveFavorite, onRecheck, isFavorite }: D
         </div>
       )}
 
+      {onSaveFavorite && (
+        <p className="text-xs text-slate-400">
+          Guardarlo en Favoritos conserva la lista para probarla más adelante, pero no reserva
+          cartas. Podrás montarlo después desde la sección Mazos.
+        </p>
+      )}
+
       <div className="flex flex-wrap gap-2">
         <button type="button" className="btn-secondary" onClick={handleCopy}>
           {copied ? <Check size={16} /> : <Copy size={16} />}
@@ -125,9 +136,14 @@ export function DeckSummary({ result, onSaveFavorite, onRecheck, isFavorite }: D
           Descargar CSV
         </button>
         {onSaveFavorite && (
-          <button type="button" className="btn-primary" onClick={onSaveFavorite}>
+          <button
+            type="button"
+            className="btn-primary"
+            disabled={isFavorite}
+            onClick={onSaveFavorite}
+          >
             <Star size={16} />
-            {isFavorite ? "Actualizado en favoritos" : "Guardar como favorito"}
+            {isFavorite ? "Guardado en favoritos" : "Guardar como favorito"}
           </button>
         )}
         {onRecheck && (

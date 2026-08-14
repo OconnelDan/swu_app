@@ -34,6 +34,8 @@ export interface DataSourceValue {
   renameFavoriteDeck: (favoriteId: string, name: string) => Promise<void>;
   deleteFavoriteDeck: (favoriteId: string) => Promise<void>;
   duplicateFavoriteDeck: (favoriteId: string) => Promise<FavoriteDeck | undefined>;
+  mountFavoriteDeck: (favoriteId: string) => Promise<void>;
+  unmountFavoriteDeck: (favoriteId: string) => Promise<void>;
 }
 
 export const DataSourceContext = createContext<DataSourceValue | null>(null);

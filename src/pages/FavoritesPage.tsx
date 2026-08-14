@@ -1,13 +1,14 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Copy, RefreshCw, Trash2 } from "lucide-react";
+import { Copy, Hammer, RefreshCw, Trash2 } from "lucide-react";
+import { DecksTabs } from "@/components/DecksTabs";
 import { useDataSource } from "@/contexts/DataSourceContext";
 import { useFavorites } from "@/hooks/useFavorites";
 import { useCollection } from "@/hooks/useCollection";
 import { SkeletonLines } from "@/components/Skeleton";
 import { isFavoriteOutdated } from "@/lib/favoritesRepository";
 import { compareDeckWithCollection } from "@/lib/compareDeckWithCollection";
-import { computeCardAllocations } from "@/lib/cardAllocation";
+import { computeCardAllocations, summarizeMountAvailability } from "@/lib/cardAllocation";
 import { SwUnlimitedDbCardProvider } from "@/providers/cardProvider/SwUnlimitedDbCardProvider";
 import type { DeckComparisonResult, FavoriteDeck, NormalizedDeck } from "@/types/deck";
 
@@ -18,10 +19,20 @@ interface FavoritesPageProps {
 export function FavoritesPage({ onOpenResult }: FavoritesPageProps) {
   const favorites = useFavorites();
   const collection = useCollection();
-  const { deleteFavoriteDeck, duplicateFavoriteDeck, updateFavoriteResult } = useDataSource();
+  const { deleteFavoriteDeck, duplicateFavoriteDeck, mountFavoriteDeck, updateFavoriteResult } =
+    useDataSource();
   const navigate = useNavigate();
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const favoriteDecks = useMemo(
+    () => (favorites ?? []).filter((deck) => !deck.isMounted),
+    [favorites]
+  );
+  const mountedCount = (favorites?.length ?? 0) - favoriteDecks.length;
+  const allocations = useMemo(
+    () => computeCardAllocations(collection?.cards ?? [], favorites ?? []),
+    [collection?.cards, favorites]
+  );
 
   const handleRecheck = async (favorite: FavoriteDeck) => {
     setError(null);
@@ -77,102 +88,149 @@ export function FavoritesPage({ onOpenResult }: FavoritesPageProps) {
     }
   };
 
-  if (favorites === undefined) return <SkeletonLines count={4} />;
-
-  if (favorites.length === 0) {
-    return (
-      <p className="card text-center text-sm text-slate-300">
-        Todavía no tienes mazos favoritos guardados.
-      </p>
+  const handleMount = async (favorite: FavoriteDeck) => {
+    const availability = summarizeMountAvailability(favorite.normalizedDeck, allocations);
+    const details = [
+      `Se reservarán ${availability.freeCopiesAvailable} copia(s) que ahora están libres.`,
+      availability.copiesInMountedDecks > 0
+        ? `${availability.copiesInMountedDecks} copia(s) están en otros mazos montados y quedarán pendientes.`
+        : null,
+      availability.copiesMissingFromCollection > 0
+        ? `${availability.copiesMissingFromCollection} copia(s) no están en tu colección y quedarán pendientes.`
+        : null
+    ]
+      .filter(Boolean)
+      .join("\n");
+    const confirmed = confirm(
+      `¿Montar «${favorite.name}»?\n\n${details}\n\nNo se quitarán cartas automáticamente a otros mazos.`
     );
-  }
+    if (!confirmed) return;
+
+    setError(null);
+    setBusyId(favorite.id);
+    try {
+      await mountFavoriteDeck(favorite.id);
+      navigate("/montados");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "No se ha podido montar el mazo.");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  if (favorites === undefined || collection === undefined) return <SkeletonLines count={4} />;
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
+      <DecksTabs favoriteCount={favoriteDecks.length} mountedCount={mountedCount} />
+
+      <section className="card space-y-1 text-sm">
+        <h2 className="font-display text-base">Favoritos</h2>
+        <p className="text-slate-400">
+          Aquí guardas ideas y mazos que quieres probar. No reservan ninguna carta hasta que pulses
+          «Montar mazo».
+        </p>
+      </section>
+
       {error && (
         <p role="alert" className="card border-saber-red/50 text-sm text-saber-red">
           {error}
         </p>
       )}
-      <ul className="space-y-3">
-        {favorites.map((favorite) => {
-          const outdated = collection
-            ? isFavoriteOutdated(favorite, collection.fingerprint)
-            : false;
-          const status = favorite.lastResult
-            ? favorite.lastResult.complete
-              ? "Completo"
-              : "Incompleto"
-            : "No comprobado";
+      {favoriteDecks.length === 0 ? (
+        <p className="card text-center text-sm text-slate-300">
+          Todavía no tienes mazos en Favoritos.
+        </p>
+      ) : (
+        <ul className="space-y-3">
+          {favoriteDecks.map((favorite) => {
+            const outdated = collection
+              ? isFavoriteOutdated(favorite, collection.fingerprint)
+              : false;
+            const status = favorite.lastResult
+              ? favorite.lastResult.complete
+                ? "Completo"
+                : "Incompleto"
+              : "No comprobado";
 
-          return (
-            <li key={favorite.id} className="card">
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <h3 className="font-semibold">{favorite.name}</h3>
-                  {favorite.author && (
-                    <p className="text-xs text-slate-400">Autor: {favorite.author}</p>
-                  )}
-                  <p className="mt-1 text-xs text-slate-400">
-                    Líder: {favorite.normalizedDeck.leader?.cardId ?? "—"} · Base:{" "}
-                    {favorite.normalizedDeck.base?.cardId ?? "—"}
-                  </p>
-                  <p className="text-xs text-slate-500">
-                    Guardado: {new Date(favorite.createdAt).toLocaleDateString("es-ES")}
-                  </p>
+            return (
+              <li key={favorite.id} className="card">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <h3 className="font-semibold">{favorite.name}</h3>
+                    {favorite.author && (
+                      <p className="text-xs text-slate-400">Autor: {favorite.author}</p>
+                    )}
+                    <p className="mt-1 text-xs text-slate-400">
+                      Líder: {favorite.normalizedDeck.leader?.cardId ?? "—"} · Base:{" "}
+                      {favorite.normalizedDeck.base?.cardId ?? "—"}
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      Guardado: {new Date(favorite.createdAt).toLocaleDateString("es-ES")}
+                    </p>
+                  </div>
+                  <span
+                    className={
+                      status === "Completo"
+                        ? "badge-complete"
+                        : status === "Incompleto"
+                          ? "badge-missing"
+                          : "badge-warning"
+                    }
+                  >
+                    {status}
+                  </span>
                 </div>
-                <span
-                  className={
-                    status === "Completo"
-                      ? "badge-complete"
-                      : status === "Incompleto"
-                        ? "badge-missing"
-                        : "badge-warning"
-                  }
-                >
-                  {status}
-                </span>
-              </div>
 
-              {outdated && (
-                <p className="mt-2 text-xs text-saber-yellow">
-                  Colección actualizada: vuelve a comprobar este mazo.
-                </p>
-              )}
+                {outdated && (
+                  <p className="mt-2 text-xs text-saber-yellow">
+                    Colección actualizada: vuelve a comprobar este mazo.
+                  </p>
+                )}
 
-              <div className="mt-3 flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  disabled={busyId !== null}
-                  onClick={() => handleRecheck(favorite)}
-                >
-                  <RefreshCw size={14} />
-                  Comprobar de nuevo
-                </button>
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  disabled={busyId !== null}
-                  onClick={() => void handleDuplicate(favorite.id)}
-                >
-                  <Copy size={14} />
-                  Duplicar
-                </button>
-                <button
-                  type="button"
-                  className="btn-danger"
-                  disabled={busyId !== null}
-                  onClick={() => void handleDelete(favorite)}
-                >
-                  <Trash2 size={14} />
-                  Eliminar
-                </button>
-              </div>
-            </li>
-          );
-        })}
-      </ul>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    className="btn-primary"
+                    disabled={busyId !== null}
+                    onClick={() => void handleMount(favorite)}
+                  >
+                    <Hammer size={14} />
+                    Montar mazo
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    disabled={busyId !== null}
+                    onClick={() => handleRecheck(favorite)}
+                  >
+                    <RefreshCw size={14} />
+                    Comprobar de nuevo
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    disabled={busyId !== null}
+                    onClick={() => void handleDuplicate(favorite.id)}
+                  >
+                    <Copy size={14} />
+                    Duplicar
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-danger"
+                    disabled={busyId !== null}
+                    onClick={() => void handleDelete(favorite)}
+                  >
+                    <Trash2 size={14} />
+                    Eliminar
+                  </button>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </div>
   );
 }

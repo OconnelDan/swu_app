@@ -1,5 +1,5 @@
 import type { CollectionCard } from "@/types/collection";
-import type { CardAllocation, FavoriteDeck } from "@/types/deck";
+import type { CardAllocation, FavoriteDeck, NormalizedDeck } from "@/types/deck";
 
 function toOwnedMap(collection: CollectionCard[]): Map<string, number> {
   const map = new Map<string, number>();
@@ -10,12 +10,13 @@ function toOwnedMap(collection: CollectionCard[]): Map<string, number> {
 }
 
 /**
- * Reparte las copias de la colección entre los mazos favoritos guardados que las
- * requieren, dando prioridad al mazo favorito creado antes (orden de creación
- * ascendente). Función pura: no accede a IndexedDB ni a red.
+ * Reparte las copias de la colección exclusivamente entre los mazos montados.
+ * Una idea guardada en Favoritos nunca consume copias. Los valores menores de
+ * `allocationPriority` se atienden primero; los desempates son deterministas.
+ * Función pura: no accede a IndexedDB ni a red.
  *
- * `excludeFavoriteId` permite recomprobar un favorito sin que se cuente a sí
- * mismo como "usando" sus propias cartas.
+ * `excludeFavoriteId` permite recomprobar un mazo montado sin que se cuente a
+ * sí mismo como "usando" sus propias cartas.
  */
 export function computeCardAllocations(
   collection: CollectionCard[],
@@ -37,9 +38,16 @@ export function computeCardAllocations(
   }
 
   const orderedFavorites = favorites
-    .filter((favorite) => favorite.id !== excludeFavoriteId)
+    .filter((favorite) => favorite.isMounted && favorite.id !== excludeFavoriteId)
     .slice()
-    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    .sort((a, b) => {
+      const priorityA = a.allocationPriority ?? Number.MAX_SAFE_INTEGER;
+      const priorityB = b.allocationPriority ?? Number.MAX_SAFE_INTEGER;
+      if (priorityA !== priorityB) return priorityA - priorityB;
+
+      const mountedOrder = (a.mountedAt ?? a.createdAt).localeCompare(b.mountedAt ?? b.createdAt);
+      return mountedOrder !== 0 ? mountedOrder : a.id.localeCompare(b.id);
+    });
 
   for (const favorite of orderedFavorites) {
     for (const card of favorite.normalizedDeck.allRequiredCards) {
@@ -71,4 +79,92 @@ export type CardLocationStatus = "free" | "used" | "not_owned";
 export function getCardLocationStatus(allocation: CardAllocation | undefined): CardLocationStatus {
   if (!allocation || allocation.ownedCount === 0) return "not_owned";
   return allocation.freeCount > 0 ? "free" : "used";
+}
+
+export interface MountAvailabilitySummary {
+  totalRequiredCopies: number;
+  freeCopiesAvailable: number;
+  copiesInMountedDecks: number;
+  copiesMissingFromCollection: number;
+  canMountCompleteWithoutMoving: boolean;
+}
+
+/** Resume qué ocurrirá si una idea guardada pasa a ser un mazo montado. */
+export function summarizeMountAvailability(
+  deck: NormalizedDeck,
+  allocations: Map<string, CardAllocation>
+): MountAvailabilitySummary {
+  let totalRequiredCopies = 0;
+  let freeCopiesAvailable = 0;
+  let copiesInMountedDecks = 0;
+  let copiesMissingFromCollection = 0;
+
+  for (const card of deck.allRequiredCards) {
+    const allocation = allocations.get(card.cardId);
+    const ownedCount = allocation?.ownedCount ?? 0;
+    const availableCount = allocation?.freeCount ?? 0;
+    const missingFromCollection = Math.max(card.requiredCount - ownedCount, 0);
+    const availableForDeck = Math.min(card.requiredCount, availableCount);
+    const inMountedDecks = Math.max(
+      card.requiredCount - availableForDeck - missingFromCollection,
+      0
+    );
+
+    totalRequiredCopies += card.requiredCount;
+    freeCopiesAvailable += availableForDeck;
+    copiesInMountedDecks += inMountedDecks;
+    copiesMissingFromCollection += missingFromCollection;
+  }
+
+  return {
+    totalRequiredCopies,
+    freeCopiesAvailable,
+    copiesInMountedDecks,
+    copiesMissingFromCollection,
+    canMountCompleteWithoutMoving: copiesInMountedDecks === 0 && copiesMissingFromCollection === 0
+  };
+}
+
+export interface MountedDeckAllocationSummary {
+  totalRequiredCopies: number;
+  assignedCopies: number;
+  copiesInOtherMountedDecks: number;
+  copiesMissingFromCollection: number;
+  totalPendingCopies: number;
+  complete: boolean;
+}
+
+/** Calcula el estado físico real de un mazo después de repartir las copias. */
+export function summarizeMountedDeckAllocation(
+  deckRecord: FavoriteDeck,
+  allocations: Map<string, CardAllocation>
+): MountedDeckAllocationSummary {
+  let totalRequiredCopies = 0;
+  let assignedCopies = 0;
+  let copiesInOtherMountedDecks = 0;
+  let copiesMissingFromCollection = 0;
+
+  for (const card of deckRecord.normalizedDeck.allRequiredCards) {
+    const allocation = allocations.get(card.cardId);
+    const ownedCount = allocation?.ownedCount ?? 0;
+    const assignedToDeck =
+      allocation?.allocations.find((entry) => entry.favoriteId === deckRecord.id)?.usedCount ?? 0;
+    const pending = Math.max(card.requiredCount - assignedToDeck, 0);
+    const missingFromCollection = Math.max(card.requiredCount - ownedCount, 0);
+
+    totalRequiredCopies += card.requiredCount;
+    assignedCopies += assignedToDeck;
+    copiesMissingFromCollection += missingFromCollection;
+    copiesInOtherMountedDecks += Math.max(pending - missingFromCollection, 0);
+  }
+
+  const totalPendingCopies = totalRequiredCopies - assignedCopies;
+  return {
+    totalRequiredCopies,
+    assignedCopies,
+    copiesInOtherMountedDecks,
+    copiesMissingFromCollection,
+    totalPendingCopies,
+    complete: totalPendingCopies === 0
+  };
 }

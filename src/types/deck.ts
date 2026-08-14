@@ -20,14 +20,14 @@ export interface NormalizedDeck {
   originalJson: unknown;
 }
 
-/** Una porción de las copias en colección de una carta, asignada a un mazo favorito. */
+/** Una porción de las copias en colección de una carta, asignada a un mazo montado. */
 export interface CardAllocationEntry {
   favoriteId: string;
   favoriteName: string;
   usedCount: number;
 }
 
-/** Reparto de las copias en colección de una carta entre los mazos favoritos guardados. */
+/** Reparto de las copias en colección de una carta entre los mazos montados. */
 export interface CardAllocation {
   cardId: string;
   ownedCount: number;
@@ -44,9 +44,9 @@ export interface CardComparison {
   ownedCount: number;
   missingCount: number;
   surplusCount: number;
-  /** Copias de esta carta no asignadas a ningún mazo favorito (si se calculó el reparto). */
+  /** Copias de esta carta no asignadas a ningún mazo montado (si se calculó el reparto). */
   freeCount?: number;
-  /** Mazos favoritos donde ya se están usando copias de esta carta. */
+  /** Mazos montados donde ya se están usando copias de esta carta. */
   usedElsewhere?: CardAllocationEntry[];
   zones: DeckZone[];
   zoneCounts: Partial<Record<DeckZone, number>>;
@@ -70,7 +70,13 @@ export interface DeckComparisonResult {
   collectionFingerprint: string;
 }
 
-/** Favorito guardado en el origen activo (cuenta o modo invitado). */
+/**
+ * Mazo guardado en el origen activo (cuenta o modo invitado).
+ *
+ * Un favorito conserva una idea de mazo, pero solo un mazo con `isMounted`
+ * reserva físicamente copias de la colección. `allocationPriority` deja
+ * preparado el reparto para poder trasladar cartas entre mazos más adelante.
+ */
 export interface FavoriteDeck {
   id: string;
   name: string;
@@ -81,4 +87,7 @@ export interface FavoriteDeck {
   updatedAt: string;
   lastResult?: DeckComparisonResult;
   lastResultFingerprint?: string;
+  isMounted: boolean;
+  mountedAt?: string;
+  allocationPriority?: number;
 }

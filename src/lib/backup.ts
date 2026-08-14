@@ -29,6 +29,20 @@ export function exportBackupAsJsonText(backup: Backup): string {
 /** Restaura una copia de seguridad, sustituyendo por completo los datos locales. */
 export async function importBackupFromText(text: string): Promise<void> {
   const backup = parseBackupText(text);
+  const favoriteDecks = backup.favoriteDecks.map((deck) => {
+    const hasValidMountedState =
+      deck.isMounted === true &&
+      typeof deck.mountedAt === "string" &&
+      typeof deck.allocationPriority === "number" &&
+      deck.allocationPriority > 0;
+
+    return {
+      ...deck,
+      isMounted: hasValidMountedState,
+      mountedAt: hasValidMountedState ? deck.mountedAt : undefined,
+      allocationPriority: hasValidMountedState ? deck.allocationPriority : undefined
+    };
+  });
 
   await db.transaction(
     "rw",
@@ -46,7 +60,7 @@ export async function importBackupFromText(text: string): Promise<void> {
 
       await db.collectionEntries.bulkPut(backup.collection);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await db.favoriteDecks.bulkPut(backup.favoriteDecks as any[]);
+      await db.favoriteDecks.bulkPut(favoriteDecks as any[]);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       await db.deckChecks.bulkPut(backup.deckChecks as any[]);
       await db.settings.bulkPut(

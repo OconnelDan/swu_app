@@ -13,7 +13,9 @@ const mocks = vi.hoisted(() => ({
   loadCloudDataSnapshot: vi.fn(),
   replaceCloudCollection: vi.fn(),
   upsertCloudFavoriteDeck: vi.fn(),
-  deleteCloudFavoriteDeck: vi.fn()
+  deleteCloudFavoriteDeck: vi.fn(),
+  mountCloudFavoriteDeck: vi.fn(),
+  unmountCloudFavoriteDeck: vi.fn()
 }));
 
 vi.mock("@/hooks/useAuth", () => ({
@@ -27,7 +29,9 @@ vi.mock("@/lib/cloudSyncRepository", async (importOriginal) => {
     loadCloudDataSnapshot: mocks.loadCloudDataSnapshot,
     replaceCloudCollection: mocks.replaceCloudCollection,
     upsertCloudFavoriteDeck: mocks.upsertCloudFavoriteDeck,
-    deleteCloudFavoriteDeck: mocks.deleteCloudFavoriteDeck
+    deleteCloudFavoriteDeck: mocks.deleteCloudFavoriteDeck,
+    mountCloudFavoriteDeck: mocks.mountCloudFavoriteDeck,
+    unmountCloudFavoriteDeck: mocks.unmountCloudFavoriteDeck
   };
 });
 
@@ -88,6 +92,9 @@ function Probe() {
         {data.collection?.cards.map((card) => card.cardId).join(",") ?? "cargando"}
       </p>
       <p data-testid="favorites">{data.favorites?.length ?? "cargando"}</p>
+      <p data-testid="mounted">
+        {data.favorites?.filter((deck) => deck.isMounted).length ?? "cargando"}
+      </p>
       <button
         type="button"
         onClick={() => void data.replaceCollection([cloudCard], importResult([cloudCard]))}
@@ -104,6 +111,24 @@ function Probe() {
       >
         guardar mazo
       </button>
+      <button
+        type="button"
+        onClick={() => {
+          const favoriteId = data.favorites?.[0]?.id;
+          if (favoriteId) void data.mountFavoriteDeck(favoriteId);
+        }}
+      >
+        montar mazo
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          const favoriteId = data.favorites?.[0]?.id;
+          if (favoriteId) void data.unmountFavoriteDeck(favoriteId);
+        }}
+      >
+        desmontar mazo
+      </button>
     </div>
   );
 }
@@ -116,6 +141,8 @@ describe("origen de datos según la sesión", () => {
     mocks.replaceCloudCollection.mockReset().mockResolvedValue("2026-08-11T10:01:00.000Z");
     mocks.upsertCloudFavoriteDeck.mockReset().mockResolvedValue("2026-08-11T10:02:00.000Z");
     mocks.deleteCloudFavoriteDeck.mockReset();
+    mocks.mountCloudFavoriteDeck.mockReset().mockResolvedValue("2026-08-11T10:03:00.000Z");
+    mocks.unmountCloudFavoriteDeck.mockReset().mockResolvedValue("2026-08-11T10:04:00.000Z");
     await db.collectionEntries.clear();
     await db.collectionImports.clear();
     await db.favoriteDecks.clear();
@@ -190,7 +217,8 @@ describe("origen de datos según la sesión", () => {
       originalJson: deck.originalJson,
       normalizedDeck: deck,
       createdAt: "2026-08-11T10:02:00.000Z",
-      updatedAt: "2026-08-11T10:02:00.000Z"
+      updatedAt: "2026-08-11T10:02:00.000Z",
+      isMounted: false
     };
 
     mocks.loadCloudDataSnapshot
@@ -214,6 +242,50 @@ describe("origen de datos según la sesión", () => {
     await waitFor(() => expect(screen.getByTestId("favorites")).toHaveTextContent("1"));
 
     expect(await db.collectionEntries.count()).toBe(0);
+    expect(await db.favoriteDecks.count()).toBe(0);
+  });
+
+  it("monta y desmonta el mazo de una cuenta sin utilizar IndexedDB", async () => {
+    mocks.auth.session = { user: { id: "user-1" } };
+    const deck = normalizeDeckJson({
+      name: "Mazo de cuenta",
+      deck: [{ id: "LAW_038", count: 2 }]
+    });
+    const favorite = {
+      id: "11111111-1111-4111-8111-111111111111",
+      name: deck.name,
+      originalJson: deck.originalJson,
+      normalizedDeck: deck,
+      createdAt: "2026-08-11T10:02:00.000Z",
+      updatedAt: "2026-08-11T10:02:00.000Z",
+      isMounted: false
+    };
+    const mounted = {
+      ...favorite,
+      isMounted: true,
+      mountedAt: "2026-08-11T10:03:00.000Z",
+      allocationPriority: 1
+    };
+
+    mocks.loadCloudDataSnapshot
+      .mockResolvedValueOnce(snapshot([cloudCard], [favorite]))
+      .mockResolvedValueOnce(snapshot([cloudCard], [mounted]))
+      .mockResolvedValueOnce(snapshot([cloudCard], [favorite]));
+
+    render(
+      <DataSourceProvider>
+        <Probe />
+      </DataSourceProvider>
+    );
+
+    await waitFor(() => expect(screen.getByTestId("favorites")).toHaveTextContent("1"));
+    fireEvent.click(screen.getByRole("button", { name: "montar mazo" }));
+    await waitFor(() => expect(mocks.mountCloudFavoriteDeck).toHaveBeenCalledWith(favorite.id));
+    await waitFor(() => expect(screen.getByTestId("mounted")).toHaveTextContent("1"));
+
+    fireEvent.click(screen.getByRole("button", { name: "desmontar mazo" }));
+    await waitFor(() => expect(mocks.unmountCloudFavoriteDeck).toHaveBeenCalledWith(favorite.id));
+    await waitFor(() => expect(screen.getByTestId("mounted")).toHaveTextContent("0"));
     expect(await db.favoriteDecks.count()).toBe(0);
   });
 });

@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { Link, NavLink, Outlet } from "react-router-dom";
+import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import {
   AlertTriangle,
   ChevronDown,
@@ -28,7 +28,7 @@ const NAV_ITEMS = [
   { to: "/", label: "Inicio", icon: Home },
   { to: "/importar", label: "Colección", icon: Upload },
   { to: "/comprobar", label: "Comprobar", icon: ClipboardCheck },
-  { to: "/favoritos", label: "Favoritos", icon: Star },
+  { to: "/favoritos", label: "Mazos", icon: Star },
   { to: "/buscar", label: "Buscar", icon: Search },
   { to: "/amigos", label: "Amigos", icon: Users },
   { to: "/ajustes", label: "Ajustes", icon: Settings }
@@ -40,6 +40,7 @@ export function Layout() {
   const accountMenu = useRef<HTMLDetailsElement>(null);
   const [signingOut, setSigningOut] = useState(false);
   const [signOutError, setSignOutError] = useState<string | null>(null);
+  const location = useLocation();
 
   const closeAccountMenu = () => accountMenu.current?.removeAttribute("open");
 
@@ -178,11 +179,14 @@ export function Layout() {
               <NavLink
                 to={to}
                 end={to === "/"}
-                className={({ isActive }) =>
-                  `flex min-h-[56px] flex-col items-center justify-center gap-1 text-xs font-medium ${
-                    isActive ? "text-saber-blue" : "text-slate-400 hover:text-slate-200"
-                  }`
-                }
+                className={({ isActive }) => {
+                  const isDecksSection = to === "/favoritos" && location.pathname === "/montados";
+                  return `flex min-h-[56px] flex-col items-center justify-center gap-1 text-xs font-medium ${
+                    isActive || isDecksSection
+                      ? "text-saber-blue"
+                      : "text-slate-400 hover:text-slate-200"
+                  }`;
+                }}
               >
                 <Icon size={20} aria-hidden="true" />
                 {label}

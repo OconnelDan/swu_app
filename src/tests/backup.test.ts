@@ -46,4 +46,31 @@ describe("copia de seguridad", () => {
     await expect(importBackupFromText("{ esto no es json valido")).rejects.toThrow();
     await expect(importBackupFromText(JSON.stringify({ version: 99 }))).rejects.toThrow();
   });
+
+  it("restaura los favoritos antiguos como no montados", async () => {
+    const oldBackup = {
+      version: 1,
+      exportedAt: "2026-08-10T10:00:00.000Z",
+      collection: [],
+      favoriteDecks: [
+        {
+          id: "old-favorite",
+          name: "Idea antigua",
+          normalizedDeck: { allRequiredCards: [] },
+          originalJson: {},
+          createdAt: "2026-08-10T10:00:00.000Z",
+          updatedAt: "2026-08-10T10:00:00.000Z"
+        }
+      ],
+      deckChecks: [],
+      settings: {}
+    };
+
+    await importBackupFromText(JSON.stringify(oldBackup));
+
+    expect(await db.favoriteDecks.get("old-favorite")).toMatchObject({
+      name: "Idea antigua",
+      isMounted: false
+    });
+  });
 });

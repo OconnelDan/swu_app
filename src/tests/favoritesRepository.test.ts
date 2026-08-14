@@ -5,8 +5,10 @@ import {
   duplicateFavoriteDeck,
   isFavoriteOutdated,
   listFavoriteDecks,
+  mountFavoriteDeck,
   renameFavoriteDeck,
   saveFavoriteDeck,
+  unmountFavoriteDeck,
   updateFavoriteResult
 } from "@/lib/favoritesRepository";
 import { normalizeDeckJson } from "@/lib/normalizeDeckJson";
@@ -23,6 +25,7 @@ describe("persistencia de favoritos (IndexedDB)", () => {
 
     const saved = await saveFavoriteDeck(deck, result);
     expect(saved.id).toBeTruthy();
+    expect(saved.isMounted).toBe(false);
 
     const all = await listFavoriteDecks();
     expect(all.some((f) => f.id === saved.id)).toBe(true);
@@ -34,10 +37,56 @@ describe("persistencia de favoritos (IndexedDB)", () => {
     const duplicated = await duplicateFavoriteDeck(saved.id);
     expect(duplicated?.id).not.toBe(saved.id);
     expect(duplicated?.name).toContain("copia");
+    expect(duplicated?.isMounted).toBe(false);
 
     await deleteFavoriteDeck(saved.id);
     const afterDelete = await db.favoriteDecks.get(saved.id);
     expect(afterDelete).toBeUndefined();
+  });
+
+  it("monta y desmonta un favorito sin borrar su composición", async () => {
+    const firstDeck = normalizeDeckJson({
+      name: "Primero",
+      deck: [{ id: "SOR_001", count: 2 }]
+    });
+    const secondDeck = normalizeDeckJson({
+      name: "Segundo",
+      deck: [{ id: "SOR_001", count: 1 }]
+    });
+    const first = await saveFavoriteDeck(firstDeck);
+    const second = await saveFavoriteDeck(secondDeck);
+
+    await mountFavoriteDeck(first.id);
+    await mountFavoriteDeck(second.id);
+
+    const mountedFirst = await db.favoriteDecks.get(first.id);
+    const mountedSecond = await db.favoriteDecks.get(second.id);
+    expect(mountedFirst).toMatchObject({ isMounted: true, allocationPriority: 1 });
+    expect(mountedSecond).toMatchObject({ isMounted: true, allocationPriority: 2 });
+    expect(mountedFirst?.mountedAt).toBeTruthy();
+
+    await unmountFavoriteDeck(first.id);
+    const unmounted = await db.favoriteDecks.get(first.id);
+    expect(unmounted).toMatchObject({
+      isMounted: false,
+      normalizedDeck: first.normalizedDeck
+    });
+    expect(unmounted?.mountedAt).toBeUndefined();
+    expect(unmounted?.allocationPriority).toBeUndefined();
+  });
+
+  it("al duplicar un mazo montado la copia vuelve a Favoritos y no reserva cartas", async () => {
+    const deck = normalizeDeckJson({
+      name: "Montado",
+      deck: [{ id: "SOR_001", count: 2 }]
+    });
+    const saved = await saveFavoriteDeck(deck);
+    await mountFavoriteDeck(saved.id);
+
+    const copy = await duplicateFavoriteDeck(saved.id);
+    expect(copy).toMatchObject({ isMounted: false });
+    expect(copy?.mountedAt).toBeUndefined();
+    expect(copy?.allocationPriority).toBeUndefined();
   });
 
   it("actualiza el resultado y la huella de colección de un favorito", async () => {

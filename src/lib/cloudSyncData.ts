@@ -24,6 +24,9 @@ export interface CloudFavoriteDeckRow {
   updated_at: string;
   last_result: unknown | null;
   last_result_fingerprint: string | null;
+  is_mounted: boolean;
+  mounted_at: string | null;
+  allocation_priority: number | null;
 }
 
 const cloudCollectionRowSchema = z
@@ -39,21 +42,32 @@ const cloudCollectionRowSchema = z
     message: "Las copias libres no pueden superar las copias poseídas."
   });
 
-const cloudFavoriteDeckRowSchema = z.object({
-  id: z.string().uuid(),
-  name: z.string().min(1),
-  author: z.string().nullable().optional(),
-  original_json: z.unknown(),
-  normalized_deck: z.record(z.unknown()),
-  created_at: z.string().datetime({ offset: true }),
-  updated_at: z.string().datetime({ offset: true }),
-  last_result: z.record(z.unknown()).nullable().optional(),
-  last_result_fingerprint: z.string().nullable().optional()
-});
+const cloudFavoriteDeckRowSchema = z
+  .object({
+    id: z.string().uuid(),
+    name: z.string().min(1),
+    author: z.string().nullable().optional(),
+    original_json: z.unknown(),
+    normalized_deck: z.record(z.unknown()),
+    created_at: z.string().datetime({ offset: true }),
+    updated_at: z.string().datetime({ offset: true }),
+    last_result: z.record(z.unknown()).nullable().optional(),
+    last_result_fingerprint: z.string().nullable().optional(),
+    is_mounted: z.boolean().default(false),
+    mounted_at: z.string().datetime({ offset: true }).nullable().optional(),
+    allocation_priority: z.number().int().positive().nullable().optional()
+  })
+  .refine(
+    (row) =>
+      row.is_mounted
+        ? Boolean(row.mounted_at && row.allocation_priority)
+        : !row.mounted_at && !row.allocation_priority,
+    { message: "El estado de montaje del mazo no es coherente." }
+  );
 
 /**
  * Prepara la colección para la nube y calcula cuántas copias están realmente
- * libres después de repartirlas entre todos los mazos favoritos.
+ * libres después de repartirlas entre todos los mazos montados.
  */
 export function buildCloudCollectionRows(
   collection: CollectionCard[],
@@ -98,7 +112,10 @@ export function buildCloudFavoriteDeckRows(favoriteDecks: FavoriteDeck[]): Cloud
     created_at: favorite.createdAt,
     updated_at: favorite.updatedAt,
     last_result: favorite.lastResult ?? null,
-    last_result_fingerprint: favorite.lastResultFingerprint ?? null
+    last_result_fingerprint: favorite.lastResultFingerprint ?? null,
+    is_mounted: favorite.isMounted,
+    mounted_at: favorite.mountedAt ?? null,
+    allocation_priority: favorite.allocationPriority ?? null
   }));
 }
 
@@ -127,7 +144,10 @@ export function parseCloudFavoriteDeckRows(rows: unknown[]): FavoriteDeck[] {
       createdAt: new Date(row.created_at).toISOString(),
       updatedAt: new Date(row.updated_at).toISOString(),
       lastResult: (row.last_result ?? undefined) as FavoriteDeck["lastResult"],
-      lastResultFingerprint: row.last_result_fingerprint ?? undefined
+      lastResultFingerprint: row.last_result_fingerprint ?? undefined,
+      isMounted: row.is_mounted,
+      mountedAt: row.mounted_at ? new Date(row.mounted_at).toISOString() : undefined,
+      allocationPriority: row.allocation_priority ?? undefined
     };
   });
 }
