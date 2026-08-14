@@ -41,7 +41,8 @@ export default function App() {
               key={currentResult?.checkedAt}
               deck={currentDeck}
               result={currentResult}
-              isFavorite={currentFavoriteId !== null}
+              favoriteId={currentFavoriteId}
+              onFavoriteSaved={setCurrentFavoriteId}
             />
           }
         />
