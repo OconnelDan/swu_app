@@ -27,6 +27,7 @@ export interface CloudFavoriteDeckRow {
   is_mounted: boolean;
   mounted_at: string | null;
   allocation_priority: number | null;
+  preferred_card_ids: string[];
 }
 
 const cloudCollectionRowSchema = z
@@ -55,13 +56,14 @@ const cloudFavoriteDeckRowSchema = z
     last_result_fingerprint: z.string().nullable().optional(),
     is_mounted: z.boolean().default(false),
     mounted_at: z.string().datetime({ offset: true }).nullable().optional(),
-    allocation_priority: z.number().int().positive().nullable().optional()
+    allocation_priority: z.number().int().positive().nullable().optional(),
+    preferred_card_ids: z.array(z.string().min(1)).max(500).default([])
   })
   .refine(
     (row) =>
       row.is_mounted
         ? Boolean(row.mounted_at && row.allocation_priority)
-        : !row.mounted_at && !row.allocation_priority,
+        : !row.mounted_at && !row.allocation_priority && row.preferred_card_ids.length === 0,
     { message: "El estado de montaje del mazo no es coherente." }
   );
 
@@ -115,7 +117,8 @@ export function buildCloudFavoriteDeckRows(favoriteDecks: FavoriteDeck[]): Cloud
     last_result_fingerprint: favorite.lastResultFingerprint ?? null,
     is_mounted: favorite.isMounted,
     mounted_at: favorite.mountedAt ?? null,
-    allocation_priority: favorite.allocationPriority ?? null
+    allocation_priority: favorite.allocationPriority ?? null,
+    preferred_card_ids: favorite.preferredCardIds ?? []
   }));
 }
 
@@ -147,7 +150,8 @@ export function parseCloudFavoriteDeckRows(rows: unknown[]): FavoriteDeck[] {
       lastResultFingerprint: row.last_result_fingerprint ?? undefined,
       isMounted: row.is_mounted,
       mountedAt: row.mounted_at ? new Date(row.mounted_at).toISOString() : undefined,
-      allocationPriority: row.allocation_priority ?? undefined
+      allocationPriority: row.allocation_priority ?? undefined,
+      preferredCardIds: row.preferred_card_ids
     };
   });
 }
