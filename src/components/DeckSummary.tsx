@@ -1,12 +1,17 @@
 import { useMemo, useState } from "react";
-import { Check, Copy, Download, Star, RefreshCw } from "lucide-react";
+import { Check, Copy, Download, Hammer, Star, RefreshCw } from "lucide-react";
+import { downloadTextFile } from "@/lib/downloadTextFile";
 import type { DeckComparisonResult } from "@/types/deck";
 
 interface DeckSummaryProps {
   result: DeckComparisonResult;
   onSaveFavorite?: () => void;
+  onMountDeck?: () => void;
   onRecheck?: () => void;
   isFavorite?: boolean;
+  isMounted?: boolean;
+  mounting?: boolean;
+  mountDisabled?: boolean;
 }
 
 function buildMissingListText(result: DeckComparisonResult): string {
@@ -25,17 +30,16 @@ function buildCsv(result: DeckComparisonResult): string {
   return [header, ...rows].join("\n");
 }
 
-function downloadFile(content: string, fileName: string, mimeType: string) {
-  const blob = new Blob([content], { type: mimeType });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = fileName;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
-export function DeckSummary({ result, onSaveFavorite, onRecheck, isFavorite }: DeckSummaryProps) {
+export function DeckSummary({
+  result,
+  onSaveFavorite,
+  onMountDeck,
+  onRecheck,
+  isFavorite,
+  isMounted,
+  mounting,
+  mountDisabled
+}: DeckSummaryProps) {
   const [copied, setCopied] = useState(false);
   const missingListText = useMemo(() => buildMissingListText(result), [result]);
 
@@ -122,7 +126,13 @@ export function DeckSummary({ result, onSaveFavorite, onRecheck, isFavorite }: D
         <button
           type="button"
           className="btn-secondary"
-          onClick={() => downloadFile(missingListText, "cartas-faltantes.txt", "text/plain")}
+          onClick={() =>
+            downloadTextFile(
+              missingListText || "No te falta ninguna carta.",
+              "cartas-faltantes.txt",
+              "text/plain"
+            )
+          }
         >
           <Download size={16} />
           Descargar TXT
@@ -130,7 +140,9 @@ export function DeckSummary({ result, onSaveFavorite, onRecheck, isFavorite }: D
         <button
           type="button"
           className="btn-secondary"
-          onClick={() => downloadFile(buildCsv(result), "resultado-comprobacion.csv", "text/csv")}
+          onClick={() =>
+            downloadTextFile(buildCsv(result), "resultado-comprobacion.csv", "text/csv")
+          }
         >
           <Download size={16} />
           Descargar CSV
@@ -144,6 +156,17 @@ export function DeckSummary({ result, onSaveFavorite, onRecheck, isFavorite }: D
           >
             <Star size={16} />
             {isFavorite ? "Guardado en favoritos" : "Guardar como favorito"}
+          </button>
+        )}
+        {isFavorite && onMountDeck && (
+          <button
+            type="button"
+            className={isMounted ? "btn-secondary" : "btn-primary"}
+            disabled={isMounted || mounting || mountDisabled}
+            onClick={onMountDeck}
+          >
+            <Hammer size={16} />
+            {isMounted ? "Mazo montado" : mounting ? "Montando..." : "Montar mazo"}
           </button>
         )}
         {onRecheck && (
