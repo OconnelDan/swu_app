@@ -6,6 +6,7 @@ import {
   isFavoriteOutdated,
   listFavoriteDecks,
   mountFavoriteDeck,
+  prioritizeFavoriteDeckCard,
   renameFavoriteDeck,
   saveFavoriteDeck,
   unmountFavoriteDeck,
@@ -87,6 +88,29 @@ describe("persistencia de favoritos (IndexedDB)", () => {
     expect(copy).toMatchObject({ isMounted: false });
     expect(copy?.mountedAt).toBeUndefined();
     expect(copy?.allocationPriority).toBeUndefined();
+    expect(copy?.preferredCardIds).toEqual([]);
+  });
+
+  it("mueve la prioridad de una carta concreta y la elimina al desmontar", async () => {
+    const deck = normalizeDeckJson({
+      name: "Mazo",
+      deck: [
+        { id: "SOR_001", count: 2 },
+        { id: "LAW_038", count: 1 }
+      ]
+    });
+    const first = await saveFavoriteDeck(deck);
+    const target = await saveFavoriteDeck({ ...deck, name: "Objetivo" });
+    await mountFavoriteDeck(first.id);
+    await mountFavoriteDeck(target.id);
+
+    await prioritizeFavoriteDeckCard(target.id, "SOR_001");
+
+    expect((await db.favoriteDecks.get(first.id))?.preferredCardIds).toEqual([]);
+    expect((await db.favoriteDecks.get(target.id))?.preferredCardIds).toEqual(["SOR_001"]);
+
+    await unmountFavoriteDeck(target.id);
+    expect((await db.favoriteDecks.get(target.id))?.preferredCardIds).toEqual([]);
   });
 
   it("actualiza el resultado y la huella de colección de un favorito", async () => {

@@ -79,7 +79,7 @@ export async function loadCloudDataSnapshot(): Promise<CloudDataSnapshot> {
     client
       .from("favorite_decks")
       .select(
-        "id, name, author, original_json, normalized_deck, created_at, updated_at, last_result, last_result_fingerprint, is_mounted, mounted_at, allocation_priority"
+        "id, name, author, original_json, normalized_deck, created_at, updated_at, last_result, last_result_fingerprint, is_mounted, mounted_at, allocation_priority, preferred_card_ids"
       )
       .eq("user_id", userId)
       .order("updated_at", { ascending: false }),
@@ -158,6 +158,21 @@ export async function unmountCloudFavoriteDeck(favoriteId: string): Promise<stri
   await requireUserId();
   const { data, error } = await client.rpc("unmount_my_favorite_deck", {
     p_id: favoriteId
+  });
+  if (error) throw new Error(error.message);
+  return parseUpdatedAt(data);
+}
+
+/** Da prioridad al mazo montado únicamente para la carta indicada. */
+export async function prioritizeCloudFavoriteDeckCard(
+  favoriteId: string,
+  cardId: string
+): Promise<string> {
+  const client = requireClient();
+  await requireUserId();
+  const { data, error } = await client.rpc("prioritize_my_mounted_deck_card", {
+    p_id: favoriteId,
+    p_card_id: cardId
   });
   if (error) throw new Error(error.message);
   return parseUpdatedAt(data);

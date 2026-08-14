@@ -1,5 +1,7 @@
 import type { CardComparison, DeckZone } from "@/types/deck";
 import type { FriendCardAvailability } from "@/lib/friendsRepository";
+import type { CardTransferPlan } from "@/lib/cardAllocation";
+import { ArrowRightLeft } from "lucide-react";
 import { useSettings } from "@/hooks/useSettings";
 import { CardImageThumbnail } from "./CardImageThumbnail";
 
@@ -32,15 +34,22 @@ interface DeckResultTableProps {
   comparisons: CardComparison[];
   showAll: boolean;
   friendAvailability?: Map<string, FriendCardAvailability[]>;
+  transferPlans?: Map<string, CardTransferPlan>;
+  onMoveCard?: (cardId: string) => void;
+  busyCardId?: string | null;
 }
 
 export function DeckResultTable({
   comparisons,
   showAll,
-  friendAvailability
+  friendAvailability,
+  transferPlans,
+  onMoveCard,
+  busyCardId
 }: DeckResultTableProps) {
   const { settings } = useSettings();
   const rows = showAll ? comparisons : comparisons.filter((c) => c.status === "missing");
+  const mountedDeckView = comparisons.some((comparison) => comparison.assignedCount !== undefined);
 
   if (rows.length === 0) {
     return (
@@ -71,6 +80,11 @@ export function DeckResultTable({
             <th scope="col" className="py-2 pr-2 text-right">
               Tienes
             </th>
+            {mountedDeckView && (
+              <th scope="col" className="py-2 pr-2 text-right">
+                Asignadas aquí
+              </th>
+            )}
             <th scope="col" className="py-2 pr-2 text-right">
               Te faltan
             </th>
@@ -83,6 +97,11 @@ export function DeckResultTable({
             <th scope="col" className="py-2 pr-2">
               Amigos con esta carta
             </th>
+            {onMoveCard && (
+              <th scope="col" className="py-2 pr-2">
+                Acción
+              </th>
+            )}
           </tr>
         </thead>
         <tbody>
@@ -99,16 +118,43 @@ export function DeckResultTable({
               </td>
               <td className="py-2 pr-2 text-right">{row.requiredCount}</td>
               <td className="py-2 pr-2 text-right">{row.ownedCount}</td>
+              {mountedDeckView && (
+                <td className="py-2 pr-2 text-right">{row.assignedCount ?? 0}</td>
+              )}
               <td className="py-2 pr-2 text-right font-semibold">
                 <span className={row.missingCount > 0 ? "text-saber-red" : "text-saber-green"}>
                   {row.missingCount}
                 </span>
               </td>
               <td className="py-2 pr-2 text-slate-400">{zoneLabel(row.zones)}</td>
-              <td className="py-2 pr-2 text-xs text-slate-400">{usedElsewhereLabel(row) ?? "—"}</td>
+              <td className="py-2 pr-2 text-xs text-slate-400">
+                {usedElsewhereLabel(row) ?? "—"}
+                {(row.copiesMissingFromCollection ?? 0) > 0 && (
+                  <span className="mt-1 block text-saber-red">
+                    No poseídas: {row.copiesMissingFromCollection}
+                  </span>
+                )}
+              </td>
               <td className="py-2 pr-2 text-xs text-slate-400">
                 {friendsLabel(friendAvailability?.get(row.cardId)) ?? "—"}
               </td>
+              {onMoveCard && (
+                <td className="py-2 pr-2">
+                  {transferPlans?.has(row.cardId) ? (
+                    <button
+                      type="button"
+                      className="btn-secondary whitespace-nowrap text-xs"
+                      disabled={busyCardId !== null && busyCardId !== undefined}
+                      onClick={() => onMoveCard(row.cardId)}
+                    >
+                      <ArrowRightLeft size={14} />
+                      {busyCardId === row.cardId ? "Moviendo..." : "Mover cartas a este mazo"}
+                    </button>
+                  ) : (
+                    "—"
+                  )}
+                </td>
+              )}
             </tr>
           ))}
         </tbody>
@@ -136,7 +182,9 @@ export function DeckResultTable({
                 {row.status === "missing" ? `Faltan ${row.missingCount}` : "Completa"}
               </span>
             </div>
-            <dl className="mt-2 grid grid-cols-3 gap-2 text-center text-xs">
+            <dl
+              className={`mt-2 grid gap-2 text-center text-xs ${mountedDeckView ? "grid-cols-2" : "grid-cols-3"}`}
+            >
               <div>
                 <dt className="text-slate-400">Necesitas</dt>
                 <dd className="font-semibold">{row.requiredCount}</dd>
@@ -145,6 +193,12 @@ export function DeckResultTable({
                 <dt className="text-slate-400">Tienes</dt>
                 <dd className="font-semibold">{row.ownedCount}</dd>
               </div>
+              {mountedDeckView && (
+                <div>
+                  <dt className="text-slate-400">Asignadas aquí</dt>
+                  <dd className="font-semibold">{row.assignedCount ?? 0}</dd>
+                </div>
+              )}
               <div>
                 <dt className="text-slate-400">Te faltan</dt>
                 <dd className="font-semibold">{row.missingCount}</dd>
@@ -155,10 +209,26 @@ export function DeckResultTable({
                 Usadas en mazos montados: {usedElsewhereLabel(row)}
               </p>
             )}
+            {(row.copiesMissingFromCollection ?? 0) > 0 && (
+              <p className="mt-1 text-xs text-saber-red">
+                No está en tu colección: {row.copiesMissingFromCollection} copia(s).
+              </p>
+            )}
             {friendsLabel(friendAvailability?.get(row.cardId)) && (
               <p className="mt-1 text-xs text-saber-green">
                 Amigos con esta carta: {friendsLabel(friendAvailability?.get(row.cardId))}
               </p>
+            )}
+            {onMoveCard && transferPlans?.has(row.cardId) && (
+              <button
+                type="button"
+                className="btn-secondary mt-3 w-full"
+                disabled={busyCardId !== null && busyCardId !== undefined}
+                onClick={() => onMoveCard(row.cardId)}
+              >
+                <ArrowRightLeft size={16} />
+                {busyCardId === row.cardId ? "Moviendo..." : "Mover cartas a este mazo"}
+              </button>
             )}
           </li>
         ))}

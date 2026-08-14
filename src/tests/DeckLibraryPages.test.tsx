@@ -66,6 +66,7 @@ function dataSource(
     duplicateFavoriteDeck: vi.fn(),
     mountFavoriteDeck: vi.fn(),
     unmountFavoriteDeck: vi.fn(),
+    prioritizeFavoriteDeckCard: vi.fn(),
     ...overrides
   };
 }
@@ -185,5 +186,53 @@ describe("Favoritos y mazos montados", () => {
     );
     expect(screen.getByRole("button", { name: "Mazo montado" })).toBeDisabled();
     expect(screen.getByRole("status")).toHaveTextContent("ya está en Mazos montados");
+  });
+
+  it("muestra un botón en la carta trasladable y confirma sus mazos de origen", async () => {
+    const transferCollection: CollectionCard[] = [{ ...collection[0], ownedCount: 3 }];
+    const first = savedDeck("first", "Mazo A", 2, true, 1);
+    const second = savedDeck("second", "Mazo B", 1, true, 2);
+    const target = savedDeck("target", "Mazo objetivo", 3, true, 3);
+    const prioritizeFavoriteDeckCard = vi.fn().mockResolvedValue(undefined);
+    const result = compareDeckWithCollection(target.normalizedDeck, transferCollection);
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      value: vi.fn((query: string) => ({
+        matches: false,
+        media: query,
+        onchange: null,
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn()
+      }))
+    });
+
+    render(
+      <DataSourceContext.Provider
+        value={dataSource([first, second, target], transferCollection, {
+          prioritizeFavoriteDeckCard
+        })}
+      >
+        <MemoryRouter>
+          <ResultPage deck={target.normalizedDeck} result={result} favoriteId={target.id} />
+        </MemoryRouter>
+      </DataSourceContext.Provider>
+    );
+
+    expect(screen.getAllByText("Faltan 3").length).toBeGreaterThan(0);
+    fireEvent.click(screen.getAllByRole("button", { name: "Mover cartas a este mazo" })[0]);
+
+    await waitFor(() =>
+      expect(prioritizeFavoriteDeckCard).toHaveBeenCalledWith("target", "SOR_001")
+    );
+    expect(window.confirm).toHaveBeenCalledWith(
+      expect.stringContaining("2× SOR_001 desde «Mazo A»")
+    );
+    expect(window.confirm).toHaveBeenCalledWith(
+      expect.stringContaining("1× SOR_001 desde «Mazo B»")
+    );
   });
 });

@@ -35,12 +35,23 @@ export async function importBackupFromText(text: string): Promise<void> {
       typeof deck.mountedAt === "string" &&
       typeof deck.allocationPriority === "number" &&
       deck.allocationPriority > 0;
+    const preferredCardIds =
+      hasValidMountedState && Array.isArray(deck.preferredCardIds)
+        ? [
+            ...new Set(
+              deck.preferredCardIds.filter(
+                (cardId): cardId is string => typeof cardId === "string" && cardId.length > 0
+              )
+            )
+          ]
+        : [];
 
     return {
       ...deck,
       isMounted: hasValidMountedState,
       mountedAt: hasValidMountedState ? deck.mountedAt : undefined,
-      allocationPriority: hasValidMountedState ? deck.allocationPriority : undefined
+      allocationPriority: hasValidMountedState ? deck.allocationPriority : undefined,
+      preferredCardIds
     };
   });
 

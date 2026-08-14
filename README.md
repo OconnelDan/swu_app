@@ -72,8 +72,10 @@ Abre `http://localhost:5173`.
 4. **Mazos → Favoritos**: guarda ideas o mazos que quieras probar sin reservar
    ninguna carta. Cuando decidas prepararlo físicamente, pulsa **Montar mazo**.
 5. **Mazos → Montados**: consulta los mazos que sí reservan cartas, su reparto
-   físico real y las copias pendientes. **Desmontar mazo** libera las cartas y
-   devuelve la lista a Favoritos sin borrar su JSON.
+   físico real y las copias pendientes. Al abrir un mazo incompleto, cada carta
+   disponible en otros mazos tiene su propio botón **Mover cartas a este mazo**
+   y una confirmación previa con el origen exacto de las copias. **Desmontar
+   mazo** libera las cartas y devuelve la lista a Favoritos sin borrar su JSON.
 6. **Buscar**: localiza cualquier carta de tu colección por código o nombre y
    comprueba al instante si está libre, en qué mazo(s) montado(s) está usada
    (con cuántas copias en cada uno), o si no la tienes.
@@ -95,7 +97,9 @@ reparte la colección exclusivamente entre los **Mazos montados**. Los que ya
 estaban montados mantienen prioridad y un nuevo mazo utiliza primero las
 copias que continúen libres, sin quitárselas automáticamente a otro. La pantalla
 de montados distingue las copias reservadas, las que están en otro mazo y las
-que realmente no existen en la colección.
+que realmente no existen en la colección. Desde el detalle se puede dar
+prioridad a una carta concreta: los demás mazos conservan su composición, pero
+quedan marcados como incompletos si ceden alguna de sus copias físicas.
 
 En `sample-data/` encontrarás un Excel de colección de ejemplo
 (`coleccion_ejemplo.xlsx`) y dos mazos de ejemplo (`mazo_ejemplo.json` y
@@ -119,7 +123,10 @@ key` en el frontend.
    Si el proyecto ya estaba instalado antes de la separación entre Favoritos y
    Montados, ejecuta únicamente
    [`supabase/migrations/20260814_favoritos_y_mazos_montados.sql`](./supabase/migrations/20260814_favoritos_y_mazos_montados.sql)
-   antes de publicar esta versión.
+   y, después,
+   [`supabase/migrations/20260814_prioridad_por_carta_mazos_montados.sql`](./supabase/migrations/20260814_prioridad_por_carta_mazos_montados.sql)
+   antes de publicar esta versión. Si la primera migración ya estaba aplicada,
+   ejecuta solamente la segunda.
 3. En **Authentication → URL Configuration**, usa como Site URL
    `https://oconneldan.github.io/swu_app/` y añade como Redirect URL
    `https://oconneldan.github.io/swu_app/**` (añade también la URL local que

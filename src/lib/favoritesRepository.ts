@@ -17,7 +17,8 @@ export async function saveFavoriteDeck(
     updatedAt: now,
     lastResult: result,
     lastResultFingerprint: result?.collectionFingerprint,
-    isMounted: false
+    isMounted: false,
+    preferredCardIds: []
   };
   await db.favoriteDecks.put(favorite);
   return favorite;
@@ -69,6 +70,7 @@ export async function mountFavoriteDeck(favoriteId: string): Promise<void> {
       isMounted: true,
       mountedAt: now,
       allocationPriority: nextPriority,
+      preferredCardIds: [],
       updatedAt: now
     });
   });
@@ -87,6 +89,7 @@ export async function unmountFavoriteDeck(favoriteId: string): Promise<void> {
       isMounted: false,
       mountedAt: undefined,
       allocationPriority: undefined,
+      preferredCardIds: [],
       updatedAt: now
     });
   });
@@ -104,10 +107,47 @@ export async function duplicateFavoriteDeck(favoriteId: string): Promise<Favorit
     updatedAt: now,
     isMounted: false,
     mountedAt: undefined,
-    allocationPriority: undefined
+    allocationPriority: undefined,
+    preferredCardIds: []
   };
   await db.favoriteDecks.put(copy);
   return copy;
+}
+
+/** Da prioridad al mazo objetivo exclusivamente para una carta concreta. */
+export async function prioritizeFavoriteDeckCard(
+  favoriteId: string,
+  cardId: string
+): Promise<void> {
+  await db.transaction("rw", db.favoriteDecks, async () => {
+    const target = await db.favoriteDecks.get(favoriteId);
+    if (!target) throw new Error("El mazo ya no existe.");
+    if (!target.isMounted) throw new Error("Solo puedes mover cartas a un mazo montado.");
+    if (
+      !target.normalizedDeck.allRequiredCards.some(
+        (card) => card.cardId === cardId && card.requiredCount > 0
+      )
+    ) {
+      throw new Error("La carta no forma parte de este mazo.");
+    }
+
+    const now = new Date().toISOString();
+    const decks = await db.favoriteDecks.toArray();
+    const updates = decks.flatMap((deck) => {
+      const withoutCard = (deck.preferredCardIds ?? []).filter(
+        (preferredCardId) => preferredCardId !== cardId
+      );
+      const preferredCardIds = deck.id === favoriteId ? [...withoutCard, cardId] : withoutCard;
+      const current = deck.preferredCardIds ?? [];
+      const unchanged =
+        current.length === preferredCardIds.length &&
+        current.every((preferredCardId, index) => preferredCardId === preferredCardIds[index]);
+
+      return unchanged ? [] : [{ ...deck, preferredCardIds, updatedAt: now }];
+    });
+
+    if (updates.length > 0) await db.favoriteDecks.bulkPut(updates);
+  });
 }
 
 export async function listFavoriteDecks(): Promise<FavoriteDeck[]> {

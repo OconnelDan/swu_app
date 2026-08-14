@@ -36,6 +36,7 @@ export interface DataSourceValue {
   duplicateFavoriteDeck: (favoriteId: string) => Promise<FavoriteDeck | undefined>;
   mountFavoriteDeck: (favoriteId: string) => Promise<void>;
   unmountFavoriteDeck: (favoriteId: string) => Promise<void>;
+  prioritizeFavoriteDeckCard: (favoriteId: string, cardId: string) => Promise<void>;
 }
 
 export const DataSourceContext = createContext<DataSourceValue | null>(null);
