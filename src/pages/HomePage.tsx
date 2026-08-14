@@ -53,7 +53,7 @@ export function HomePage() {
         </Link>
         <Link to="/favoritos" className="btn-secondary w-full">
           <Star size={18} />
-          Ver mazos favoritos
+          Ver favoritos y mazos montados
         </Link>
       </div>
 

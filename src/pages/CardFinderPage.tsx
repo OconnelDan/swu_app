@@ -3,10 +3,7 @@ import { Search } from "lucide-react";
 import { useCollection } from "@/hooks/useCollection";
 import { useFavorites } from "@/hooks/useFavorites";
 import { useSettings } from "@/hooks/useSettings";
-import {
-  computeCardAllocations,
-  getCardLocationStatus
-} from "@/lib/cardAllocation";
+import { computeCardAllocations, getCardLocationStatus } from "@/lib/cardAllocation";
 import { tryGetCardImageUrl } from "@/lib/cardImageUrl";
 import { searchCards } from "@/lib/cardSearch";
 import { CardImageThumbnail } from "@/components/CardImageThumbnail";
@@ -19,7 +16,7 @@ interface CardCandidate {
   name?: string;
 }
 
-/** Reúne todos los cardId conocidos: los de tu colección y los usados en favoritos. */
+/** Reúne todos los cardId conocidos: los de tu colección y los mazos guardados. */
 function buildCandidates(
   collectionCards: { cardId: string; name?: string }[],
   favorites: {
@@ -54,20 +51,14 @@ function buildCandidates(
 
 export function CardFinderPage() {
   const [query, setQuery] = useState("");
-  const [cardInfos, setCardInfos] = useState<Map<string, CardInfo>>(
-    new Map()
-  );
+  const [cardInfos, setCardInfos] = useState<Map<string, CardInfo>>(new Map());
 
   const collection = useCollection();
   const favorites = useFavorites();
   const { settings } = useSettings();
 
   const allocations = useMemo(
-    () =>
-      computeCardAllocations(
-        collection?.cards ?? [],
-        favorites ?? []
-      ),
+    () => computeCardAllocations(collection?.cards ?? [], favorites ?? []),
     [collection?.cards, favorites]
   );
 
@@ -113,12 +104,7 @@ export function CardFinderPage() {
   }, [collection?.cards, favorites]);
 
   const candidates = useMemo(
-    () =>
-      buildCandidates(
-        collection?.cards ?? [],
-        favorites ?? [],
-        cardInfos
-      ),
+    () => buildCandidates(collection?.cards ?? [], favorites ?? [], cardInfos),
     [collection?.cards, favorites, cardInfos]
   );
 
@@ -136,15 +122,11 @@ export function CardFinderPage() {
   return (
     <div className="space-y-4">
       <section className="card space-y-2">
-        <h2 className="font-display text-base">
-          Buscar una carta
-        </h2>
+        <h2 className="font-display text-base">Buscar una carta</h2>
 
         <p className="text-xs text-slate-400">
-          Busca por nombre, colección o código (p. ej. ASH_001,
-          ASH 1 o ASH_256) para saber si tienes la carta libre,
-          en qué mazo favorito está usada, o si no la tienes en
-          tu colección.
+          Busca por nombre, colección o código (p. ej. ASH_001, ASH 1 o ASH_256) para saber si
+          tienes la carta libre, en qué mazo montado está usada, o si no la tienes en tu colección.
         </p>
 
         <label htmlFor="card-search" className="sr-only">
@@ -181,46 +163,28 @@ export function CardFinderPage() {
           const status = getCardLocationStatus(allocation);
           const info = cardInfos.get(candidate.cardId);
 
-          const imageUrl =
-            info?.imageUrl ??
-            tryGetCardImageUrl(candidate.cardId);
+          const imageUrl = info?.imageUrl ?? tryGetCardImageUrl(candidate.cardId);
 
           return (
             <li key={candidate.cardId} className="card">
               <div className="flex items-start gap-3">
                 {settings.showImages && imageUrl && (
-                  <CardImageThumbnail
-                    src={imageUrl}
-                    className="h-20 w-auto rounded"
-                  />
+                  <CardImageThumbnail src={imageUrl} className="h-20 w-auto rounded" />
                 )}
 
                 <div className="flex-1">
-                  <p className="font-mono text-xs text-slate-400">
-                    {candidate.cardId}
-                  </p>
+                  <p className="font-mono text-xs text-slate-400">{candidate.cardId}</p>
 
-                  <p className="font-semibold">
-                    {candidate.name ??
-                      "Carta sin nombre en caché"}
-                  </p>
+                  <p className="font-semibold">{candidate.name ?? "Carta sin nombre en caché"}</p>
 
                   {status === "not_owned" ? (
-                    <span className="badge-missing mt-1 inline-block">
-                      No está en tu colección
-                    </span>
+                    <span className="badge-missing mt-1 inline-block">No está en tu colección</span>
                   ) : (
                     <p className="mt-1 text-sm">
-                      Tienes{" "}
-                      <strong>
-                        {allocation!.ownedCount}
-                      </strong>{" "}
-                      copia(s), de las cuales{" "}
+                      Tienes <strong>{allocation!.ownedCount}</strong> copia(s), de las cuales{" "}
                       <strong
                         className={
-                          allocation!.freeCount > 0
-                            ? "text-saber-green"
-                            : "text-saber-red"
+                          allocation!.freeCount > 0 ? "text-saber-green" : "text-saber-red"
                         }
                       >
                         {allocation!.freeCount}
@@ -229,24 +193,16 @@ export function CardFinderPage() {
                     </p>
                   )}
 
-                  {allocation &&
-                    allocation.allocations.length > 0 && (
-                      <ul className="mt-1 space-y-0.5 text-xs text-slate-400">
-                        {allocation.allocations.map(
-                          (allocationItem) => (
-                            <li
-                              key={
-                                allocationItem.favoriteId
-                              }
-                            >
-                              {allocationItem.usedCount}x
-                              usada en el mazo favorito «
-                              {allocationItem.favoriteName}»
-                            </li>
-                          )
-                        )}
-                      </ul>
-                    )}
+                  {allocation && allocation.allocations.length > 0 && (
+                    <ul className="mt-1 space-y-0.5 text-xs text-slate-400">
+                      {allocation.allocations.map((allocationItem) => (
+                        <li key={allocationItem.favoriteId}>
+                          {allocationItem.usedCount}x usada en el mazo montado «
+                          {allocationItem.favoriteName}»
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
               </div>
             </li>

@@ -190,7 +190,8 @@ function AccountManager() {
               <p>
                 <strong>{collection.differentCards}</strong> cartas diferentes ·{" "}
                 <strong>{collection.totalCopies}</strong> copias ·{" "}
-                <strong>{favorites.length}</strong> mazos
+                <strong>{favorites.filter((deck) => !deck.isMounted).length}</strong> favoritos ·{" "}
+                <strong>{favorites.filter((deck) => deck.isMounted).length}</strong> montados
               </p>
               <p className="mt-1 text-xs text-slate-500">
                 Última actualización: {formatDate(accountUpdatedAt)}

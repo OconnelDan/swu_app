@@ -44,9 +44,14 @@ export function SettingsPage() {
   };
 
   const handleClearFavorites = async () => {
-    if (!confirm("¿Borrar todos los mazos favoritos? Esta acción no se puede deshacer.")) return;
+    if (
+      !confirm(
+        "¿Borrar todos los mazos guardados, incluidos los montados? Esta acción no se puede deshacer."
+      )
+    )
+      return;
     await db.favoriteDecks.clear();
-    setMessage("Favoritos borrados.");
+    setMessage("Mazos guardados borrados.");
   };
 
   return (
@@ -153,7 +158,7 @@ export function SettingsPage() {
               </button>
               <button type="button" className="btn-danger" onClick={handleClearFavorites}>
                 <Trash2 size={16} />
-                Borrar favoritos locales
+                Borrar mazos locales
               </button>
             </div>
           </section>
