@@ -20,6 +20,7 @@ vi.mock("@/lib/supabaseClient", () => ({
 import {
   loadCloudDataSnapshot,
   mountCloudFavoriteDeck,
+  prioritizeCloudFavoriteDeckCard,
   unmountCloudFavoriteDeck
 } from "@/lib/cloudSyncRepository";
 
@@ -111,20 +112,29 @@ describe("repositorio de datos de cuenta", () => {
     ]);
   });
 
-  it("monta y desmonta un mazo mediante las funciones atómicas de la cuenta", async () => {
+  it("monta, prioriza una carta y desmonta mediante funciones atómicas", async () => {
     mocks.rpc
       .mockResolvedValueOnce({ data: "2026-08-14T10:00:00.000Z", error: null })
+      .mockResolvedValueOnce({ data: "2026-08-14T10:00:30.000Z", error: null })
       .mockResolvedValueOnce({ data: "2026-08-14T10:01:00.000Z", error: null });
 
     await expect(mountCloudFavoriteDeck("11111111-1111-4111-8111-111111111111")).resolves.toBe(
       "2026-08-14T10:00:00.000Z"
     );
+    await expect(
+      prioritizeCloudFavoriteDeckCard("11111111-1111-4111-8111-111111111111", "SEC_041")
+    ).resolves.toBe("2026-08-14T10:00:30.000Z");
+
     await expect(unmountCloudFavoriteDeck("11111111-1111-4111-8111-111111111111")).resolves.toBe(
       "2026-08-14T10:01:00.000Z"
     );
 
     expect(mocks.rpc.mock.calls).toEqual([
       ["mount_my_favorite_deck", { p_id: "11111111-1111-4111-8111-111111111111" }],
+      [
+        "prioritize_my_mounted_deck_card",
+        { p_id: "11111111-1111-4111-8111-111111111111", p_card_id: "SEC_041" }
+      ],
       ["unmount_my_favorite_deck", { p_id: "11111111-1111-4111-8111-111111111111" }]
     ]);
   });

@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   upsertCloudFavoriteDeck: vi.fn(),
   deleteCloudFavoriteDeck: vi.fn(),
   mountCloudFavoriteDeck: vi.fn(),
+  prioritizeCloudFavoriteDeckCard: vi.fn(),
   unmountCloudFavoriteDeck: vi.fn()
 }));
 
@@ -31,6 +32,7 @@ vi.mock("@/lib/cloudSyncRepository", async (importOriginal) => {
     upsertCloudFavoriteDeck: mocks.upsertCloudFavoriteDeck,
     deleteCloudFavoriteDeck: mocks.deleteCloudFavoriteDeck,
     mountCloudFavoriteDeck: mocks.mountCloudFavoriteDeck,
+    prioritizeCloudFavoriteDeckCard: mocks.prioritizeCloudFavoriteDeckCard,
     unmountCloudFavoriteDeck: mocks.unmountCloudFavoriteDeck
   };
 });
@@ -129,6 +131,15 @@ function Probe() {
       >
         desmontar mazo
       </button>
+      <button
+        type="button"
+        onClick={() => {
+          const favoriteId = data.favorites?.[0]?.id;
+          if (favoriteId) void data.prioritizeFavoriteDeckCard(favoriteId, "LAW_038");
+        }}
+      >
+        mover carta
+      </button>
     </div>
   );
 }
@@ -142,6 +153,7 @@ describe("origen de datos según la sesión", () => {
     mocks.upsertCloudFavoriteDeck.mockReset().mockResolvedValue("2026-08-11T10:02:00.000Z");
     mocks.deleteCloudFavoriteDeck.mockReset();
     mocks.mountCloudFavoriteDeck.mockReset().mockResolvedValue("2026-08-11T10:03:00.000Z");
+    mocks.prioritizeCloudFavoriteDeckCard.mockReset().mockResolvedValue("2026-08-11T10:03:30.000Z");
     mocks.unmountCloudFavoriteDeck.mockReset().mockResolvedValue("2026-08-11T10:04:00.000Z");
     await db.collectionEntries.clear();
     await db.collectionImports.clear();
@@ -266,10 +278,15 @@ describe("origen de datos según la sesión", () => {
       mountedAt: "2026-08-11T10:03:00.000Z",
       allocationPriority: 1
     };
+    const prioritized = {
+      ...mounted,
+      preferredCardIds: ["LAW_038"]
+    };
 
     mocks.loadCloudDataSnapshot
       .mockResolvedValueOnce(snapshot([cloudCard], [favorite]))
       .mockResolvedValueOnce(snapshot([cloudCard], [mounted]))
+      .mockResolvedValueOnce(snapshot([cloudCard], [prioritized]))
       .mockResolvedValueOnce(snapshot([cloudCard], [favorite]));
 
     render(
@@ -282,6 +299,11 @@ describe("origen de datos según la sesión", () => {
     fireEvent.click(screen.getByRole("button", { name: "montar mazo" }));
     await waitFor(() => expect(mocks.mountCloudFavoriteDeck).toHaveBeenCalledWith(favorite.id));
     await waitFor(() => expect(screen.getByTestId("mounted")).toHaveTextContent("1"));
+
+    fireEvent.click(screen.getByRole("button", { name: "mover carta" }));
+    await waitFor(() =>
+      expect(mocks.prioritizeCloudFavoriteDeckCard).toHaveBeenCalledWith(favorite.id, "LAW_038")
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "desmontar mazo" }));
     await waitFor(() => expect(mocks.unmountCloudFavoriteDeck).toHaveBeenCalledWith(favorite.id));

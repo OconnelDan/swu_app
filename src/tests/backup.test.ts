@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { db } from "@/db/db";
 import { exportBackup, exportBackupAsJsonText, importBackupFromText } from "@/lib/backup";
+import { normalizeDeckJson } from "@/lib/normalizeDeckJson";
 
 describe("copia de seguridad", () => {
   beforeEach(async () => {
@@ -20,6 +21,19 @@ describe("copia de seguridad", () => {
       ownedCount: 3
     });
     await db.settings.put({ key: "theme", value: "dark" });
+    const deck = normalizeDeckJson({ name: "Montado", deck: [{ id: "SOR_001", count: 2 }] });
+    await db.favoriteDecks.put({
+      id: "mounted-deck",
+      name: deck.name,
+      originalJson: deck.originalJson,
+      normalizedDeck: deck,
+      createdAt: "2026-08-14T10:00:00.000Z",
+      updatedAt: "2026-08-14T10:00:00.000Z",
+      isMounted: true,
+      mountedAt: "2026-08-14T10:00:00.000Z",
+      allocationPriority: 1,
+      preferredCardIds: ["SOR_001"]
+    });
 
     const backup = await exportBackup();
     expect(backup.version).toBe(1);
@@ -40,6 +54,10 @@ describe("copia de seguridad", () => {
 
     const restoredSetting = await db.settings.get("theme");
     expect(restoredSetting?.value).toBe("dark");
+    expect(await db.favoriteDecks.get("mounted-deck")).toMatchObject({
+      isMounted: true,
+      preferredCardIds: ["SOR_001"]
+    });
   });
 
   it("rechaza un archivo de copia de seguridad con formato inválido", async () => {
@@ -70,7 +88,8 @@ describe("copia de seguridad", () => {
 
     expect(await db.favoriteDecks.get("old-favorite")).toMatchObject({
       name: "Idea antigua",
-      isMounted: false
+      isMounted: false,
+      preferredCardIds: []
     });
   });
 });

@@ -17,7 +17,8 @@ function favorite(
   createdAt: string,
   deck: { id: string; count: number }[],
   allocationPriority = 1,
-  isMounted = true
+  isMounted = true,
+  preferredCardIds: string[] = []
 ): FavoriteDeck {
   const normalizedDeck = normalizeDeckJson({ name, deck });
   return {
@@ -29,7 +30,8 @@ function favorite(
     updatedAt: createdAt,
     isMounted,
     mountedAt: isMounted ? createdAt : undefined,
-    allocationPriority: isMounted ? allocationPriority : undefined
+    allocationPriority: isMounted ? allocationPriority : undefined,
+    preferredCardIds
   };
 }
 
@@ -59,7 +61,9 @@ describe("datos para sincronización en la nube", () => {
         { id: "SOR_001", count: 2 },
         { id: "LAW_038", count: 1 }
       ],
-      1
+      1,
+      true,
+      ["LAW_038"]
     ),
     favorite(
       "22222222-2222-4222-8222-222222222222",
@@ -122,6 +126,7 @@ describe("datos para sincronización en la nube", () => {
     const collectionRows = buildCloudCollectionRows(collection, favoriteDecks);
     const deckRows = buildCloudFavoriteDeckRows(favoriteDecks);
 
+    expect(deckRows[0].preferred_card_ids).toEqual(["LAW_038"]);
     expect(parseCloudCollectionRows(collectionRows)).toEqual(collection);
     expect(parseCloudFavoriteDeckRows(deckRows)).toEqual(favoriteDecks);
   });
@@ -145,6 +150,7 @@ describe("datos para sincronización en la nube", () => {
     delete legacyRow.is_mounted;
     delete legacyRow.mounted_at;
     delete legacyRow.allocation_priority;
+    delete legacyRow.preferred_card_ids;
 
     expect(parseCloudFavoriteDeckRows([legacyRow])[0]).toMatchObject({
       isMounted: false
