@@ -79,7 +79,7 @@ export async function loadCloudDataSnapshot(): Promise<CloudDataSnapshot> {
     client
       .from("favorite_decks")
       .select(
-        "id, name, author, original_json, normalized_deck, created_at, updated_at, last_result, last_result_fingerprint"
+        "id, name, author, original_json, normalized_deck, created_at, updated_at, last_result, last_result_fingerprint, is_mounted, mounted_at, allocation_priority"
       )
       .eq("user_id", userId)
       .order("updated_at", { ascending: false }),
@@ -135,6 +135,28 @@ export async function deleteCloudFavoriteDeck(favoriteId: string): Promise<strin
   const client = requireClient();
   await requireUserId();
   const { data, error } = await client.rpc("delete_my_favorite_deck", {
+    p_id: favoriteId
+  });
+  if (error) throw new Error(error.message);
+  return parseUpdatedAt(data);
+}
+
+/** Marca un favorito como montado y reserva para él las copias que estén libres. */
+export async function mountCloudFavoriteDeck(favoriteId: string): Promise<string> {
+  const client = requireClient();
+  await requireUserId();
+  const { data, error } = await client.rpc("mount_my_favorite_deck", {
+    p_id: favoriteId
+  });
+  if (error) throw new Error(error.message);
+  return parseUpdatedAt(data);
+}
+
+/** Desmonta un mazo y vuelve a dejar libres las copias que tenía reservadas. */
+export async function unmountCloudFavoriteDeck(favoriteId: string): Promise<string> {
+  const client = requireClient();
+  await requireUserId();
+  const { data, error } = await client.rpc("unmount_my_favorite_deck", {
     p_id: favoriteId
   });
   if (error) throw new Error(error.message);

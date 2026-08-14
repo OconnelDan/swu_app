@@ -40,9 +40,7 @@ function compareCard(
   return {
     cardId: card.cardId,
     cardName: cardInfos?.get(card.cardId)?.name ?? collectionNames?.get(card.cardId),
-    imageUrl:
-  cardInfos?.get(card.cardId)?.imageUrl ??
-  tryGetCardImageUrl(card.cardId),
+    imageUrl: cardInfos?.get(card.cardId)?.imageUrl ?? tryGetCardImageUrl(card.cardId),
     requiredCount: card.requiredCount,
     ownedCount,
     missingCount,
@@ -61,7 +59,7 @@ function compareCard(
  *
  * `cardInfos` permite añadir nombre/imagen a cada fila (opcional).
  * `allocations` (ver `computeCardAllocations`) permite indicar cuántas copias
- * de cada carta ya están comprometidas en otros mazos favoritos.
+ * de cada carta ya están comprometidas en otros mazos montados.
  */
 export function compareDeckWithCollection(
   deck: NormalizedDeck,
@@ -91,12 +89,8 @@ export function compareDeckWithCollection(
     ? compareCard(deck.base, ownedMap, cardInfos, allocations, collectionNames)
     : undefined;
 
-
   const mainDeckCount = deck.mainDeck.reduce((sum, c) => sum + (c.zoneCounts.main ?? 0), 0);
-  const sideboardCount = deck.sideboard.reduce(
-    (sum, c) => sum + (c.zoneCounts.sideboard ?? 0),
-    0
-  );
+  const sideboardCount = deck.sideboard.reduce((sum, c) => sum + (c.zoneCounts.sideboard ?? 0), 0);
 
   return {
     deckName: deck.name,
