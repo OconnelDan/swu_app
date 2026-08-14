@@ -13,7 +13,9 @@ import { computeCollectionFingerprint } from "@/lib/collectionFingerprint";
 import {
   deleteCloudFavoriteDeck,
   loadCloudDataSnapshot,
+  mountCloudFavoriteDeck,
   replaceCloudCollection,
+  unmountCloudFavoriteDeck,
   upsertCloudFavoriteDeck,
   type CloudDataSnapshot
 } from "@/lib/cloudSyncRepository";
@@ -21,8 +23,10 @@ import { buildRemoteImportResult } from "@/lib/cloudSyncData";
 import {
   deleteFavoriteDeck as deleteLocalFavoriteDeck,
   duplicateFavoriteDeck as duplicateLocalFavoriteDeck,
+  mountFavoriteDeck as mountLocalFavoriteDeck,
   renameFavoriteDeck as renameLocalFavoriteDeck,
   saveFavoriteDeck as saveLocalFavoriteDeck,
+  unmountFavoriteDeck as unmountLocalFavoriteDeck,
   updateFavoriteResult as updateLocalFavoriteResult
 } from "@/lib/favoritesRepository";
 import { v4 as uuid } from "@/lib/uuid";
@@ -55,8 +59,8 @@ interface DataSourceProviderProps {
 
 /**
  * Separa por completo los dos modos de persistencia:
- * - invitado: colección y favoritos en IndexedDB;
- * - cuenta: colección y favoritos únicamente en Supabase.
+ * - invitado: colección y mazos guardados en IndexedDB;
+ * - cuenta: colección y mazos guardados únicamente en Supabase.
  *
  * La colección y los mazos de una cuenta nunca se copian a IndexedDB ni usan
  * los datos locales como respaldo silencioso.
@@ -75,8 +79,7 @@ export function DataSourceProvider({ children }: DataSourceProviderProps) {
   }, [authLoading, userId]);
 
   const localFavorites = useLiveQuery(
-    () =>
-      authLoading || userId ? [] : db.favoriteDecks.orderBy("updatedAt").reverse().toArray(),
+    () => (authLoading || userId ? [] : db.favoriteDecks.orderBy("updatedAt").reverse().toArray()),
     [authLoading, userId]
   );
 
@@ -224,7 +227,8 @@ export function DataSourceProvider({ children }: DataSourceProviderProps) {
         createdAt: now,
         updatedAt: now,
         lastResult: result,
-        lastResultFingerprint: result?.collectionFingerprint
+        lastResultFingerprint: result?.collectionFingerprint,
+        isMounted: false
       };
       await commitAccountMutation(() => upsertCloudFavoriteDeck(favorite));
       return favorite;
@@ -300,10 +304,39 @@ export function DataSourceProvider({ children }: DataSourceProviderProps) {
         id: uuid(),
         name: `${original.name} (copia)`,
         createdAt: now,
-        updatedAt: now
+        updatedAt: now,
+        isMounted: false,
+        mountedAt: undefined,
+        allocationPriority: undefined
       };
       await commitAccountMutation(() => upsertCloudFavoriteDeck(copy));
       return copy;
+    },
+    [commitAccountMutation, requireAccountSnapshot, userId]
+  );
+
+  const mountFavoriteDeck = useCallback(
+    async (favoriteId: string) => {
+      if (!userId) {
+        await mountLocalFavoriteDeck(favoriteId);
+        return;
+      }
+
+      requireAccountSnapshot();
+      await commitAccountMutation(() => mountCloudFavoriteDeck(favoriteId));
+    },
+    [commitAccountMutation, requireAccountSnapshot, userId]
+  );
+
+  const unmountFavoriteDeck = useCallback(
+    async (favoriteId: string) => {
+      if (!userId) {
+        await unmountLocalFavoriteDeck(favoriteId);
+        return;
+      }
+
+      requireAccountSnapshot();
+      await commitAccountMutation(() => unmountCloudFavoriteDeck(favoriteId));
     },
     [commitAccountMutation, requireAccountSnapshot, userId]
   );
@@ -323,7 +356,9 @@ export function DataSourceProvider({ children }: DataSourceProviderProps) {
       updateFavoriteResult,
       renameFavoriteDeck,
       deleteFavoriteDeck,
-      duplicateFavoriteDeck
+      duplicateFavoriteDeck,
+      mountFavoriteDeck,
+      unmountFavoriteDeck
     }),
     [
       activeCloudSnapshot,
@@ -332,12 +367,14 @@ export function DataSourceProvider({ children }: DataSourceProviderProps) {
       deleteFavoriteDeck,
       duplicateFavoriteDeck,
       favorites,
+      mountFavoriteDeck,
       mode,
       refresh,
       refreshing,
       renameFavoriteDeck,
       replaceCollection,
       saveFavoriteDeck,
+      unmountFavoriteDeck,
       updateFavoriteResult
     ]
   );
