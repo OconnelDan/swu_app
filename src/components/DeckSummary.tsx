@@ -21,12 +21,33 @@ function buildMissingListText(result: DeckComparisonResult): string {
 }
 
 function buildCsv(result: DeckComparisonResult): string {
-  const header = "Codigo,Carta,Necesitas,Tienes,TeFaltan,Zona";
-  const rows = result.comparisons.map((c) =>
-    [c.cardId, c.cardName ?? "", c.requiredCount, c.ownedCount, c.missingCount, c.zones.join("+")]
-      .map((v) => `"${String(v).replace(/"/g, '""')}"`)
-      .join(",")
-  );
+  const mountedDeckView = result.comparisons.some((card) => card.assignedCount !== undefined);
+  const header = mountedDeckView
+    ? "Codigo,Carta,Necesitas,Tienes,AsignadasAqui,EnOtrosMazos,NoPoseidas,TeFaltan,Zona"
+    : "Codigo,Carta,Necesitas,Tienes,TeFaltan,Zona";
+  const rows = result.comparisons.map((card) => {
+    const values = mountedDeckView
+      ? [
+          card.cardId,
+          card.cardName ?? "",
+          card.requiredCount,
+          card.ownedCount,
+          card.assignedCount ?? 0,
+          card.copiesInOtherMountedDecks ?? 0,
+          card.copiesMissingFromCollection ?? 0,
+          card.missingCount,
+          card.zones.join("+")
+        ]
+      : [
+          card.cardId,
+          card.cardName ?? "",
+          card.requiredCount,
+          card.ownedCount,
+          card.missingCount,
+          card.zones.join("+")
+        ];
+    return values.map((value) => `"${String(value).replace(/"/g, '""')}"`).join(",");
+  });
   return [header, ...rows].join("\n");
 }
 
@@ -42,6 +63,15 @@ export function DeckSummary({
 }: DeckSummaryProps) {
   const [copied, setCopied] = useState(false);
   const missingListText = useMemo(() => buildMissingListText(result), [result]);
+  const mountedDeckView = result.comparisons.some((card) => card.assignedCount !== undefined);
+  const copiesInOtherMountedDecks = result.comparisons.reduce(
+    (total, card) => total + (card.copiesInOtherMountedDecks ?? 0),
+    0
+  );
+  const copiesMissingFromCollection = result.comparisons.reduce(
+    (total, card) => total + (card.copiesMissingFromCollection ?? 0),
+    0
+  );
 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(missingListText || "No te falta ninguna carta.");
@@ -108,6 +138,16 @@ export function DeckSummary({
           <p>
             Te faltan <strong>{result.totalMissingCopies}</strong> copias en total.
           </p>
+          {mountedDeckView && (
+            <>
+              <p>
+                En otros mazos montados: <strong>{copiesInOtherMountedDecks}</strong> copias.
+              </p>
+              <p>
+                No están en tu colección: <strong>{copiesMissingFromCollection}</strong> copias.
+              </p>
+            </>
+          )}
         </div>
       )}
 
