@@ -1,32 +1,51 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Users } from "lucide-react";
 import { DeckSummary } from "@/components/DeckSummary";
 import { DeckResultTable } from "@/components/DeckResultTable";
 import { useDataSource } from "@/contexts/DataSourceContext";
 import { useAuth } from "@/hooks/useAuth";
+import { computeCardAllocations, summarizeMountAvailability } from "@/lib/cardAllocation";
 import { isSupabaseConfigured } from "@/lib/supabaseClient";
+import { buildMountDeckConfirmationMessage } from "@/lib/mountDeckConfirmation";
 import { getFriendsCardAvailability, type FriendCardAvailability } from "@/lib/friendsRepository";
-import type { DeckComparisonResult, NormalizedDeck } from "@/types/deck";
+import type { DeckComparisonResult, FavoriteDeck, NormalizedDeck } from "@/types/deck";
 
 interface ResultPageProps {
   deck: NormalizedDeck | null;
   result: DeckComparisonResult | null;
-  isFavorite?: boolean;
+  favoriteId?: string | null;
+  onFavoriteSaved?: (favoriteId: string) => void;
 }
 
-export function ResultPage({ deck, result, isFavorite = false }: ResultPageProps) {
+export function ResultPage({ deck, result, favoriteId = null, onFavoriteSaved }: ResultPageProps) {
   const [showAll, setShowAll] = useState(false);
-  const [savedAsFavorite, setSavedAsFavorite] = useState(isFavorite);
+  const [activeFavoriteId, setActiveFavoriteId] = useState<string | null>(favoriteId);
+  const [savedFavoriteSnapshot, setSavedFavoriteSnapshot] = useState<FavoriteDeck | null>(null);
+  const [savedAsFavorite, setSavedAsFavorite] = useState(favoriteId !== null);
+  const [mountedOnResult, setMountedOnResult] = useState(false);
+  const [mounting, setMounting] = useState(false);
   const [friendAvailability, setFriendAvailability] = useState<
     Map<string, FriendCardAvailability[]>
   >(new Map());
   const [friendLookupError, setFriendLookupError] = useState<string | null>(null);
   const [friendLookupBusy, setFriendLookupBusy] = useState(false);
   const [favoriteError, setFavoriteError] = useState<string | null>(null);
+  const [favoriteMessage, setFavoriteMessage] = useState<string | null>(null);
   const { session } = useAuth();
-  const { saveFavoriteDeck } = useDataSource();
+  const { collection, favorites, mountFavoriteDeck, saveFavoriteDeck } = useDataSource();
   const navigate = useNavigate();
+  const favoriteFromSource = activeFavoriteId
+    ? favorites?.find((favorite) => favorite.id === activeFavoriteId)
+    : undefined;
+  const activeFavorite =
+    favoriteFromSource ??
+    (savedFavoriteSnapshot?.id === activeFavoriteId ? savedFavoriteSnapshot : undefined);
+  const allocations = useMemo(
+    () => computeCardAllocations(collection?.cards ?? [], favorites ?? []),
+    [collection?.cards, favorites]
+  );
+  const isMounted = Boolean(activeFavorite?.isMounted || mountedOnResult);
 
   if (!deck || !result) {
     return (
@@ -41,11 +60,41 @@ export function ResultPage({ deck, result, isFavorite = false }: ResultPageProps
 
   const handleSaveFavorite = async () => {
     setFavoriteError(null);
+    setFavoriteMessage(null);
     try {
-      await saveFavoriteDeck(deck, result);
+      const favorite = await saveFavoriteDeck(deck, result);
+      setActiveFavoriteId(favorite.id);
+      setSavedFavoriteSnapshot(favorite);
       setSavedAsFavorite(true);
+      onFavoriteSaved?.(favorite.id);
     } catch (cause) {
       setFavoriteError(cause instanceof Error ? cause.message : "No se ha podido guardar el mazo.");
+    }
+  };
+
+  const handleMountFavorite = async () => {
+    if (!activeFavorite) {
+      setFavoriteError("Espera a que termine de cargar el mazo guardado.");
+      return;
+    }
+
+    const availability = summarizeMountAvailability(activeFavorite.normalizedDeck, allocations);
+    const confirmed = confirm(buildMountDeckConfirmationMessage(activeFavorite.name, availability));
+    if (!confirmed) return;
+
+    setFavoriteError(null);
+    setFavoriteMessage(null);
+    setMounting(true);
+    try {
+      await mountFavoriteDeck(activeFavorite.id);
+      setMountedOnResult(true);
+      setFavoriteMessage(
+        `«${activeFavorite.name}» ya está en Mazos montados y sus copias libres han quedado reservadas.`
+      );
+    } catch (cause) {
+      setFavoriteError(cause instanceof Error ? cause.message : "No se ha podido montar el mazo.");
+    } finally {
+      setMounting(false);
     }
   };
 
@@ -77,9 +126,18 @@ export function ResultPage({ deck, result, isFavorite = false }: ResultPageProps
         result={result}
         onSaveFavorite={handleSaveFavorite}
         isFavorite={savedAsFavorite}
+        isMounted={isMounted}
+        mounting={mounting}
+        mountDisabled={!activeFavorite}
+        onMountDeck={activeFavoriteId ? handleMountFavorite : undefined}
         onRecheck={() => navigate("/comprobar")}
       />
 
+      {favoriteMessage && (
+        <p role="status" className="card border-saber-green/50 text-sm text-saber-green">
+          {favoriteMessage}
+        </p>
+      )}
       {favoriteError && (
         <p role="alert" className="card border-saber-red/50 text-sm text-saber-red">
           {favoriteError}

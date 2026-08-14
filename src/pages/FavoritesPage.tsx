@@ -9,6 +9,7 @@ import { SkeletonLines } from "@/components/Skeleton";
 import { isFavoriteOutdated } from "@/lib/favoritesRepository";
 import { compareDeckWithCollection } from "@/lib/compareDeckWithCollection";
 import { computeCardAllocations, summarizeMountAvailability } from "@/lib/cardAllocation";
+import { buildMountDeckConfirmationMessage } from "@/lib/mountDeckConfirmation";
 import { SwUnlimitedDbCardProvider } from "@/providers/cardProvider/SwUnlimitedDbCardProvider";
 import type { DeckComparisonResult, FavoriteDeck, NormalizedDeck } from "@/types/deck";
 
@@ -90,20 +91,7 @@ export function FavoritesPage({ onOpenResult }: FavoritesPageProps) {
 
   const handleMount = async (favorite: FavoriteDeck) => {
     const availability = summarizeMountAvailability(favorite.normalizedDeck, allocations);
-    const details = [
-      `Se reservarán ${availability.freeCopiesAvailable} copia(s) que ahora están libres.`,
-      availability.copiesInMountedDecks > 0
-        ? `${availability.copiesInMountedDecks} copia(s) están en otros mazos montados y quedarán pendientes.`
-        : null,
-      availability.copiesMissingFromCollection > 0
-        ? `${availability.copiesMissingFromCollection} copia(s) no están en tu colección y quedarán pendientes.`
-        : null
-    ]
-      .filter(Boolean)
-      .join("\n");
-    const confirmed = confirm(
-      `¿Montar «${favorite.name}»?\n\n${details}\n\nNo se quitarán cartas automáticamente a otros mazos.`
-    );
+    const confirmed = confirm(buildMountDeckConfirmationMessage(favorite.name, availability));
     if (!confirmed) return;
 
     setError(null);
