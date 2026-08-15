@@ -1,51 +1,92 @@
 import { LocalCardCacheProvider } from "./LocalCardCacheProvider";
+import { getCardImageUrl } from "@/lib/cardImageUrl";
 import { normalizeCardIdString, parseCardId } from "@/lib/normalizeCardId";
 import type { CardInfo, CardProvider } from "@/types/card";
 
-/**
- * Proveedor remoto del catálogo de cartas.
- *
- * IMPORTANTE — aclaración de dominios: el sitio donde el usuario guarda su
- * colección privada es https://sw-unlimited-db.com/, para el que no existe
- * (a fecha de escritura) una API pública documentada. Este proveedor usa,
- * en cambio, la API REST pública y documentada de un sitio distinto,
- * https://www.swu-db.com/ (documentación en https://www.swu-db.com/api),
- * que expone únicamente datos de CATÁLOGO de cartas (nombre, set, número,
- * tipo, rareza, imagen) — nunca la colección privada de nadie. Solo se
- * usan los endpoints públicos documentados; no se envían credenciales.
- *
- * Endpoint usado: GET https://api.swu-db.com/cards/{set}/{number}
- */
-const API_BASE = "https://api.swu-db.com";
+type CatalogCardTuple = [name: string, subtitle: string, type: string, rarity: string];
 
-interface SwuDbCardResponse {
-  Set: string;
-  Number: string;
-  Name: string;
-  Subtitle?: string;
-  Type: string;
-  Rarity: string;
-  FrontArt?: string;
+interface BundledCardCatalog {
+  version: 1;
+  cards: Record<string, CatalogCardTuple>;
+  aliases: Record<string, string>;
 }
 
-function mapResponseToCardInfo(raw: SwuDbCardResponse): CardInfo {
-  const cardId = normalizeCardIdString(`${raw.Set}_${raw.Number}`);
-  const { setCode, cardNumber } = parseCardId(cardId);
+const CATALOG_FILE = "data/swu-card-catalog.json";
+let bundledCatalogPromise: Promise<BundledCardCatalog> | null = null;
+
+function getCatalogUrl(): string {
+  const base = import.meta.env.BASE_URL.endsWith("/")
+    ? import.meta.env.BASE_URL
+    : `${import.meta.env.BASE_URL}/`;
+  return `${base}${CATALOG_FILE}`;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function parseCatalog(value: unknown): BundledCardCatalog {
+  if (
+    !isRecord(value) ||
+    value.version !== 1 ||
+    !isRecord(value.cards) ||
+    !isRecord(value.aliases)
+  ) {
+    throw new Error("El catálogo de cartas incluido no tiene el formato esperado.");
+  }
+  return value as unknown as BundledCardCatalog;
+}
+
+async function loadBundledCatalog(): Promise<BundledCardCatalog> {
+  if (!bundledCatalogPromise) {
+    bundledCatalogPromise = fetch(getCatalogUrl(), { cache: "force-cache" })
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error(`No se ha podido abrir el catálogo incluido (HTTP ${response.status}).`);
+        }
+        return parseCatalog(await response.json());
+      })
+      .catch((cause) => {
+        bundledCatalogPromise = null;
+        throw cause;
+      });
+  }
+  return bundledCatalogPromise;
+}
+
+function resolveCatalogCard(
+  catalog: BundledCardCatalog,
+  requestedCardId: string
+): CardInfo | undefined {
+  const canonicalCardId = catalog.aliases[requestedCardId] ?? requestedCardId;
+  const entry = catalog.cards[canonicalCardId];
+  if (!entry) return undefined;
+
+  const [name, subtitle, type, rarity] = entry;
+  const { setCode, cardNumber } = parseCardId(canonicalCardId);
   return {
-    cardId,
+    cardId: canonicalCardId,
     setCode,
     cardNumber,
-    name: raw.Subtitle ? `${raw.Name}, ${raw.Subtitle}` : raw.Name,
-    type: raw.Type,
-    rarity: raw.Rarity,
-    imageUrl: raw.FrontArt
+    name: subtitle ? `${name}, ${subtitle}` : name,
+    type: type || undefined,
+    rarity: rarity || undefined,
+    // Si se ha escaneado una variante, se muestra esa impresión concreta,
+    // aunque la copia se guarde con el ID de la carta base de la colección.
+    imageUrl: getCardImageUrl(requestedCardId)
   };
 }
 
+/**
+ * Catálogo de cartas generado a partir de la API pública de swu-db.com.
+ *
+ * El JSON se distribuye junto a la aplicación porque la respuesta GET de la
+ * API no incluye CORS y los navegadores bloquean su lectura desde GitHub
+ * Pages. Mantener el nombre de esta clase evita cambiar todos sus consumidores.
+ */
 export class SwUnlimitedDbCardProvider implements CardProvider {
-  readonly id = "swu-db-api";
+  readonly id = "bundled-swu-db-catalog";
   private readonly cache: LocalCardCacheProvider;
-  private readonly inFlight = new Map<string, Promise<CardInfo | undefined>>();
 
   constructor(cache: LocalCardCacheProvider = new LocalCardCacheProvider()) {
     this.cache = cache;
@@ -53,58 +94,42 @@ export class SwUnlimitedDbCardProvider implements CardProvider {
 
   async getCard(cardId: string): Promise<CardInfo | undefined> {
     const normalized = normalizeCardIdString(cardId);
-
     const cached = await this.cache.getCard(normalized);
     if (cached) return cached;
 
-    const existing = this.inFlight.get(normalized);
-    if (existing) return existing;
-
-    const promise = this.fetchAndCache(normalized);
-    this.inFlight.set(normalized, promise);
     try {
-      return await promise;
-    } finally {
-      this.inFlight.delete(normalized);
+      const info = resolveCatalogCard(await loadBundledCatalog(), normalized);
+      if (info?.cardId === normalized) await this.cache.putCards([info]);
+      return info;
+    } catch {
+      return undefined;
     }
   }
 
   async getCards(cardIds: string[]): Promise<Map<string, CardInfo>> {
     const uniqueIds = Array.from(new Set(cardIds.map(normalizeCardIdString)));
-    const result = new Map<string, CardInfo>();
+    const result = await this.cache.getCards(uniqueIds);
+    const missing = uniqueIds.filter((id) => !result.has(id));
+    if (missing.length === 0) return result;
 
-    const cached = await this.cache.getCards(uniqueIds);
-    const missing = uniqueIds.filter((id) => !cached.has(id));
-    for (const [id, info] of cached) result.set(id, info);
+    try {
+      const catalog = await loadBundledCatalog();
+      const canonicalCardsToCache = new Map<string, CardInfo>();
 
-    // Limita la concurrencia para no saturar el servicio público.
-    const CONCURRENCY = 5;
-    for (let i = 0; i < missing.length; i += CONCURRENCY) {
-      const batch = missing.slice(i, i + CONCURRENCY);
-      const fetched = await Promise.all(batch.map((id) => this.fetchAndCache(id)));
-      fetched.forEach((info, index) => {
-        if (info) result.set(batch[index], info);
-      });
+      for (const requestedCardId of missing) {
+        const info = resolveCatalogCard(catalog, requestedCardId);
+        if (!info) continue;
+        result.set(requestedCardId, info);
+        if (info.cardId === requestedCardId) canonicalCardsToCache.set(info.cardId, info);
+      }
+
+      if (canonicalCardsToCache.size > 0) {
+        await this.cache.putCards([...canonicalCardsToCache.values()]);
+      }
+    } catch {
+      // Los consumidores pueden seguir funcionando únicamente con el código.
     }
 
     return result;
-  }
-
-  private async fetchAndCache(cardId: string): Promise<CardInfo | undefined> {
-    try {
-      const { setCode, cardNumber } = parseCardId(cardId);
-      const url = `${API_BASE}/cards/${setCode.toLowerCase()}/${cardNumber}`;
-      const response = await fetch(url);
-      if (!response.ok) return undefined;
-
-      const raw = (await response.json()) as SwuDbCardResponse;
-      const cardInfo = mapResponseToCardInfo(raw);
-      await this.cache.putCards([cardInfo]);
-      return cardInfo;
-    } catch {
-      // Sin conexión o carta no encontrada en el catálogo remoto: la app
-      // debe seguir funcionando comparando solo por código (sección 17).
-      return undefined;
-    }
   }
 }
