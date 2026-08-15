@@ -230,7 +230,7 @@ export function ScanCardsPage() {
   const resolveRecognition = useCallback(
     async (recognition: CardCodeRecognition) => {
       const info = await new SwUnlimitedDbCardProvider().getCard(recognition.cardId);
-      if (!info || info.cardId !== recognition.cardId) {
+      if (!info) {
         throw new Error(
           `Se ha leído ${recognition.cardId}, pero no se ha podido confirmar en el catálogo. Vuelve a escanearla.`
         );
@@ -511,7 +511,7 @@ export function ScanCardsPage() {
   }
 
   const catalogImageUrl = recognizedCard
-    ? (recognizedCard.info.imageUrl ?? tryGetCardImageUrl(recognizedCard.info.cardId))
+    ? (recognizedCard.info.imageUrl ?? tryGetCardImageUrl(recognizedCard.recognition.cardId))
     : undefined;
 
   return (
@@ -643,6 +643,12 @@ export function ScanCardsPage() {
             )}
             <div className="min-w-0 flex-1">
               <p className="font-mono text-xs text-slate-400">{recognizedCard.info.cardId}</p>
+              {recognizedCard.recognition.cardId !== recognizedCard.info.cardId && (
+                <p className="text-xs text-slate-400">
+                  Impresión detectada: {recognizedCard.recognition.cardId} · se guardará como la
+                  carta base {recognizedCard.info.cardId}
+                </p>
+              )}
               <h3 className="font-semibold">
                 {recognizedCard.info.name ?? "Carta sin nombre en el catálogo"}
               </h3>
