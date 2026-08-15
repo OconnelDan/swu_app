@@ -181,8 +181,10 @@ export function Layout() {
                 end={to === "/"}
                 className={({ isActive }) => {
                   const isDecksSection = to === "/favoritos" && location.pathname === "/montados";
+                  const isCollectionSection =
+                    to === "/importar" && location.pathname === "/escanear";
                   return `flex min-h-[56px] flex-col items-center justify-center gap-1 text-xs font-medium ${
-                    isActive || isDecksSection
+                    isActive || isDecksSection || isCollectionSection
                       ? "text-saber-blue"
                       : "text-slate-400 hover:text-slate-200"
                   }`;
