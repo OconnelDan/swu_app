@@ -15,9 +15,13 @@ import { CardImageThumbnail } from "@/components/CardImageThumbnail";
 import { SkeletonLines } from "@/components/Skeleton";
 import { useDataSource } from "@/contexts/DataSourceContext";
 import {
+  analyzeCardFrameQuality,
+  calculateFrameMovement,
   disposeCardScanner,
   recognizeCardCode,
   type CardCodeRecognition,
+  type CardFrameIssue,
+  type CardFrameQuality,
   type CardScanProgress
 } from "@/lib/cardScanner";
 import { tryGetCardImageUrl } from "@/lib/cardImageUrl";
@@ -26,10 +30,117 @@ import type { CardInfo } from "@/types/card";
 
 const CARD_ASPECT_RATIO = 1100 / 1536;
 const MAX_IMAGE_BYTES = 25 * 1024 * 1024;
+const LIVE_SAMPLE_WIDTH = 160;
+const LIVE_OCR_WIDTH = 1600;
+const LIVE_RETRY_DELAY_MS = 350;
+const LIVE_HOLD_DURATION_MS = 1200;
+const LIVE_HOLD_SAMPLE_MS = 180;
+const MAX_STEP_MOVEMENT = 20;
+const MAX_TOTAL_MOVEMENT = 38;
+const MAX_QUANTITY_PER_SCAN = 99;
+
+type LiveScanTone = "error" | "reading" | "success";
+
+interface LiveScanFeedback {
+  tone: LiveScanTone;
+  message: string;
+  progress: number;
+}
+
+const INITIAL_LIVE_FEEDBACK: LiveScanFeedback = {
+  tone: "error",
+  message: "Centra la carta completa dentro del marco",
+  progress: 0
+};
+
+const LIVE_BORDER_CLASSES: Record<LiveScanTone, string> = {
+  error: "border-saber-red shadow-[0_0_18px_rgba(248,113,113,0.75)]",
+  reading: "border-saber-yellow shadow-[0_0_18px_rgba(250,204,21,0.65)]",
+  success: "border-saber-green shadow-[0_0_22px_rgba(74,222,128,0.8)]"
+};
 
 interface RecognizedCard {
   recognition: CardCodeRecognition;
   info: CardInfo;
+}
+
+function wait(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
+}
+
+function getFrameIssueMessage(issue: CardFrameIssue): string {
+  if (issue === "too-dark") return "Falta luz. Ilumina mejor la carta";
+  if (issue === "too-bright") return "Hay demasiado brillo. Evita reflejos sobre la carta";
+  if (issue === "low-contrast") return "Acerca y centra la carta dentro del marco";
+  return "La imagen está desenfocada. Mantén la cámara quieta";
+}
+
+function getCenteredVideoRect(video: HTMLVideoElement) {
+  let sourceWidth = video.videoWidth;
+  let sourceHeight = sourceWidth / CARD_ASPECT_RATIO;
+  if (sourceHeight > video.videoHeight) {
+    sourceHeight = video.videoHeight;
+    sourceWidth = sourceHeight * CARD_ASPECT_RATIO;
+  }
+
+  return {
+    x: (video.videoWidth - sourceWidth) / 2,
+    y: (video.videoHeight - sourceHeight) / 2,
+    width: sourceWidth,
+    height: sourceHeight
+  };
+}
+
+function drawVideoFrame(video: HTMLVideoElement, targetWidth: number): HTMLCanvasElement {
+  if (
+    video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA ||
+    video.videoWidth === 0 ||
+    video.videoHeight === 0
+  ) {
+    throw new Error("La cámara todavía se está preparando.");
+  }
+
+  const source = getCenteredVideoRect(video);
+  const canvas = document.createElement("canvas");
+  canvas.width = targetWidth;
+  canvas.height = Math.max(1, Math.round(targetWidth / CARD_ASPECT_RATIO));
+  const context = canvas.getContext("2d", {
+    willReadFrequently: targetWidth === LIVE_SAMPLE_WIDTH
+  });
+  if (!context) throw new Error("El navegador no permite analizar la cámara.");
+
+  context.drawImage(
+    video,
+    source.x,
+    source.y,
+    source.width,
+    source.height,
+    0,
+    0,
+    canvas.width,
+    canvas.height
+  );
+  return canvas;
+}
+
+function readLiveFrameQuality(video: HTMLVideoElement): CardFrameQuality {
+  const canvas = drawVideoFrame(video, LIVE_SAMPLE_WIDTH);
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  if (!context) throw new Error("El navegador no permite analizar la cámara.");
+  return analyzeCardFrameQuality(context.getImageData(0, 0, canvas.width, canvas.height));
+}
+
+function canvasToBlob(canvas: HTMLCanvasElement): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob(
+      (blob) => {
+        if (blob) resolve(blob);
+        else reject(new Error("No se ha podido analizar el fotograma de la cámara."));
+      },
+      "image/jpeg",
+      0.9
+    );
+  });
 }
 
 function translateOcrStatus(status: string): string {
@@ -44,6 +155,12 @@ function getErrorMessage(cause: unknown, fallback: string): string {
   return cause instanceof Error ? cause.message : fallback;
 }
 
+function parseQuantity(value: string): number | null {
+  if (!/^\d{1,2}$/.test(value)) return null;
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed >= 1 && parsed <= MAX_QUANTITY_PER_SCAN ? parsed : null;
+}
+
 export function ScanCardsPage() {
   const { mode, collection, addCollectionCard } = useDataSource();
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -51,6 +168,7 @@ export function ScanCardsPage() {
   const galleryInputRef = useRef<HTMLInputElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const previewUrlRef = useRef<string | null>(null);
+  const scanSessionRef = useRef(0);
 
   const [cameraOpen, setCameraOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -59,13 +177,15 @@ export function ScanCardsPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [recognizedCard, setRecognizedCard] = useState<RecognizedCard | null>(null);
-  const [quantity, setQuantity] = useState(1);
+  const [quantityInput, setQuantityInput] = useState("1");
   const [ownedBefore, setOwnedBefore] = useState(0);
   const [newOwnedCount, setNewOwnedCount] = useState<number | null>(null);
   const [scanProgress, setScanProgress] = useState<CardScanProgress>({
     status: "",
     progress: 0
   });
+  const [liveFeedback, setLiveFeedback] = useState<LiveScanFeedback>(INITIAL_LIVE_FEEDBACK);
+  const quantity = parseQuantity(quantityInput);
 
   const replacePreview = useCallback((nextUrl: string | null) => {
     if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
@@ -74,6 +194,7 @@ export function ScanCardsPage() {
   }, []);
 
   const stopCamera = useCallback(() => {
+    scanSessionRef.current += 1;
     for (const track of streamRef.current?.getTracks() ?? []) track.stop();
     streamRef.current = null;
     if (videoRef.current) videoRef.current.srcObject = null;
@@ -98,12 +219,30 @@ export function ScanCardsPage() {
     setError(null);
     setMessage(null);
     setRecognizedCard(null);
-    setQuantity(1);
+    setQuantityInput("1");
     setOwnedBefore(0);
     setNewOwnedCount(null);
     setScanProgress({ status: "", progress: 0 });
+    setLiveFeedback(INITIAL_LIVE_FEEDBACK);
     replacePreview(null);
   }, [replacePreview]);
+
+  const resolveRecognition = useCallback(
+    async (recognition: CardCodeRecognition) => {
+      const info = await new SwUnlimitedDbCardProvider().getCard(recognition.cardId);
+      if (!info || info.cardId !== recognition.cardId) {
+        throw new Error(
+          `Se ha leído ${recognition.cardId}, pero no se ha podido confirmar en el catálogo. Vuelve a escanearla.`
+        );
+      }
+
+      setOwnedBefore(
+        collection?.cards.find((card) => card.cardId === info.cardId)?.ownedCount ?? 0
+      );
+      setRecognizedCard({ recognition, info });
+    },
+    [collection?.cards]
+  );
 
   const analyzeImage = useCallback(
     async (image: Blob) => {
@@ -126,24 +265,14 @@ export function ScanCardsPage() {
         }
 
         setScanProgress({ status: "Comprobando la carta en el catálogo…", progress: 1 });
-        const info = await new SwUnlimitedDbCardProvider().getCard(recognition.cardId);
-        if (!info || info.cardId !== recognition.cardId) {
-          throw new Error(
-            `Se ha leído ${recognition.cardId}, pero no se ha podido confirmar en el catálogo. Vuelve a escanearla.`
-          );
-        }
-
-        setOwnedBefore(
-          collection?.cards.find((card) => card.cardId === info.cardId)?.ownedCount ?? 0
-        );
-        setRecognizedCard({ recognition, info });
+        await resolveRecognition(recognition);
       } catch (cause) {
         setError(getErrorMessage(cause, "No se ha podido reconocer la carta."));
       } finally {
         setBusy(false);
       }
     },
-    [collection?.cards, replacePreview, resetResult]
+    [replacePreview, resetResult, resolveRecognition]
   );
 
   const openCamera = async () => {
@@ -164,66 +293,165 @@ export function ScanCardsPage() {
           height: { ideal: 2560 }
         }
       });
+      scanSessionRef.current += 1;
       streamRef.current = stream;
+      setLiveFeedback(INITIAL_LIVE_FEEDBACK);
       setCameraOpen(true);
     } catch {
       setError(
-        "No se ha podido abrir la cámara. Revisa el permiso del navegador o utiliza «Hacer una foto»."
+        "No se ha podido abrir la cámara. Revisa el permiso del navegador o utiliza «Elegir una foto»."
       );
     }
   };
 
-  const captureFrame = () => {
-    const video = videoRef.current;
-    if (!video || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
-      setError("La cámara todavía se está preparando. Espera un instante.");
-      return;
-    }
+  useEffect(() => {
+    if (!cameraOpen) return;
 
-    let sourceWidth = video.videoWidth;
-    let sourceHeight = sourceWidth / CARD_ASPECT_RATIO;
-    if (sourceHeight > video.videoHeight) {
-      sourceHeight = video.videoHeight;
-      sourceWidth = sourceHeight * CARD_ASPECT_RATIO;
-    }
+    const sessionId = scanSessionRef.current;
+    let cancelled = false;
+    const isActive = () => !cancelled && scanSessionRef.current === sessionId;
 
-    const sourceX = (video.videoWidth - sourceWidth) / 2;
-    const sourceY = (video.videoHeight - sourceHeight) / 2;
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.max(1, Math.round(sourceWidth));
-    canvas.height = Math.max(1, Math.round(sourceHeight));
-    const context = canvas.getContext("2d");
+    const showFrameIssue = (issue: CardFrameIssue) => {
+      setLiveFeedback({ tone: "error", message: getFrameIssueMessage(issue), progress: 0 });
+    };
 
-    if (!context) {
-      setError("El navegador no permite capturar la imagen de la cámara.");
-      return;
-    }
+    const holdCardStill = async (): Promise<boolean> => {
+      const video = videoRef.current;
+      if (!video || !isActive()) return false;
 
-    context.drawImage(
-      video,
-      sourceX,
-      sourceY,
-      sourceWidth,
-      sourceHeight,
-      0,
-      0,
-      canvas.width,
-      canvas.height
-    );
+      const initialQuality = readLiveFrameQuality(video);
+      if (initialQuality.issue) {
+        showFrameIssue(initialQuality.issue);
+        return false;
+      }
 
-    canvas.toBlob(
-      (blob) => {
-        if (!blob) {
-          setError("No se ha podido crear la fotografía.");
-          return;
+      const baseline = initialQuality.signature;
+      let previous = baseline;
+      const startedAt = performance.now();
+      setLiveFeedback({
+        tone: "success",
+        message: "Carta detectada. Mantén la posición…",
+        progress: 0
+      });
+
+      while (performance.now() - startedAt < LIVE_HOLD_DURATION_MS) {
+        await wait(LIVE_HOLD_SAMPLE_MS);
+        if (!isActive() || !videoRef.current) return false;
+
+        const currentQuality = readLiveFrameQuality(videoRef.current);
+        if (currentQuality.issue) {
+          showFrameIssue(currentQuality.issue);
+          return false;
         }
+
+        const stepMovement = calculateFrameMovement(previous, currentQuality.signature);
+        const totalMovement = calculateFrameMovement(baseline, currentQuality.signature);
+        if (stepMovement > MAX_STEP_MOVEMENT || totalMovement > MAX_TOTAL_MOVEMENT) {
+          setLiveFeedback({
+            tone: "error",
+            message: "La carta se ha movido. Vuelve a centrarla y mantenla quieta",
+            progress: 0
+          });
+          return false;
+        }
+
+        const progress = Math.min(1, (performance.now() - startedAt) / LIVE_HOLD_DURATION_MS);
+        setLiveFeedback({
+          tone: "success",
+          message: "Carta detectada. Mantén la posición…",
+          progress
+        });
+        previous = currentQuality.signature;
+      }
+
+      return true;
+    };
+
+    const scanContinuously = async () => {
+      while (isActive()) {
+        const video = videoRef.current;
+        if (
+          !video ||
+          video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA ||
+          video.videoWidth === 0
+        ) {
+          setLiveFeedback({
+            tone: "reading",
+            message: "Preparando la cámara…",
+            progress: 0
+          });
+          await wait(LIVE_RETRY_DELAY_MS);
+          continue;
+        }
+
+        const quality = readLiveFrameQuality(video);
+        if (quality.issue) {
+          showFrameIssue(quality.issue);
+          await wait(LIVE_RETRY_DELAY_MS);
+          continue;
+        }
+
+        setLiveFeedback({
+          tone: "reading",
+          message: "Leyendo el código inferior. Mantén la carta quieta…",
+          progress: 0
+        });
+
+        const image = await canvasToBlob(drawVideoFrame(video, LIVE_OCR_WIDTH));
+        const recognition = await recognizeCardCode(
+          image,
+          (progress) => {
+            if (!isActive()) return;
+            setLiveFeedback({
+              tone: "reading",
+              message: translateOcrStatus(progress.status),
+              progress: progress.progress
+            });
+          },
+          { fast: true }
+        );
+        if (!isActive()) return;
+
+        if (!recognition) {
+          setLiveFeedback({
+            tone: "error",
+            message: "No se lee el código inferior. Centra y acerca la carta",
+            progress: 0
+          });
+          await wait(LIVE_RETRY_DELAY_MS);
+          continue;
+        }
+
+        if (!(await holdCardStill())) {
+          await wait(LIVE_RETRY_DELAY_MS);
+          continue;
+        }
+        if (!isActive()) return;
+
         stopCamera();
-        void analyzeImage(blob);
-      },
-      "image/jpeg",
-      0.92
-    );
-  };
+        setBusy(true);
+        setScanProgress({ status: "Comprobando la carta en el catálogo…", progress: 1 });
+        try {
+          await resolveRecognition(recognition);
+        } catch (cause) {
+          setError(getErrorMessage(cause, "No se ha podido confirmar la carta."));
+        } finally {
+          setBusy(false);
+        }
+        return;
+      }
+    };
+
+    void scanContinuously().catch((cause) => {
+      if (!isActive()) return;
+      stopCamera();
+      setError(getErrorMessage(cause, "No se ha podido analizar el vídeo de la cámara."));
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [cameraOpen, resolveRecognition, stopCamera]);
 
   const handleImageFile = (file: File | undefined) => {
     if (!file) return;
@@ -236,7 +464,7 @@ export function ScanCardsPage() {
   };
 
   const saveCard = async () => {
-    if (!recognizedCard || mode !== "account") return;
+    if (!recognizedCard || mode !== "account" || quantity === null) return;
     setError(null);
     setMessage(null);
     setSaving(true);
@@ -291,11 +519,11 @@ export function ScanCardsPage() {
       <section className="card space-y-2">
         <h2 className="font-display text-base">Añadir cartas con la cámara</h2>
         <p className="text-sm text-slate-300">
-          Coloca una carta ocupando el marco. Leeremos la colección y el número de la parte
-          inferior, confirmaremos el nombre y te enseñaremos el resultado antes de guardarlo.
+          Coloca una carta ocupando el marco y mantenla quieta. El borde te avisará si falta luz,
+          enfoque o encuadre, y la lectura se completará automáticamente cuando esté correcta.
         </p>
         <p className="text-xs text-slate-400">
-          La fotografía se procesa en tu dispositivo y no se guarda en tu cuenta.
+          Los fotogramas se procesan en tu dispositivo y no se guardan en tu cuenta.
         </p>
       </section>
 
@@ -303,7 +531,7 @@ export function ScanCardsPage() {
         <section className="card grid gap-2 sm:grid-cols-2">
           <button type="button" className="btn-primary" onClick={() => void openCamera()}>
             <Camera size={18} />
-            Abrir escáner
+            Abrir escáner en vivo
           </button>
           <button
             type="button"
@@ -329,21 +557,54 @@ export function ScanCardsPage() {
               playsInline
               className="h-full w-full object-cover"
             />
-            <div className="pointer-events-none absolute inset-3 rounded-lg border-2 border-saber-blue shadow-[0_0_0_999px_rgba(0,0,0,0.2)]" />
+            <div
+              className={`pointer-events-none absolute inset-3 rounded-lg border-4 transition-colors duration-200 ${LIVE_BORDER_CLASSES[liveFeedback.tone]}`}
+            />
+            <div
+              role="status"
+              aria-live="polite"
+              className="pointer-events-none absolute inset-x-6 top-1/2 -translate-y-1/2 space-y-2 rounded-xl bg-black/75 p-3 text-center text-sm backdrop-blur-sm"
+            >
+              {liveFeedback.tone === "error" && (
+                <AlertTriangle size={24} className="mx-auto text-saber-red" aria-hidden="true" />
+              )}
+              {liveFeedback.tone === "reading" && (
+                <Loader2
+                  size={24}
+                  className="mx-auto animate-spin text-saber-yellow"
+                  aria-hidden="true"
+                />
+              )}
+              {liveFeedback.tone === "success" && (
+                <CheckCircle2 size={24} className="mx-auto text-saber-green" aria-hidden="true" />
+              )}
+              <p>{liveFeedback.message}</p>
+              {liveFeedback.tone !== "error" && (
+                <div className="h-1.5 overflow-hidden rounded-full bg-space-700">
+                  <div
+                    className={`h-full transition-[width] duration-150 ${
+                      liveFeedback.tone === "success" ? "bg-saber-green" : "bg-saber-yellow"
+                    }`}
+                    style={{ width: `${Math.max(6, Math.round(liveFeedback.progress * 100))}%` }}
+                  />
+                </div>
+              )}
+            </div>
             <p className="pointer-events-none absolute inset-x-4 bottom-5 rounded bg-black/70 px-2 py-1 text-center text-xs">
-              Haz que los cuatro bordes de la carta queden dentro del marco
+              El escaneo se completará automáticamente
             </p>
           </div>
-          <div className="grid grid-cols-2 gap-2">
-            <button type="button" className="btn-primary" onClick={captureFrame}>
-              <Camera size={18} />
-              Capturar
-            </button>
-            <button type="button" className="btn-secondary" onClick={stopCamera}>
-              <X size={18} />
-              Cancelar
-            </button>
-          </div>
+          <button type="button" className="btn-secondary w-full" onClick={stopCamera}>
+            <X size={18} />
+            Cancelar escaneo
+          </button>
+        </section>
+      )}
+
+      {busy && !previewUrl && (
+        <section role="status" className="card space-y-2 text-center text-sm">
+          <Loader2 size={24} className="mx-auto animate-spin text-saber-blue" />
+          <p>{scanProgress.status || "Confirmando la carta…"}</p>
         </section>
       )}
 
@@ -390,7 +651,8 @@ export function ScanCardsPage() {
               </p>
               {newOwnedCount !== null && (
                 <p className="text-sm text-saber-green">
-                  Ahora tienes <strong>{newOwnedCount}</strong> copia(s).
+                  Ahora tienes <strong>{newOwnedCount}</strong>{" "}
+                  {newOwnedCount === 1 ? "copia" : "copias"}.
                 </p>
               )}
             </div>
@@ -405,28 +667,55 @@ export function ScanCardsPage() {
                     type="button"
                     className="btn-secondary min-h-9 min-w-9 p-2"
                     aria-label="Restar una copia"
-                    disabled={quantity <= 1}
-                    onClick={() => setQuantity((current) => Math.max(1, current - 1))}
+                    disabled={(quantity ?? 1) <= 1}
+                    onClick={() => setQuantityInput(String(Math.max(1, (quantity ?? 1) - 1)))}
                   >
                     <Minus size={16} />
                   </button>
-                  <strong className="min-w-5 text-center">{quantity}</strong>
+                  <input
+                    type="number"
+                    min="1"
+                    max={MAX_QUANTITY_PER_SCAN}
+                    step="1"
+                    inputMode="numeric"
+                    aria-label="Cantidad de copias"
+                    aria-invalid={quantity === null}
+                    className="h-10 w-16 rounded-lg border border-space-600 bg-space-950 px-2 text-center font-semibold"
+                    value={quantityInput}
+                    onChange={(event) => {
+                      const nextValue = event.currentTarget.value;
+                      if (nextValue === "" || /^\d{1,2}$/.test(nextValue)) {
+                        setQuantityInput(nextValue);
+                      }
+                    }}
+                    onBlur={() => {
+                      setQuantityInput(String(quantity ?? 1));
+                    }}
+                  />
                   <button
                     type="button"
                     className="btn-secondary min-h-9 min-w-9 p-2"
                     aria-label="Añadir una copia"
-                    disabled={quantity >= 9}
-                    onClick={() => setQuantity((current) => Math.min(9, current + 1))}
+                    disabled={(quantity ?? 1) >= MAX_QUANTITY_PER_SCAN}
+                    onClick={() =>
+                      setQuantityInput(String(Math.min(MAX_QUANTITY_PER_SCAN, (quantity ?? 1) + 1)))
+                    }
                   >
                     <Plus size={16} />
                   </button>
                 </div>
               </div>
 
+              {quantity === null && (
+                <p role="alert" className="text-xs text-saber-red">
+                  Introduce una cantidad entre 1 y {MAX_QUANTITY_PER_SCAN}.
+                </p>
+              )}
+
               <button
                 type="button"
                 className="btn-primary w-full"
-                disabled={saving}
+                disabled={saving || quantity === null}
                 onClick={() => void saveCard()}
               >
                 {saving ? (
@@ -436,7 +725,9 @@ export function ScanCardsPage() {
                 )}
                 {saving
                   ? "Guardando…"
-                  : `Añadir ${quantity} copia${quantity === 1 ? "" : "s"} a mi colección`}
+                  : quantity === null
+                    ? "Indica una cantidad válida"
+                    : `Añadir ${quantity} copia${quantity === 1 ? "" : "s"} a mi colección`}
               </button>
             </>
           )}

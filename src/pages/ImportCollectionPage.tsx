@@ -101,14 +101,14 @@ export function ImportCollectionPage() {
             <div>
               <h2 className="font-display text-base">Añadir cartas con la cámara</h2>
               <p className="mt-1 text-sm text-slate-300">
-                Escanea la colección y el número impresos en la carta y suma copias sin volver a
-                importar tu archivo completo.
+                Encuadra una carta y deja que la cámara reconozca automáticamente la colección y el
+                número, sin volver a importar tu archivo completo.
               </p>
             </div>
           </div>
           <Link to="/escanear" className="btn-primary w-full">
             <Camera size={18} />
-            Abrir escáner
+            Abrir escáner en vivo
           </Link>
         </section>
       )}
