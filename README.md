@@ -167,7 +167,7 @@ contraste, enfoque y movimiento, y ejecuta OCR cuando la carta está preparada.
 Los bordes rojo, ámbar y verde guían el encuadre y la lectura termina sin pulsar
 un disparador. Ningún fotograma se guarda ni se sube; solo se envían a Supabase
 el código confirmado, el nombre y la cantidad. Antes de guardar, contrasta
-`SET_NUMERO` con el catálogo público y muestra la carta reconocida para evitar
+`SET_NUMERO` con el catálogo incluido y muestra la carta reconocida para evitar
 incrementos provocados por una lectura incorrecta. Elegir una fotografía sigue
 disponible como alternativa. La confirmación propone una copia y permite escribir
 una cantidad de 1 a 99 para registrar varias copias físicas con un solo escaneo.
@@ -243,6 +243,8 @@ src/
 ├─ pages/             Las 10 pantallas de la app (incluye escáner, cuenta y amigos)
 ├─ tests/             Suite de Vitest (normalización, comparación, providers,
 │                       favoritos, backup, reparto de cartas entre mazos)
+├─ public/data/       Catálogo compacto incluido en la PWA
+├─ scripts/           Generador reproducible del catálogo de cartas
 ```
 
 supabase/schema.sql contiene el esquema SQL (tablas + Row Level Security +
@@ -276,26 +278,23 @@ diferentes:
   con los pasos a seguir si en el futuro se publica una API oficial.
 - **`swu-db.com`**: expone una **API REST pública y documentada**
   (`https://www.swu-db.com/api`) para el **catálogo** de cartas (nombre, set,
-  número, tipo, rareza, imagen) — nunca colecciones privadas. Se usa en
-  `SwUnlimitedDbCardProvider` mediante el endpoint documentado
-  `GET https://api.swu-db.com/cards/{set}/{numero}`, con caché local para no
-  repetir peticiones. **Se consulta automáticamente** siempre que haya
-  conexión, para poder mostrar nombres e imágenes; si no hay conexión o una
-  carta no está en el catálogo, la comprobación sigue funcionando igualmente
-  usando solo los códigos de carta (`SET_NUMERO`).
+  número, tipo, rareza e imagen) — nunca colecciones privadas. Sus respuestas
+  `GET` no permiten que GitHub Pages lea el JSON directamente por CORS, así que
+  la aplicación no depende de esa petición en tiempo de ejecución. El comando
+  `npm run catalog:sync` descarga los sets soportados durante el desarrollo y
+  genera `public/data/swu-card-catalog.json`. La PWA sirve ese catálogo desde su
+  propio dominio, lo guarda en la caché offline y resuelve también las variantes
+  Hyperspace, Foil y Prestige hacia el ID base utilizado por la colección.
 
 ## Privacidad y seguridad
 
 - En modo invitado, colección y mazos se guardan **solo en tu dispositivo**.
   Con sesión iniciada, colección y mazos se guardan exclusivamente en Supabase;
   borrar la caché local no los elimina y vuelven a cargarse tras iniciar sesión.
-- Para mostrar nombres e imágenes de cartas, la app **consulta
-  automáticamente** el catálogo público de `swu-db.com` cuando hay conexión
-  (ver "Integración con catálogos externos"). Esa consulta solo envía el
-  código de la carta (p. ej. `LAW_038`), nunca tu colección completa ni tus
-  mazos. No hay forma de desactivar esta consulta desde Ajustes; si prefieres
-  que la app no haga ninguna petición de red, desconéctate: seguirá
-  funcionando igualmente solo con los códigos de carta.
+- Los nombres y las equivalencias de variantes se leen del catálogo compacto
+  incluido en la PWA; no se envían códigos de cartas a una API externa. Las
+  imágenes se muestran desde el CDN público de `swu-db.com` mediante etiquetas
+  de imagen y no contienen información de tu colección ni de tus mazos.
 - Si activas **Cuenta y amigos**, tu email, tu colección y tus mazos guardados
   se guardan en tu proyecto de Supabase, protegidos con Row Level Security:
   solo tú puedes leer o sustituir tus datos. Los amigos aceptados únicamente

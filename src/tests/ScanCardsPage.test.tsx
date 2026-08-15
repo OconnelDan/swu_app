@@ -165,6 +165,48 @@ describe("añadir cartas con la cámara", () => {
     ).toBeInTheDocument();
   });
 
+  it("guarda una impresión variante como la carta base de la colección", async () => {
+    mocks.recognizeCardCode.mockResolvedValue({
+      cardId: "SEC_526",
+      setCode: "SEC",
+      cardNumber: "526",
+      printedTotal: 264,
+      rawText: "SEC EN 526/264"
+    });
+    mocks.getCard.mockResolvedValue({
+      cardId: "SEC_262",
+      setCode: "SEC",
+      cardNumber: "262",
+      name: "Ando Commission",
+      imageUrl: "https://cdn.swu-db.com/images/cards/SEC/526.png"
+    });
+    const addCollectionCard = vi.fn().mockResolvedValue(1);
+    const { container } = renderPage(dataSource({ addCollectionCard }));
+
+    const inputs = container.querySelectorAll<HTMLInputElement>('input[type="file"]');
+    fireEvent.change(inputs[1], {
+      target: { files: [new File(["photo"], "ando-commission.jpg", { type: "image/jpeg" })] }
+    });
+
+    await waitFor(() => expect(screen.getByText("Ando Commission")).toBeInTheDocument());
+    expect(
+      screen.getByText(/Impresión detectada: SEC_526 · se guardará como la carta base SEC_262/)
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Añadir 1 copia a mi colección" }));
+    await waitFor(() =>
+      expect(addCollectionCard).toHaveBeenCalledWith(
+        {
+          cardId: "SEC_262",
+          setCode: "SEC",
+          cardNumber: "262",
+          name: "Ando Commission"
+        },
+        1
+      )
+    );
+  });
+
   it("abre el escáner continuo sin pedir que se pulse un disparador", async () => {
     const stop = vi.fn();
     const getUserMedia = vi.fn().mockResolvedValue({

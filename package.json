@@ -5,6 +5,7 @@
   "description": "Comprueba si tu colección de Star Wars: Unlimited cubre las cartas de un mazo.",
   "type": "module",
   "scripts": {
+    "catalog:sync": "node scripts/sync-card-catalog.mjs",
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",

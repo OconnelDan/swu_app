@@ -1,5 +1,7 @@
 import { parseCardId } from "./normalizeCardId";
 
+const UNPADDED_IMAGE_NUMBER_SETS = new Set(["IBH", "TS26"]);
+
 /**
  * Construye la URL de la imagen de una carta a partir de su cardId.
  *
@@ -12,7 +14,10 @@ import { parseCardId } from "./normalizeCardId";
  */
 export function getCardImageUrl(cardId: string): string {
   const { setCode, cardNumber } = parseCardId(cardId);
-  return `https://cdn.swu-db.com/images/cards/${setCode}/${cardNumber}.png`;
+  const imageNumber = UNPADDED_IMAGE_NUMBER_SETS.has(setCode)
+    ? cardNumber.replace(/^0+(?=\d)/, "")
+    : cardNumber;
+  return `https://cdn.swu-db.com/images/cards/${setCode}/${imageNumber}.png`;
 }
 
 /**
