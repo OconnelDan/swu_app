@@ -5,7 +5,7 @@ import {
   parseCloudFavoriteDeckRows
 } from "@/lib/cloudSyncData";
 import { supabase } from "@/lib/supabaseClient";
-import type { CollectionCard } from "@/types/collection";
+import type { CollectionCard, CollectionCardIdentity } from "@/types/collection";
 import type { FavoriteDeck } from "@/types/deck";
 
 interface SyncStateRow {
@@ -116,6 +116,30 @@ export async function replaceCloudCollection(collection: CollectionCard[]): Prom
   });
   if (error) throw new Error(error.message);
   return parseUpdatedAt(data);
+}
+
+/** Suma copias de una carta a la colección de la cuenta de forma atómica. */
+export async function addCloudCollectionCard(
+  card: CollectionCardIdentity,
+  quantity = 1
+): Promise<number> {
+  const client = requireClient();
+  await requireUserId();
+  const { data, error } = await client.rpc("add_my_collection_card", {
+    p_card_id: card.cardId,
+    p_set_code: card.setCode,
+    p_card_number: card.cardNumber,
+    p_name: card.name ?? null,
+    p_quantity: quantity
+  });
+  if (error) throw new Error(error.message);
+
+  const ownedCount = typeof data === "number" ? data : Number(data);
+  if (!Number.isInteger(ownedCount) || ownedCount < 1) {
+    throw new Error("Supabase no ha devuelto la nueva cantidad de la carta.");
+  }
+
+  return ownedCount;
 }
 
 /** Inserta o actualiza un único mazo sin sustituir los demás mazos de la cuenta. */

@@ -59,6 +59,7 @@ function dataSource(
     refreshing: false,
     refresh: vi.fn(),
     replaceCollection: vi.fn(),
+    addCollectionCard: vi.fn(),
     saveFavoriteDeck: vi.fn(),
     updateFavoriteResult: vi.fn(),
     renameFavoriteDeck: vi.fn(),

@@ -10,6 +10,9 @@ export interface CollectionCard {
   ownedCount: number;
 }
 
+/** Datos mínimos necesarios para añadir una copia reconocida a la colección. */
+export type CollectionCardIdentity = Omit<CollectionCard, "ownedCount">;
+
 /** Advertencia no bloqueante generada durante la importación. */
 export interface ImportWarning {
   type:
