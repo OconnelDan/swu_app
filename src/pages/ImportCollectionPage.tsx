@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
-import { AlertTriangle, FileUp } from "lucide-react";
+import { Link } from "react-router-dom";
+import { AlertTriangle, Camera, FileUp } from "lucide-react";
 import { ExcelCollectionProvider } from "@/providers/collectionProvider/ExcelCollectionProvider";
 import { CsvCollectionProvider } from "@/providers/collectionProvider/CsvCollectionProvider";
 import { JsonCollectionProvider } from "@/providers/collectionProvider/JsonCollectionProvider";
@@ -93,6 +94,25 @@ export function ImportCollectionPage() {
 
   return (
     <div className="space-y-4">
+      {mode === "account" && (
+        <section className="card space-y-3 border-saber-blue/40">
+          <div className="flex items-start gap-3">
+            <Camera size={24} className="shrink-0 text-saber-blue" aria-hidden="true" />
+            <div>
+              <h2 className="font-display text-base">Añadir cartas con la cámara</h2>
+              <p className="mt-1 text-sm text-slate-300">
+                Escanea la colección y el número impresos en la carta y suma copias sin volver a
+                importar tu archivo completo.
+              </p>
+            </div>
+          </div>
+          <Link to="/escanear" className="btn-primary w-full">
+            <Camera size={18} />
+            Abrir escáner
+          </Link>
+        </section>
+      )}
+
       <section className="card">
         <h2 className="mb-2 font-display text-base">Importar desde archivo</h2>
         <p className="mb-3 text-sm text-slate-400">
