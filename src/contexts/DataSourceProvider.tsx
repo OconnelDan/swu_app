@@ -11,6 +11,7 @@ import { db, replaceCollection as replaceLocalCollection } from "@/db/db";
 import { useAuth } from "@/hooks/useAuth";
 import { computeCollectionFingerprint } from "@/lib/collectionFingerprint";
 import {
+  addCloudCollectionCard,
   deleteCloudFavoriteDeck,
   loadCloudDataSnapshot,
   mountCloudFavoriteDeck,
@@ -32,7 +33,11 @@ import {
   updateFavoriteResult as updateLocalFavoriteResult
 } from "@/lib/favoritesRepository";
 import { v4 as uuid } from "@/lib/uuid";
-import type { CollectionCard, CollectionImportResult } from "@/types/collection";
+import type {
+  CollectionCard,
+  CollectionCardIdentity,
+  CollectionImportResult
+} from "@/types/collection";
 import type { DeckComparisonResult, FavoriteDeck, NormalizedDeck } from "@/types/deck";
 
 function buildCollectionStats(
@@ -211,6 +216,22 @@ export function DataSourceProvider({ children }: DataSourceProviderProps) {
     [commitAccountMutation, requireAccountSnapshot, userId]
   );
 
+  const addCollectionCard = useCallback(
+    async (card: CollectionCardIdentity, quantity = 1): Promise<number> => {
+      if (!userId) {
+        throw new Error("Debes iniciar sesión para añadir cartas con la cámara.");
+      }
+
+      requireAccountSnapshot();
+      let ownedCount = 0;
+      await commitAccountMutation(async () => {
+        ownedCount = await addCloudCollectionCard(card, quantity);
+      });
+      return ownedCount;
+    },
+    [commitAccountMutation, requireAccountSnapshot, userId]
+  );
+
   const saveFavoriteDeck = useCallback(
     async (
       normalizedDeck: NormalizedDeck,
@@ -369,6 +390,7 @@ export function DataSourceProvider({ children }: DataSourceProviderProps) {
       refreshing: mode === "account" && refreshing,
       refresh,
       replaceCollection,
+      addCollectionCard,
       saveFavoriteDeck,
       updateFavoriteResult,
       renameFavoriteDeck,
@@ -380,6 +402,7 @@ export function DataSourceProvider({ children }: DataSourceProviderProps) {
     }),
     [
       activeCloudSnapshot,
+      addCollectionCard,
       cloudError,
       collection,
       deleteFavoriteDeck,

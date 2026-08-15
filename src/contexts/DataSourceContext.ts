@@ -1,5 +1,9 @@
 import { createContext, useContext } from "react";
-import type { CollectionCard, CollectionImportResult } from "@/types/collection";
+import type {
+  CollectionCard,
+  CollectionCardIdentity,
+  CollectionImportResult
+} from "@/types/collection";
 import type { DeckComparisonResult, FavoriteDeck, NormalizedDeck } from "@/types/deck";
 
 export interface CollectionStats {
@@ -26,6 +30,7 @@ export interface DataSourceValue {
     cards: CollectionCard[],
     importResult: CollectionImportResult
   ) => Promise<void>;
+  addCollectionCard: (card: CollectionCardIdentity, quantity?: number) => Promise<number>;
   saveFavoriteDeck: (
     normalizedDeck: NormalizedDeck,
     result?: DeckComparisonResult
