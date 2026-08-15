@@ -1,4 +1,4 @@
-const KNOWN_SETS = new Set([
+export const KNOWN_SET_CODES = [
   "SOR",
   "SHD",
   "TWI",
@@ -10,7 +10,9 @@ const KNOWN_SETS = new Set([
   "IBH",
   "HMW",
   "TS26"
-]);
+] as const;
+
+const KNOWN_SETS = new Set<string>(KNOWN_SET_CODES);
 
 export function isKnownSet(setCode: string): boolean {
   return KNOWN_SETS.has(setCode.toUpperCase());
