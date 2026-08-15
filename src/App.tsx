@@ -11,6 +11,7 @@ import { CardFinderPage } from "@/pages/CardFinderPage";
 import { FriendsPage } from "@/pages/FriendsPage";
 import { AccountPage } from "@/pages/AccountPage";
 import { SettingsPage } from "@/pages/SettingsPage";
+import { ScanCardsPage } from "@/pages/ScanCardsPage";
 import type { DeckComparisonResult, NormalizedDeck } from "@/types/deck";
 
 export default function App() {
@@ -33,6 +34,7 @@ export default function App() {
       <Route element={<Layout />}>
         <Route path="/" element={<HomePage />} />
         <Route path="/importar" element={<ImportCollectionPage />} />
+        <Route path="/escanear" element={<ScanCardsPage />} />
         <Route path="/comprobar" element={<CheckDeckPage onResult={setResult} />} />
         <Route
           path="/resultado"
