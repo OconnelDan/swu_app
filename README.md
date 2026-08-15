@@ -61,8 +61,9 @@ Abre `http://localhost:5173`.
 ## Cómo usar la app
 
 1. **Colección**: sube tu Excel/CSV, o pega un JSON. Con una cuenta iniciada
-   también puedes abrir **Añadir cartas con la cámara**, reconocer el código
-   impreso y sumar copias sin sustituir la colección completa.
+   también puedes abrir **Añadir cartas con la cámara**, encuadrar una carta para
+   que el vídeo la reconozca automáticamente y sumar copias sin sustituir la
+   colección completa.
 2. **Comprobar**: pega o carga el JSON de un mazo. El resultado indica, para
    cada carta que ya tienes, si hay copias libres o si están comprometidas en
    otro mazo montado (y en cuál).
@@ -161,10 +162,15 @@ datos. El modo invitado y sus copias de seguridad JSON siguen disponibles sin
 crear una cuenta, pero no permiten utilizar Amigos ni añadir cartas con la
 cámara.
 
-El escáner procesa la fotografía localmente con OCR y solo envía a Supabase el
-código confirmado, el nombre y la cantidad. Antes de guardar, contrasta
+El escáner analiza fotogramas temporales del vídeo localmente: comprueba luz,
+contraste, enfoque y movimiento, y ejecuta OCR cuando la carta está preparada.
+Los bordes rojo, ámbar y verde guían el encuadre y la lectura termina sin pulsar
+un disparador. Ningún fotograma se guarda ni se sube; solo se envían a Supabase
+el código confirmado, el nombre y la cantidad. Antes de guardar, contrasta
 `SET_NUMERO` con el catálogo público y muestra la carta reconocida para evitar
-incrementos provocados por una lectura incorrecta.
+incrementos provocados por una lectura incorrecta. Elegir una fotografía sigue
+disponible como alternativa. La confirmación propone una copia y permite escribir
+una cantidad de 1 a 99 para registrar varias copias físicas con un solo escaneo.
 
 ## Formatos de datos admitidos
 
