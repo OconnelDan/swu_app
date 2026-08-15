@@ -60,8 +60,9 @@ Abre `http://localhost:5173`.
 
 ## Cómo usar la app
 
-1. **Colección → Actualizar colección**: sube tu Excel/CSV, o pega un JSON.
-   Verás una previsualización con avisos antes de confirmar.
+1. **Colección**: sube tu Excel/CSV, o pega un JSON. Con una cuenta iniciada
+   también puedes abrir **Añadir cartas con la cámara**, reconocer el código
+   impreso y sumar copias sin sustituir la colección completa.
 2. **Comprobar**: pega o carga el JSON de un mazo. El resultado indica, para
    cada carta que ya tienes, si hay copias libres o si están comprometidas en
    otro mazo montado (y en cuál).
@@ -126,7 +127,9 @@ key` en el frontend.
    y, después,
    [`supabase/migrations/20260814_prioridad_por_carta_mazos_montados.sql`](./supabase/migrations/20260814_prioridad_por_carta_mazos_montados.sql)
    antes de publicar esta versión. Si la primera migración ya estaba aplicada,
-   ejecuta solamente la segunda.
+   ejecuta solamente la segunda. Para activar el escáner de cartas en una
+   instalación existente, ejecuta después
+   [`supabase/migrations/20260815_anadir_cartas_con_camara.sql`](./supabase/migrations/20260815_anadir_cartas_con_camara.sql).
 3. En **Authentication → URL Configuration**, usa como Site URL
    `https://oconneldan.github.io/swu_app/` y añade como Redirect URL
    `https://oconneldan.github.io/swu_app/**` (añade también la URL local que
@@ -155,7 +158,13 @@ una importación sustituye únicamente la colección de Supabase; guardar,
 actualizar o borrar un favorito modifica únicamente ese mazo. De esta forma un
 navegador con una vista antigua no reemplaza por accidente el resto de los
 datos. El modo invitado y sus copias de seguridad JSON siguen disponibles sin
-crear una cuenta, pero no permiten utilizar Amigos.
+crear una cuenta, pero no permiten utilizar Amigos ni añadir cartas con la
+cámara.
+
+El escáner procesa la fotografía localmente con OCR y solo envía a Supabase el
+código confirmado, el nombre y la cantidad. Antes de guardar, contrasta
+`SET_NUMERO` con el catálogo público y muestra la carta reconocida para evitar
+incrementos provocados por una lectura incorrecta.
 
 ## Formatos de datos admitidos
 
@@ -210,7 +219,7 @@ src/
 │                       normalizeCardId, sumVariantColumns,
 │                       normalizeDeckJson, compareDeckWithCollection,
 │                       cardAllocation (reparto de cartas entre favoritos),
-│                       cardImageUrl, collectionFingerprint,
+│                       cardScanner (OCR local), cardImageUrl, collectionFingerprint,
 │                       favoritesRepository, friendsRepository, backup
 ├─ schemas/           Validación con Zod (deck JSON, backup JSON)
 ├─ providers/
@@ -225,7 +234,7 @@ src/
 │                       useOnlineStatus (todos reactivos vía Dexie liveQuery
 │                       salvo useAuth, que usa la sesión de Supabase)
 ├─ components/        UI reutilizable (Layout, tabla de resultados, resumen…)
-├─ pages/             Las 9 pantallas de la app (incluye cuenta y amigos)
+├─ pages/             Las 10 pantallas de la app (incluye escáner, cuenta y amigos)
 ├─ tests/             Suite de Vitest (normalización, comparación, providers,
 │                       favoritos, backup, reparto de cartas entre mazos)
 ```
