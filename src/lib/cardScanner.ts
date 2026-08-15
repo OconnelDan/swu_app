@@ -4,6 +4,10 @@ const CARD_ASPECT_RATIO = 1100 / 1536;
 const OCR_FOOTER_START = 0.76;
 const OCR_FALLBACK_START = 0.58;
 const OCR_TARGET_WIDTH = 2200;
+const MIN_FRAME_BRIGHTNESS = 42;
+const MAX_FRAME_BRIGHTNESS = 224;
+const MIN_FRAME_CONTRAST = 20;
+const MIN_FRAME_SHARPNESS = 90;
 
 interface OcrWorker {
   recognize: (
@@ -34,8 +38,24 @@ export interface CardCodeRecognition {
   rawText: string;
 }
 
+export type CardFrameIssue = "too-dark" | "too-bright" | "low-contrast" | "blurry";
+
+export interface CardFrameQuality {
+  issue?: CardFrameIssue;
+  brightness: number;
+  contrast: number;
+  sharpness: number;
+  signature: Uint8Array;
+}
+
+interface CardRecognitionOptions {
+  /** Omite el segundo recorte para mantener ágil el reconocimiento continuo. */
+  fast?: boolean;
+}
+
 let activeProgressListener: ((progress: CardScanProgress) => void) | undefined;
 let workerPromise: Promise<OcrWorker> | null = null;
+let recognitionQueue: Promise<void> = Promise.resolve();
 
 function normalizeOcrDigits(value: string): string | undefined {
   const normalized = value
@@ -47,6 +67,80 @@ function normalizeOcrDigits(value: string): string | undefined {
     .replace(/B/g, "8");
 
   return /^\d{1,4}$/.test(normalized) ? normalized : undefined;
+}
+
+/**
+ * Mide si un fotograma tiene luz, contraste y nitidez suficientes para leer
+ * el pie de la carta. La firma reducida también permite detectar movimiento.
+ */
+export function analyzeCardFrameQuality(
+  pixels: Pick<ImageData, "data" | "width" | "height">
+): CardFrameQuality {
+  const { data, width, height } = pixels;
+  const signature = new Uint8Array(width * height);
+  let sum = 0;
+  let sumSquared = 0;
+
+  for (let pixel = 0, signatureIndex = 0; pixel < data.length; pixel += 4, signatureIndex++) {
+    const grayscale = Math.round(
+      0.299 * data[pixel] + 0.587 * data[pixel + 1] + 0.114 * data[pixel + 2]
+    );
+    signature[signatureIndex] = grayscale;
+    sum += grayscale;
+    sumSquared += grayscale * grayscale;
+  }
+
+  const sampleCount = Math.max(1, signature.length);
+  const brightness = sum / sampleCount;
+  const variance = Math.max(0, sumSquared / sampleCount - brightness * brightness);
+  const contrast = Math.sqrt(variance);
+
+  // El código de colección está en la zona inferior; medimos allí la nitidez
+  // mediante la varianza del Laplaciano para no dejarnos engañar por el arte.
+  const sharpnessStartY = Math.max(1, Math.floor(height * 0.58));
+  let laplacianSum = 0;
+  let laplacianSquaredSum = 0;
+  let laplacianCount = 0;
+
+  for (let y = sharpnessStartY; y < height - 1; y++) {
+    for (let x = 1; x < width - 1; x++) {
+      const index = y * width + x;
+      const laplacian =
+        4 * signature[index] -
+        signature[index - 1] -
+        signature[index + 1] -
+        signature[index - width] -
+        signature[index + width];
+      laplacianSum += laplacian;
+      laplacianSquaredSum += laplacian * laplacian;
+      laplacianCount++;
+    }
+  }
+
+  const laplacianMean = laplacianCount > 0 ? laplacianSum / laplacianCount : 0;
+  const sharpness =
+    laplacianCount > 0
+      ? Math.max(0, laplacianSquaredSum / laplacianCount - laplacianMean * laplacianMean)
+      : 0;
+
+  let issue: CardFrameIssue | undefined;
+  if (brightness < MIN_FRAME_BRIGHTNESS) issue = "too-dark";
+  else if (brightness > MAX_FRAME_BRIGHTNESS) issue = "too-bright";
+  else if (contrast < MIN_FRAME_CONTRAST) issue = "low-contrast";
+  else if (sharpness < MIN_FRAME_SHARPNESS) issue = "blurry";
+
+  return { issue, brightness, contrast, sharpness, signature };
+}
+
+/** Diferencia media entre dos firmas: cuanto mayor, más se ha movido la imagen. */
+export function calculateFrameMovement(previous: Uint8Array, current: Uint8Array): number {
+  if (previous.length === 0 || previous.length !== current.length) return Number.POSITIVE_INFINITY;
+
+  let difference = 0;
+  for (let index = 0; index < previous.length; index++) {
+    difference += Math.abs(previous[index] - current[index]);
+  }
+  return difference / previous.length;
 }
 
 /**
@@ -258,10 +352,10 @@ async function getWorker(): Promise<OcrWorker> {
   return workerPromise;
 }
 
-/** Reconoce una carta localmente. La imagen nunca se envía al servidor de la app. */
-export async function recognizeCardCode(
+async function recognizeCardCodeNow(
   image: Blob,
-  onProgress?: (progress: CardScanProgress) => void
+  onProgress?: (progress: CardScanProgress) => void,
+  options: CardRecognitionOptions = {}
 ): Promise<CardCodeRecognition | undefined> {
   activeProgressListener = onProgress;
   let loaded: LoadedImage | undefined;
@@ -274,6 +368,7 @@ export async function recognizeCardCode(
     const footerResult = await worker.recognize(footerCanvas);
     const footerRecognition = parseCardCodeFromOcr(footerResult.data.text);
     if (footerRecognition) return footerRecognition;
+    if (options.fast) return undefined;
 
     await worker.setParameters({ tessedit_pageseg_mode: "11" });
     const fallbackCanvas = buildOcrCanvas(loaded, OCR_FALLBACK_START, 1800);
@@ -285,8 +380,27 @@ export async function recognizeCardCode(
   }
 }
 
+/**
+ * Reconoce una carta localmente. La imagen nunca se envía al servidor de la
+ * app. Las lecturas se serializan para poder cancelar y reabrir la cámara sin
+ * ejecutar dos trabajos simultáneos sobre el mismo worker de Tesseract.
+ */
+export function recognizeCardCode(
+  image: Blob,
+  onProgress?: (progress: CardScanProgress) => void,
+  options: CardRecognitionOptions = {}
+): Promise<CardCodeRecognition | undefined> {
+  const recognition = recognitionQueue.then(() => recognizeCardCodeNow(image, onProgress, options));
+  recognitionQueue = recognition.then(
+    () => undefined,
+    () => undefined
+  );
+  return recognition;
+}
+
 /** Libera la memoria WebAssembly cuando se abandona la pantalla de escaneo. */
 export async function disposeCardScanner(): Promise<void> {
+  await recognitionQueue.catch(() => undefined);
   const pendingWorker = workerPromise;
   workerPromise = null;
   activeProgressListener = undefined;
