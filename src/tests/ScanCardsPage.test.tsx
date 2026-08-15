@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
 
 const originalCreateObjectUrl = Object.getOwnPropertyDescriptor(URL, "createObjectURL");
 const originalRevokeObjectUrl = Object.getOwnPropertyDescriptor(URL, "revokeObjectURL");
+const originalMediaDevices = Object.getOwnPropertyDescriptor(navigator, "mediaDevices");
 
 vi.mock("@/lib/cardScanner", async (importOriginal) => {
   const original = await importOriginal<typeof import("@/lib/cardScanner")>();
@@ -107,18 +108,25 @@ describe("añadir cartas con la cámara", () => {
     } else {
       delete (URL as Partial<typeof URL>).revokeObjectURL;
     }
+    if (originalMediaDevices) {
+      Object.defineProperty(navigator, "mediaDevices", originalMediaDevices);
+    } else {
+      Reflect.deleteProperty(navigator, "mediaDevices");
+    }
   });
 
   it("bloquea el escáner para invitados", () => {
     renderPage(dataSource({ mode: "guest", accountUpdatedAt: null }));
 
     expect(screen.getByRole("link", { name: "Iniciar sesión" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Abrir escáner" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Abrir escáner en vivo" })).not.toBeInTheDocument();
   });
 
   it("reconoce, confirma y añade una carta a la cuenta", async () => {
-    const addCollectionCard = vi.fn().mockResolvedValue(1);
+    const addCollectionCard = vi.fn().mockResolvedValue(4);
     const { container } = renderPage(dataSource({ addCollectionCard }));
+
+    expect(screen.getByRole("button", { name: "Abrir escáner en vivo" })).toBeInTheDocument();
 
     const inputs = container.querySelectorAll<HTMLInputElement>('input[type="file"]');
     const photo = new File(["photo"], "queen-soruna.jpg", { type: "image/jpeg" });
@@ -128,8 +136,11 @@ describe("añadir cartas con la cámara", () => {
       expect(screen.getByText("Queen Soruna, Willing to Fight")).toBeInTheDocument()
     );
     expect(screen.getByText("ASH_132")).toBeInTheDocument();
+    const quantityInput = screen.getByRole("spinbutton", { name: "Cantidad de copias" });
+    expect(quantityInput).toHaveValue(1);
+    fireEvent.change(quantityInput, { target: { value: "4" } });
 
-    fireEvent.click(screen.getByRole("button", { name: "Añadir 1 copia a mi colección" }));
+    fireEvent.click(screen.getByRole("button", { name: "Añadir 4 copias a mi colección" }));
 
     await waitFor(() =>
       expect(addCollectionCard).toHaveBeenCalledWith(
@@ -139,20 +150,45 @@ describe("añadir cartas con la cámara", () => {
           cardNumber: "132",
           name: "Queen Soruna, Willing to Fight"
         },
-        1
+        4
       )
     );
     await waitFor(() =>
       expect(screen.getByRole("status")).toHaveTextContent(
-        "1 copia de Queen Soruna, Willing to Fight añadida."
+        "4 copias de Queen Soruna, Willing to Fight añadidas."
       )
     );
     expect(
       screen.getByText((_, element) =>
-        Boolean(
-          element?.tagName === "P" && element.textContent?.includes("Ahora tienes 1 copia(s).")
-        )
+        Boolean(element?.tagName === "P" && element.textContent?.includes("Ahora tienes 4 copias."))
       )
     ).toBeInTheDocument();
+  });
+
+  it("abre el escáner continuo sin pedir que se pulse un disparador", async () => {
+    const stop = vi.fn();
+    const getUserMedia = vi.fn().mockResolvedValue({
+      getTracks: () => [{ stop }]
+    });
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: { getUserMedia }
+    });
+    vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue(undefined);
+
+    renderPage(dataSource());
+    fireEvent.click(screen.getByRole("button", { name: "Abrir escáner en vivo" }));
+
+    await waitFor(() => expect(screen.getByLabelText("Vista de la cámara")).toBeInTheDocument());
+    expect(getUserMedia).toHaveBeenCalledWith(
+      expect.objectContaining({
+        video: expect.objectContaining({ facingMode: { ideal: "environment" } })
+      })
+    );
+    expect(screen.queryByRole("button", { name: "Capturar" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Cancelar escaneo" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancelar escaneo" }));
+    expect(stop).toHaveBeenCalledOnce();
   });
 });
