@@ -18,6 +18,7 @@ vi.mock("@/lib/supabaseClient", () => ({
 }));
 
 import {
+  addCloudCollectionCard,
   loadCloudDataSnapshot,
   mountCloudFavoriteDeck,
   prioritizeCloudFavoriteDeckCard,
@@ -137,5 +138,29 @@ describe("repositorio de datos de cuenta", () => {
       ],
       ["unmount_my_favorite_deck", { p_id: "11111111-1111-4111-8111-111111111111" }]
     ]);
+  });
+
+  it("añade copias a una carta mediante la función atómica de Supabase", async () => {
+    mocks.rpc.mockResolvedValueOnce({ data: 4, error: null });
+
+    await expect(
+      addCloudCollectionCard(
+        {
+          cardId: "ASH_132",
+          setCode: "ASH",
+          cardNumber: "132",
+          name: "Queen Soruna, Willing to Fight"
+        },
+        2
+      )
+    ).resolves.toBe(4);
+
+    expect(mocks.rpc).toHaveBeenCalledWith("add_my_collection_card", {
+      p_card_id: "ASH_132",
+      p_set_code: "ASH",
+      p_card_number: "132",
+      p_name: "Queen Soruna, Willing to Fight",
+      p_quantity: 2
+    });
   });
 });

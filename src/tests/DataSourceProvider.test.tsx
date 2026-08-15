@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   },
   loadCloudDataSnapshot: vi.fn(),
   replaceCloudCollection: vi.fn(),
+  addCloudCollectionCard: vi.fn(),
   upsertCloudFavoriteDeck: vi.fn(),
   deleteCloudFavoriteDeck: vi.fn(),
   mountCloudFavoriteDeck: vi.fn(),
@@ -29,6 +30,7 @@ vi.mock("@/lib/cloudSyncRepository", async (importOriginal) => {
     ...original,
     loadCloudDataSnapshot: mocks.loadCloudDataSnapshot,
     replaceCloudCollection: mocks.replaceCloudCollection,
+    addCloudCollectionCard: mocks.addCloudCollectionCard,
     upsertCloudFavoriteDeck: mocks.upsertCloudFavoriteDeck,
     deleteCloudFavoriteDeck: mocks.deleteCloudFavoriteDeck,
     mountCloudFavoriteDeck: mocks.mountCloudFavoriteDeck,
@@ -106,6 +108,22 @@ function Probe() {
       <button
         type="button"
         onClick={() =>
+          void data.addCollectionCard(
+            {
+              cardId: cloudCard.cardId,
+              setCode: cloudCard.setCode,
+              cardNumber: cloudCard.cardNumber,
+              name: cloudCard.name
+            },
+            2
+          )
+        }
+      >
+        añadir carta
+      </button>
+      <button
+        type="button"
+        onClick={() =>
           void data.saveFavoriteDeck(
             normalizeDeckJson({ name: "Mazo de cuenta", deck: [{ id: "LAW_038", count: 2 }] })
           )
@@ -150,6 +168,7 @@ describe("origen de datos según la sesión", () => {
     mocks.auth.loading = false;
     mocks.loadCloudDataSnapshot.mockReset();
     mocks.replaceCloudCollection.mockReset().mockResolvedValue("2026-08-11T10:01:00.000Z");
+    mocks.addCloudCollectionCard.mockReset().mockResolvedValue(6);
     mocks.upsertCloudFavoriteDeck.mockReset().mockResolvedValue("2026-08-11T10:02:00.000Z");
     mocks.deleteCloudFavoriteDeck.mockReset();
     mocks.mountCloudFavoriteDeck.mockReset().mockResolvedValue("2026-08-11T10:03:00.000Z");
@@ -214,6 +233,36 @@ describe("origen de datos según la sesión", () => {
     );
 
     await waitFor(() => expect(screen.getByTestId("cards")).toHaveTextContent("LAW_038"));
+    expect(await db.collectionEntries.count()).toBe(0);
+  });
+
+  it("añade copias escaneadas solo a la colección de Supabase", async () => {
+    mocks.auth.session = { user: { id: "user-1" } };
+    const updatedCard = { ...cloudCard, ownedCount: 6 };
+    mocks.loadCloudDataSnapshot
+      .mockResolvedValueOnce(snapshot([cloudCard]))
+      .mockResolvedValueOnce(snapshot([updatedCard]));
+
+    render(
+      <DataSourceProvider>
+        <Probe />
+      </DataSourceProvider>
+    );
+
+    await waitFor(() => expect(screen.getByTestId("cards")).toHaveTextContent("LAW_038"));
+    fireEvent.click(screen.getByRole("button", { name: "añadir carta" }));
+
+    await waitFor(() =>
+      expect(mocks.addCloudCollectionCard).toHaveBeenCalledWith(
+        {
+          cardId: "LAW_038",
+          setCode: "LAW",
+          cardNumber: "038",
+          name: "Carta de la cuenta"
+        },
+        2
+      )
+    );
     expect(await db.collectionEntries.count()).toBe(0);
   });
 
