@@ -1,0 +1,88 @@
+name: Actualizar catálogo oficial SWU
+
+on:
+  schedule:
+    # Día 1 de cada mes a las 04:17 UTC.
+    # En España será aproximadamente a las 05:17 o 06:17,
+    # dependiendo del horario de invierno o verano.
+    - cron: "17 4 1 * *"
+
+  # Permite ejecutarlo manualmente desde la pestaña Actions.
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: catalog-sync
+  cancel-in-progress: false
+
+jobs:
+  sync-catalog:
+    name: Sincronizar y validar catálogo
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Descargar main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Descargar catálogo oficial
+        run: npm run catalog:sync
+
+      - name: Comprobar tipos
+        run: npm run typecheck
+
+      - name: Ejecutar linter
+        run: npm run lint
+
+      - name: Ejecutar tests
+        run: npm test
+
+      - name: Comprobar compilación
+        run: npm run build
+        env:
+          VITE_BASE_PATH: /${{ github.event.repository.name }}/
+
+      - name: Crear Pull Request si el catálogo ha cambiado
+        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          base: main
+          branch: automation/catalog-sync
+          delete-branch: true
+          sign-commits: true
+          commit-message: "chore: actualizar catálogo oficial SWU"
+          title: "Actualizar catálogo oficial de Star Wars Unlimited"
+          body: |
+            Actualización automática del catálogo oficial de Star Wars Unlimited.
+
+            El proceso ha ejecutado correctamente:
+
+            - `npm run catalog:sync`
+            - `npm run typecheck`
+            - `npm run lint`
+            - `npm test`
+            - `npm run build`
+
+            Si aparecen nuevas colecciones, promociones o variantes oficiales,
+            quedarán incluidas en los archivos generados.
+
+            Revisa los archivos modificados y fusiona este Pull Request para
+            publicar el catálogo actualizado.
+          add-paths: |
+            public/data/swu-card-catalog.json
+            src/generated/officialCardCatalogMeta.ts
