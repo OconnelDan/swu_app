@@ -1,14 +1,15 @@
 import { LocalCardCacheProvider } from "./LocalCardCacheProvider";
-import { getCardImageUrl } from "@/lib/cardImageUrl";
+import { tryGetCardImageUrl } from "@/lib/cardImageUrl";
 import { normalizeCardIdString, parseCardId } from "@/lib/normalizeCardId";
 import type { CardInfo, CardProvider } from "@/types/card";
 
 type CatalogCardTuple = [name: string, subtitle: string, type: string, rarity: string];
 
 interface BundledCardCatalog {
-  version: 1;
+  version: 2;
   cards: Record<string, CatalogCardTuple>;
   aliases: Record<string, string>;
+  images: Record<string, string>;
 }
 
 const CATALOG_FILE = "data/swu-card-catalog.json";
@@ -28,9 +29,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function parseCatalog(value: unknown): BundledCardCatalog {
   if (
     !isRecord(value) ||
-    value.version !== 1 ||
+    value.version !== 2 ||
     !isRecord(value.cards) ||
-    !isRecord(value.aliases)
+    !isRecord(value.aliases) ||
+    !isRecord(value.images)
   ) {
     throw new Error("El catálogo de cartas incluido no tiene el formato esperado.");
   }
@@ -73,19 +75,25 @@ function resolveCatalogCard(
     rarity: rarity || undefined,
     // Si se ha escaneado una variante, se muestra esa impresión concreta,
     // aunque la copia se guarde con el ID de la carta base de la colección.
-    imageUrl: getCardImageUrl(requestedCardId)
+    imageUrl:
+      catalog.images[requestedCardId] ??
+      catalog.images[canonicalCardId] ??
+      tryGetCardImageUrl(requestedCardId)
   };
 }
 
 /**
- * Catálogo de cartas generado a partir de la API pública de swu-db.com.
+ * Catálogo de cartas generado a partir de la API oficial de Star Wars:
+ * Unlimited. `variantOf` y `validationId` relacionan cada impresión con su
+ * carta base sin depender de coincidencias por nombre.
  *
  * El JSON se distribuye junto a la aplicación porque la respuesta GET de la
- * API no incluye CORS y los navegadores bloquean su lectura desde GitHub
- * Pages. Mantener el nombre de esta clase evita cambiar todos sus consumidores.
+ * API solo autoriza el origen de la web oficial y los navegadores bloquean su
+ * lectura desde GitHub Pages. Mantener el nombre de esta clase evita cambiar
+ * todos sus consumidores.
  */
 export class SwUnlimitedDbCardProvider implements CardProvider {
-  readonly id = "bundled-swu-db-catalog";
+  readonly id = "bundled-official-swu-catalog";
   private readonly cache: LocalCardCacheProvider;
 
   constructor(cache: LocalCardCacheProvider = new LocalCardCacheProvider()) {
