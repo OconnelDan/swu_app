@@ -99,10 +99,10 @@ export function SettingsPage() {
       <section className="card space-y-3">
         <h2 className="font-display text-base">Proveedor de datos de cartas</h2>
         <p className="text-xs text-slate-400">
-          Nombres e imágenes de las cartas se cargan siempre desde el catálogo público de swu-db.com
-          cuando hay conexión (y se guardan en caché para futuras consultas offline). Si no hay
-          conexión, o una carta no está en el catálogo, la comprobación sigue funcionando igualmente
-          solo con los códigos de carta.
+          Los nombres y las equivalencias entre impresiones proceden del catálogo oficial de Star
+          Wars: Unlimited incluido en la aplicación. Las imágenes se sirven desde su CDN oficial y
+          se guardan en caché para futuras consultas offline. Si no hay conexión, o una carta
+          todavía no está en el catálogo, la comprobación sigue funcionando con el código de carta.
         </p>
       </section>
 

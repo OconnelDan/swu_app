@@ -2,15 +2,55 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/db/db";
+import { OFFICIAL_SET_CODES } from "@/generated/officialCardCatalogMeta";
 import { SwUnlimitedDbCardProvider } from "@/providers/cardProvider/SwUnlimitedDbCardProvider";
 
 const catalogJson = readFileSync(
   resolve(process.cwd(), "public/data/swu-card-catalog.json"),
   "utf8"
 );
+const catalog = JSON.parse(catalogJson) as {
+  version: number;
+  source: string;
+  sets: string[];
+  aliases: Record<string, string>;
+  images: Record<string, string>;
+};
 
 describe("catálogo de cartas incluido", () => {
   const fetchMock = vi.fn();
+
+  it.each([
+    ["SORP", 20],
+    ["SHDP", 20],
+    ["TWIP", 20],
+    ["JTLP", 40],
+    ["LOFP", 40],
+    ["SECP", 40],
+    ["LAWP", 40],
+    ["ASHP", 40]
+  ])("incluye las %s promos disponibles", (setCode, expectedCount) => {
+    const promoAliases = Object.keys(catalog.aliases).filter((id) => id.startsWith(`${setCode}_`));
+
+    expect(promoAliases).toHaveLength(expectedCount);
+  });
+
+  it("se genera desde la API oficial e incluye todas sus nomenclaturas publicadas", () => {
+    expect(catalog).toMatchObject({
+      version: 2,
+      source: "https://admin.starwarsunlimited.com/api/card-list?locale=en"
+    });
+    expect(catalog.sets).toEqual(
+      expect.arrayContaining(["C24", "C25", "C26", "G25", "GG", "J24", "J25", "MV26", "P25", "P26"])
+    );
+    expect(catalog.sets).toEqual([...OFFICIAL_SET_CODES]);
+    expect(catalog.aliases).toMatchObject({
+      P25_097: "JTL_020",
+      P26_239: "ASH_243",
+      C24_003: "SOR_135",
+      J25_019: "SEC_209"
+    });
+  });
 
   beforeAll(() => {
     fetchMock.mockImplementation(() =>
@@ -48,6 +88,9 @@ describe("catálogo de cartas incluido", () => {
       cache: "force-cache"
     });
     expect(fetchMock).not.toHaveBeenCalledWith(expect.stringContaining("api.swu-db.com"));
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      expect.stringContaining("admin.starwarsunlimited.com")
+    );
   });
 
   it("convierte una impresión variante en el ID base que utiliza la colección", async () => {
@@ -56,7 +99,30 @@ describe("catálogo de cartas incluido", () => {
     await expect(provider.getCard("SEC_526")).resolves.toMatchObject({
       cardId: "SEC_262",
       name: "Ando Commission",
-      imageUrl: "https://cdn.swu-db.com/images/cards/SEC/526.png"
+      imageUrl: expect.stringMatching(/^https:\/\/cdn\.starwarsunlimited\.com\//)
     });
   });
+
+  it.each([
+    ["SORP_007", "SOR_226", "Admiral Motti, Brazen and Scornful"],
+    ["SHDP_010", "SHD_039", "Calculated Lethality"],
+    ["TWIP_004", "TWI_240", "332nd Stalwart"],
+    ["JTLP_016", "JTL_197", "Anakin Skywalker, I'll Try Spinning"],
+    ["LOFP_008", "LOF_129", "Acolyte of the Beyond"],
+    ["SECP_004", "SEC_070", "Armor of Fortune"],
+    ["LAWP_020", "LAW_247", "Backed by the Hutts"],
+    ["ASHP_016", "ASH_189", "Emperor's Messenger"]
+  ])(
+    "convierte la promo %s en su carta base y conserva su arte",
+    async (requestedCardId, canonicalCardId, name) => {
+      const provider = new SwUnlimitedDbCardProvider();
+
+      await expect(provider.getCard(requestedCardId)).resolves.toMatchObject({
+        cardId: canonicalCardId,
+        name,
+        imageUrl: expect.stringMatching(/^https:\/\/cdn\.starwarsunlimited\.com\//)
+      });
+      expect(catalog.images[requestedCardId]).toMatch(/^https:\/\/cdn\.starwarsunlimited\.com\//);
+    }
+  );
 });

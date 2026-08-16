@@ -1,13 +1,31 @@
+import {
+  OFFICIAL_LEGACY_PROMO_BY_SET,
+  OFFICIAL_PRINTED_BASE_TOTALS,
+  OFFICIAL_STANDALONE_NUMBER_RANGES
+} from "@/generated/officialCardCatalogMeta";
 import { KNOWN_SET_CODES, normalizeCardId } from "@/lib/normalizeCardId";
 
 const CARD_ASPECT_RATIO = 1100 / 1536;
 const OCR_FOOTER_START = 0.76;
 const OCR_FALLBACK_START = 0.58;
 const OCR_TARGET_WIDTH = 2200;
+const OCR_VARIANT_THRESHOLD_SPLIT = 0.7;
+const OCR_VARIANT_LEFT_THRESHOLD = 0.45 * 255;
+const OCR_VARIANT_RIGHT_THRESHOLD = 0.55 * 255;
 const MIN_FRAME_BRIGHTNESS = 42;
 const MAX_FRAME_BRIGHTNESS = 224;
 const MIN_FRAME_CONTRAST = 20;
 const MIN_FRAME_SHARPNESS = 90;
+const MAX_PRINTED_VARIANT_NUMBER = 1500;
+const PRINTED_LANGUAGE_CODES = new Set(["DE", "EN", "ES", "FR", "IT", "PL", "PT"]);
+
+const SCANNABLE_SET_CODES = [...KNOWN_SET_CODES].sort((left, right) => right.length - left.length);
+const PRINTED_BASE_TOTALS: Readonly<Record<string, number>> = OFFICIAL_PRINTED_BASE_TOTALS;
+const PROMO_NUMBER_RANGES: Readonly<Record<string, readonly [number, number]>> =
+  OFFICIAL_STANDALONE_NUMBER_RANGES;
+const LEGACY_PROMO_BY_SET: Readonly<
+  Record<string, { printedTotal: number; promoSetCode: string }>
+> = OFFICIAL_LEGACY_PROMO_BY_SET;
 
 interface OcrWorker {
   recognize: (
@@ -49,24 +67,125 @@ export interface CardFrameQuality {
 }
 
 interface CardRecognitionOptions {
-  /** Omite el segundo recorte para mantener ágil el reconocimiento continuo. */
+  /** Evita pases costosos si el OCR rápido todavía no ha localizado ningún set. */
   fast?: boolean;
 }
+
+type OcrPreprocessing = "grayscale" | "variant-binary";
 
 let activeProgressListener: ((progress: CardScanProgress) => void) | undefined;
 let workerPromise: Promise<OcrWorker> | null = null;
 let recognitionQueue: Promise<void> = Promise.resolve();
 
-function normalizeOcrDigits(value: string): string | undefined {
+function normalizeOcrDigits(value: string, allowMergedEleven = false): string | undefined {
   const normalized = value
     .toUpperCase()
     .replace(/[OQ]/g, "0")
     .replace(/[IL]/g, "1")
     .replace(/Z/g, "2")
     .replace(/S/g, "5")
-    .replace(/B/g, "8");
+    .replace(/B/g, "8")
+    // Tesseract suele unir dos unos estrechos como una N: "SN" -> "511".
+    .replace(/N/g, allowMergedEleven ? "11" : "N");
 
   return /^\d{1,4}$/.test(normalized) ? normalized : undefined;
+}
+
+function normalizeOcrText(text: string): string {
+  return text.normalize("NFD").replace(/\p{M}/gu, "").toUpperCase();
+}
+
+function isSetBoundary(text: string, index: number, length: number): boolean {
+  const previous = index > 0 ? text[index - 1] : "";
+  const next = index + length < text.length ? text[index + length] : "";
+  if (/[A-Z0-9]/.test(previous)) return false;
+  if (!/[A-Z0-9]/.test(next)) return true;
+
+  // El OCR puede borrar el guion de "ASH-EN" y devolver "ASHEN".
+  const languageCode = text.slice(index + length, index + length + 2);
+  const afterLanguage = text[index + length + 2] ?? "";
+  return PRINTED_LANGUAGE_CODES.has(languageCode) && !/[A-Z0-9]/.test(afterLanguage);
+}
+
+function findSetOccurrences(text: string): Array<{ setCode: string; index: number }> {
+  const occurrences: Array<{ setCode: string; index: number }> = [];
+
+  for (const setCode of SCANNABLE_SET_CODES) {
+    let fromIndex = 0;
+    let index = text.indexOf(setCode, fromIndex);
+
+    while (index >= 0) {
+      if (isSetBoundary(text, index, setCode.length)) occurrences.push({ setCode, index });
+      fromIndex = index + setCode.length;
+      index = text.indexOf(setCode, fromIndex);
+    }
+  }
+
+  return occurrences;
+}
+
+function findClosestSetBefore(
+  occurrences: Array<{ setCode: string; index: number }>,
+  numberIndex: number,
+  maxDistance: number
+): { setCode: string; distance: number } | undefined {
+  let closest: { setCode: string; distance: number } | undefined;
+
+  for (const occurrence of occurrences) {
+    const distance = numberIndex - (occurrence.index + occurrence.setCode.length);
+    if (distance < 0 || distance > maxDistance) continue;
+    if (!closest || distance < closest.distance)
+      closest = { setCode: occurrence.setCode, distance };
+  }
+
+  return closest;
+}
+
+function isStandaloneNumberAllowed(setCode: string, number: number): boolean {
+  const promoRange = PROMO_NUMBER_RANGES[setCode];
+  if (promoRange) return number >= promoRange[0] && number <= promoRange[1];
+
+  const printedBaseTotal = PRINTED_BASE_TOTALS[setCode];
+  return (
+    printedBaseTotal !== undefined &&
+    number > printedBaseTotal &&
+    number <= MAX_PRINTED_VARIANT_NUMBER
+  );
+}
+
+function resolveFractionSetCode(
+  setCode: string,
+  printedTotal: number | undefined
+): string | undefined {
+  const legacyPromo = LEGACY_PROMO_BY_SET[setCode];
+  if (legacyPromo && printedTotal === legacyPromo.printedTotal) {
+    return legacyPromo.promoSetCode;
+  }
+
+  // Si el total pequeño de una promo se ha leído mal, es más seguro pedir
+  // otro fotograma que añadir por accidente la carta normal con ese número.
+  if (legacyPromo && printedTotal !== undefined && printedTotal <= 40) return undefined;
+  return setCode;
+}
+
+function buildRecognition(
+  setCode: string,
+  number: number,
+  rawText: string,
+  printedTotal?: number
+): CardCodeRecognition | undefined {
+  try {
+    const cardId = normalizeCardId(setCode, number);
+    return {
+      cardId,
+      setCode,
+      cardNumber: cardId.split("_")[1],
+      printedTotal,
+      rawText
+    };
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -150,10 +269,11 @@ export function calculateFrameMovement(previous: Uint8Array, current: Uint8Array
  * idiomas o ser leído con errores, mientras que SET_132 identifica la carta.
  */
 export function parseCardCodeFromOcr(text: string): CardCodeRecognition | undefined {
-  const normalizedText = text.normalize("NFD").replace(/\p{M}/gu, "").toUpperCase();
+  const normalizedText = normalizeOcrText(text);
+  const setOccurrences = findSetOccurrences(normalizedText);
 
   const fractions = [
-    ...normalizedText.matchAll(/([0-9OQILSZB]{1,4})\s*[/|\\]\s*([0-9OQILSZB]{1,4})/g)
+    ...normalizedText.matchAll(/([0-9OQILSZB]{1,4})\s*F?\s*[/|\\]\s*([0-9OQILSZB]{1,4})/g)
   ];
 
   let best:
@@ -174,35 +294,130 @@ export function parseCardCodeFromOcr(text: string): CardCodeRecognition | undefi
     const printedTotal = totalDigits ? Number(totalDigits) : undefined;
     if (!Number.isInteger(number) || number <= 0) continue;
 
-    const fractionIndex = fraction.index ?? 0;
-    const nearbyStart = Math.max(0, fractionIndex - 100);
-    const nearbyText = normalizedText.slice(nearbyStart, fractionIndex);
+    const closestSet = findClosestSetBefore(setOccurrences, fraction.index ?? 0, 100);
+    if (closestSet && (!best || closestSet.distance < best.distance)) {
+      const resolvedSetCode = resolveFractionSetCode(closestSet.setCode, printedTotal);
+      if (!resolvedSetCode) continue;
+      best = {
+        setCode: resolvedSetCode,
+        number,
+        printedTotal,
+        distance: closestSet.distance
+      };
+    }
+  }
 
-    for (const setCode of KNOWN_SET_CODES) {
-      const setIndex = nearbyText.lastIndexOf(setCode);
-      if (setIndex < 0) continue;
+  if (best) return buildRecognition(best.setCode, best.number, text, best.printedTotal);
 
-      const distance = nearbyText.length - (setIndex + setCode.length);
-      if (!best || distance < best.distance) {
-        best = { setCode, number, printedTotal, distance };
+  // Las impresiones modernas alternativas, Hyperspace y foil muestran, por
+  // ejemplo, "LAW-ES 511" o "SEC-ES 748", sin el total "/264". Solo se
+  // aceptan números por encima del set base para evitar que una lectura
+  // truncada (748 -> 148) añada silenciosamente una carta normal equivocada.
+  let standaloneBest:
+    | {
+        setCode: string;
+        number: number;
+        distance: number;
+      }
+    | undefined;
+
+  for (const occurrence of setOccurrences) {
+    const setEnd = occurrence.index + occurrence.setCode.length;
+    const nearbyText = normalizedText.slice(setEnd, setEnd + 56);
+    const numberTokens = [
+      ...nearbyText.matchAll(/(?:^|[^A-Z0-9])([0-9OQILSZBN]{1,4})\s*F?(?![A-Z0-9])/g)
+    ];
+
+    for (const token of numberTokens) {
+      const rawNumber = token[1];
+      const tokenOffset = token[0].indexOf(rawNumber);
+      const numberIndex = setEnd + (token.index ?? 0) + tokenOffset;
+      const beforeNumber = normalizedText.slice(Math.max(0, numberIndex - 4), numberIndex);
+      const afterNumber = normalizedText.slice(numberIndex + rawNumber.length, numberIndex + 8);
+      if (/[/|\\]\s*$/.test(beforeNumber) || /^\s*[/|\\]/.test(afterNumber)) continue;
+
+      const numberDigits = normalizeOcrDigits(rawNumber, true);
+      if (!numberDigits) continue;
+
+      const number = Number(numberDigits);
+      if (!Number.isInteger(number) || !isStandaloneNumberAllowed(occurrence.setCode, number)) {
+        continue;
+      }
+
+      const distance = numberIndex - setEnd;
+      if (!standaloneBest || distance < standaloneBest.distance) {
+        standaloneBest = { setCode: occurrence.setCode, number, distance };
       }
     }
   }
 
-  if (!best) return undefined;
+  if (!standaloneBest) return undefined;
+  return buildRecognition(standaloneBest.setCode, standaloneBest.number, text);
+}
 
-  try {
-    const cardId = normalizeCardId(best.setCode, best.number);
-    return {
-      cardId,
-      setCode: best.setCode,
-      cardNumber: cardId.split("_")[1],
-      printedTotal: best.printedTotal,
-      rawText: text
-    };
-  } catch {
-    return undefined;
+function findLooseVariantNumbers(text: string, setCode: string): Set<number> {
+  const normalizedText = normalizeOcrText(text);
+  const numbers = new Set<number>();
+  const tokens = [...normalizedText.matchAll(/(?:^|[^A-Z0-9])([0-9OQILSZBN]{1,4})(?![A-Z0-9])/g)];
+
+  for (const token of tokens) {
+    const rawNumber = token[1];
+    const tokenOffset = token[0].indexOf(rawNumber);
+    const numberIndex = (token.index ?? 0) + tokenOffset;
+    const beforeNumber = normalizedText.slice(Math.max(0, numberIndex - 4), numberIndex);
+    const afterNumber = normalizedText.slice(numberIndex + rawNumber.length, numberIndex + 8);
+    if (/[/|\\]\s*$/.test(beforeNumber) || /^\s*[/|\\]/.test(afterNumber)) continue;
+
+    const numberDigits = normalizeOcrDigits(rawNumber, true);
+    if (!numberDigits) continue;
+
+    const number = Number(numberDigits);
+    if (Number.isInteger(number) && isStandaloneNumberAllowed(setCode, number)) numbers.add(number);
   }
+
+  return numbers;
+}
+
+/**
+ * Combina distintos preprocesados del mismo recorte. En una foil, un pase
+ * puede leer "SEC-ES" y otro solo "748" por culpa del reflejo; únicamente se
+ * combinan si queda un solo set y un solo número de variante posibles.
+ */
+export function parseCardCodeFromOcrResults(texts: string[]): CardCodeRecognition | undefined {
+  const rawText = texts.filter(Boolean).join("\n");
+  const directRecognitions = texts
+    .map(parseCardCodeFromOcr)
+    .filter((recognition): recognition is CardCodeRecognition => recognition !== undefined);
+  const directByCardId = new Map(
+    directRecognitions.map((recognition) => [recognition.cardId, recognition])
+  );
+
+  if (directByCardId.size === 1) {
+    const recognition = directByCardId.values().next().value as CardCodeRecognition;
+    return { ...recognition, rawText };
+  }
+  if (directByCardId.size > 1) return undefined;
+
+  const setCodes = new Set(
+    texts.flatMap((result) =>
+      findSetOccurrences(normalizeOcrText(result)).map(({ setCode }) => setCode)
+    )
+  );
+  if (setCodes.size !== 1) return undefined;
+
+  const setCode = setCodes.values().next().value as string;
+  // Los números pequeños de una promo se confunden fácilmente con coste,
+  // poder o vida. En promos exigimos siempre set y número en el mismo pase.
+  if (PROMO_NUMBER_RANGES[setCode]) return undefined;
+
+  const numbers = new Set(texts.flatMap((result) => [...findLooseVariantNumbers(result, setCode)]));
+  if (numbers.size !== 1) return undefined;
+
+  return buildRecognition(setCode, numbers.values().next().value as number, rawText);
+}
+
+function containsScannableSetCode(texts: string[]): boolean {
+  return texts.some((text) => findSetOccurrences(normalizeOcrText(text)).length > 0);
 }
 
 function getImageDimensions(source: ImageBitmap | HTMLImageElement): {
@@ -253,7 +468,8 @@ async function loadImage(image: Blob): Promise<LoadedImage> {
 function drawGrayscale(
   source: CanvasImageSource,
   sourceRect: { x: number; y: number; width: number; height: number },
-  targetWidth: number
+  targetWidth: number,
+  preprocessing: OcrPreprocessing = "grayscale"
 ): HTMLCanvasElement {
   const canvas = document.createElement("canvas");
   canvas.width = Math.max(1, Math.round(targetWidth));
@@ -280,7 +496,17 @@ function drawGrayscale(
 
   for (let index = 0; index < data.length; index += 4) {
     const grayscale = 0.299 * data[index] + 0.587 * data[index + 1] + 0.114 * data[index + 2];
-    const adjusted = Math.max(0, Math.min(255, (grayscale - 128) * contrast + 128));
+    const pixelX = (index / 4) % canvas.width;
+    const threshold =
+      pixelX < canvas.width * OCR_VARIANT_THRESHOLD_SPLIT
+        ? OCR_VARIANT_LEFT_THRESHOLD
+        : OCR_VARIANT_RIGHT_THRESHOLD;
+    const adjusted =
+      preprocessing === "variant-binary"
+        ? grayscale >= threshold
+          ? 255
+          : 0
+        : Math.max(0, Math.min(255, (grayscale - 128) * contrast + 128));
     data[index] = adjusted;
     data[index + 1] = adjusted;
     data[index + 2] = adjusted;
@@ -310,7 +536,8 @@ function getCenteredCardRect(width: number, height: number) {
 function buildOcrCanvas(
   image: LoadedImage,
   startRatio: number,
-  targetWidth = OCR_TARGET_WIDTH
+  targetWidth = OCR_TARGET_WIDTH,
+  preprocessing: OcrPreprocessing = "grayscale"
 ): HTMLCanvasElement {
   const card = getCenteredCardRect(image.width, image.height);
   const startY = card.y + card.height * startRatio;
@@ -323,7 +550,8 @@ function buildOcrCanvas(
       width: card.width,
       height: card.y + card.height - startY
     },
-    targetWidth
+    targetWidth,
+    preprocessing
   );
 }
 
@@ -366,14 +594,23 @@ async function recognizeCardCodeNow(
     await worker.setParameters({ tessedit_pageseg_mode: "6" });
     const footerCanvas = buildOcrCanvas(loaded, OCR_FOOTER_START);
     const footerResult = await worker.recognize(footerCanvas);
-    const footerRecognition = parseCardCodeFromOcr(footerResult.data.text);
+    const ocrTexts = [footerResult.data.text];
+    const footerRecognition = parseCardCodeFromOcrResults(ocrTexts);
     if (footerRecognition) return footerRecognition;
-    if (options.fast) return undefined;
 
     await worker.setParameters({ tessedit_pageseg_mode: "11" });
     const fallbackCanvas = buildOcrCanvas(loaded, OCR_FALLBACK_START, 1800);
     const fallbackResult = await worker.recognize(fallbackCanvas, { rotateAuto: true });
-    return parseCardCodeFromOcr(`${footerResult.data.text}\n${fallbackResult.data.text}`);
+    ocrTexts.push(fallbackResult.data.text);
+    const fallbackRecognition = parseCardCodeFromOcrResults(ocrTexts);
+    if (fallbackRecognition) return fallbackRecognition;
+
+    if (options.fast && !containsScannableSetCode(ocrTexts)) return undefined;
+
+    const variantCanvas = buildOcrCanvas(loaded, OCR_FALLBACK_START, 1800, "variant-binary");
+    const variantResult = await worker.recognize(variantCanvas, { rotateAuto: true });
+    ocrTexts.push(variantResult.data.text);
+    return parseCardCodeFromOcrResults(ocrTexts);
   } finally {
     activeProgressListener = undefined;
     loaded?.close();

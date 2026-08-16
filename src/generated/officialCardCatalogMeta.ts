@@ -1,0 +1,77 @@
+// Archivo generado por `npm run catalog:sync`. No editar manualmente.
+export const OFFICIAL_SET_CODES = [
+  "ASH",
+  "ASHP",
+  "C24",
+  "C25",
+  "C26",
+  "G25",
+  "GG",
+  "IBH",
+  "J24",
+  "J25",
+  "JTL",
+  "JTLP",
+  "LAW",
+  "LAWP",
+  "LOF",
+  "LOFP",
+  "MV26",
+  "P25",
+  "P26",
+  "SEC",
+  "SECP",
+  "SHD",
+  "SHDP",
+  "SOR",
+  "SORP",
+  "TS26",
+  "TWI",
+  "TWIP"
+] as const;
+export const OFFICIAL_PRINTED_BASE_TOTALS = {
+  ASH: 264,
+  IBH: 104,
+  JTL: 262,
+  LAW: 264,
+  LOF: 264,
+  SEC: 264,
+  SHD: 262,
+  SOR: 252,
+  TS26: 84,
+  TWI: 257
+} as const;
+export const OFFICIAL_STANDALONE_NUMBER_RANGES = {
+  ASHP: [1, 40],
+  C24: [1, 6],
+  C25: [1, 6],
+  C26: [1, 6],
+  G25: [2, 3],
+  GG: [1, 4],
+  J24: [1, 6],
+  J25: [1, 19],
+  JTLP: [1, 40],
+  LAWP: [1, 40],
+  LOFP: [1, 40],
+  MV26: [1, 2],
+  P25: [1, 177],
+  P26: [1, 239],
+  SECP: [1, 40],
+  SHDP: [1, 20],
+  SORP: [1, 20],
+  TWIP: [1, 20]
+} as const;
+export const OFFICIAL_LEGACY_PROMO_BY_SET = {
+  SHD: {
+    printedTotal: 20,
+    promoSetCode: "SHDP"
+  },
+  SOR: {
+    printedTotal: 20,
+    promoSetCode: "SORP"
+  },
+  TWI: {
+    printedTotal: 20,
+    promoSetCode: "TWIP"
+  }
+} as const;

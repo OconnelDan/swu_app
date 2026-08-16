@@ -1,16 +1,8 @@
-export const KNOWN_SET_CODES = [
-  "SOR",
-  "SHD",
-  "TWI",
-  "JTL",
-  "LOF",
-  "SEC",
-  "LAW",
-  "ASH",
-  "IBH",
-  "HMW",
-  "TS26"
-] as const;
+import { OFFICIAL_SET_CODES } from "@/generated/officialCardCatalogMeta";
+
+// HMW ya existía en importaciones antiguas aunque todavía no figura en el
+// catálogo oficial publicado. Se conserva para no invalidar esos archivos.
+export const KNOWN_SET_CODES: readonly string[] = [...new Set([...OFFICIAL_SET_CODES, "HMW"])];
 
 const KNOWN_SETS = new Set<string>(KNOWN_SET_CODES);
 

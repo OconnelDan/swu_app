@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   analyzeCardFrameQuality,
   calculateFrameMovement,
-  parseCardCodeFromOcr
+  parseCardCodeFromOcr,
+  parseCardCodeFromOcrResults
 } from "@/lib/cardScanner";
 
 function buildFrame(
@@ -57,9 +58,78 @@ describe("lector del código impreso de una carta", () => {
     });
   });
 
-  it("no inventa una carta si falta el set o la fracción impresa", () => {
+  it("reconoce una impresión Hyperspace sin total impreso", () => {
+    expect(parseCardCodeFromOcr("© LFL © FFG LAW-ES © SN")).toMatchObject({
+      cardId: "LAW_511",
+      setCode: "LAW",
+      cardNumber: "511",
+      printedTotal: undefined
+    });
+  });
+
+  it("reconoce una impresión foil moderna sin total impreso", () => {
+    expect(parseCardCodeFromOcr("JAKUB REBELKA © LFL © FFG SEC-ES © 748")).toMatchObject({
+      cardId: "SEC_748",
+      setCode: "SEC",
+      cardNumber: "748"
+    });
+  });
+
+  it("reconoce el código promocional ASHP impreso en la carta", () => {
+    expect(parseCardCodeFromOcr("© LFL © FFG ASHP-ES © 16")).toMatchObject({
+      cardId: "ASHP_016",
+      setCode: "ASHP",
+      cardNumber: "016"
+    });
+  });
+
+  it.each([
+    ["© LFL © FFG SOR-EN © 007/20", "SORP_007"],
+    ["© LFL © FFG SHD-EN © 10/20", "SHDP_010"],
+    ["© LFL © FFG TWI-EN © 04/20", "TWIP_004"]
+  ])("distingue las primeras promos por el total /20: %s", (rawText, cardId) => {
+    expect(parseCardCodeFromOcr(rawText)).toMatchObject({ cardId, printedTotal: 20 });
+  });
+
+  it.each([
+    ["© LFL © FFG JTLP-EN © 16", "JTLP_016"],
+    ["© LFL © FFG LOFP-EN © 8", "LOFP_008"],
+    ["© LFL © FFG SECP-EN © 4", "SECP_004"],
+    ["© LFL © FFG LAWP-EN © 20", "LAWP_020"],
+    ["© LFL © FFG ASHP-EN © 16", "ASHP_016"]
+  ])("reconoce las promos modernas por su código terminado en P: %s", (rawText, cardId) => {
+    expect(parseCardCodeFromOcr(rawText)).toMatchObject({ cardId });
+  });
+
+  it.each([
+    ["© LFL © FFG P25-ES © 97", "P25_097"],
+    ["© LFL © FFG P26-EN © 239", "P26_239"],
+    ["© LFL © FFG C24-EN © 3", "C24_003"],
+    ["© LFL © FFG J25-EN © 19", "J25_019"],
+    ["© LFL © FFG MV26-EN © 2", "MV26_002"]
+  ])("reconoce otras nomenclaturas promocionales oficiales: %s", (rawText, cardId) => {
+    expect(parseCardCodeFromOcr(rawText)).toMatchObject({ cardId });
+  });
+
+  it("acepta el sufijo F de las foil de los primeros sets", () => {
+    expect(parseCardCodeFromOcr("© FFG SOR-ES 182F/252")).toMatchObject({
+      cardId: "SOR_182",
+      printedTotal: 252
+    });
+  });
+
+  it("combina de forma segura el set y el número leídos en pases distintos", () => {
+    expect(parseCardCodeFromOcrResults(["© FFG SEC-ES © 148", "reflejo 748"])).toMatchObject({
+      cardId: "SEC_748"
+    });
+    expect(parseCardCodeFromOcrResults(["© FFG SEC-ES © 148", "reflejo 748 749"])).toBeUndefined();
+  });
+
+  it("no inventa una carta si falta el set o el formato impreso es inseguro", () => {
     expect(parseCardCodeFromOcr("QUEEN SORUNA 132")).toBeUndefined();
     expect(parseCardCodeFromOcr("XYZ EN 132/264")).toBeUndefined();
+    expect(parseCardCodeFromOcr("© FFG SEC-ES © 148")).toBeUndefined();
+    expect(parseCardCodeFromOcr("© FFG SHD-ES © 10/28")).toBeUndefined();
   });
 });
 

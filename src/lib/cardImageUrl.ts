@@ -1,23 +1,35 @@
 import { parseCardId } from "./normalizeCardId";
 
 const UNPADDED_IMAGE_NUMBER_SETS = new Set(["IBH", "TS26"]);
+const TWO_DIGIT_IMAGE_NUMBER_SETS = new Set(["SHDP", "TWIP", "JTLP", "LOFP", "SECP", "LAWP"]);
+const IMAGE_SET_CODE_ALIASES: Readonly<Record<string, string>> = {
+  SORP: "SOROP",
+  SHDP: "SHDOP",
+  TWIP: "TWIOP",
+  JTLP: "JTLOP",
+  LOFP: "LOFOP",
+  SECP: "SECOP",
+  LAWP: "LAWOP",
+  ASHP: "ASHOP"
+};
 
 /**
- * Construye la URL de la imagen de una carta a partir de su cardId.
+ * Construye una URL de respaldo de la imagen a partir de su cardId.
  *
- * No usa la API JSON de swu-db.com (`api.swu-db.com`) porque esa API no
- * envía cabeceras CORS y el navegador bloquea el `fetch()` desde la app
- * (comprobado: "blocked by CORS policy"). En cambio, el CDN de imágenes
- * (`cdn.swu-db.com`) sigue un patrón estable y una etiqueta `<img>` no está
- * sujeta a la política de CORS, así que la imagen se puede mostrar siempre
- * que exista, sin depender de ninguna llamada de red desde nuestro código.
+ * El catálogo incluido ya proporciona la imagen del CDN oficial. Este patrón
+ * antiguo de swu-db se conserva únicamente para copias de seguridad o IDs que
+ * todavía no estén presentes en el catálogo empaquetado.
  */
 export function getCardImageUrl(cardId: string): string {
   const { setCode, cardNumber } = parseCardId(cardId);
+  const imageSetCode = IMAGE_SET_CODE_ALIASES[setCode] ?? setCode;
+  const unpaddedNumber = cardNumber.replace(/^0+(?=\d)/, "");
   const imageNumber = UNPADDED_IMAGE_NUMBER_SETS.has(setCode)
-    ? cardNumber.replace(/^0+(?=\d)/, "")
-    : cardNumber;
-  return `https://cdn.swu-db.com/images/cards/${setCode}/${imageNumber}.png`;
+    ? unpaddedNumber
+    : TWO_DIGIT_IMAGE_NUMBER_SETS.has(setCode)
+      ? unpaddedNumber.padStart(2, "0")
+      : cardNumber;
+  return `https://cdn.swu-db.com/images/cards/${imageSetCode}/${imageNumber}.png`;
 }
 
 /**
