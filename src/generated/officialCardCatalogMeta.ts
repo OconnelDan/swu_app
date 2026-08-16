@@ -27,7 +27,7 @@ export const OFFICIAL_SET_CODES = [
   "SORP",
   "TS26",
   "TWI",
-  "TWIP"
+  "TWIP",
 ] as const;
 export const OFFICIAL_PRINTED_BASE_TOTALS = {
   ASH: 264,
@@ -39,7 +39,7 @@ export const OFFICIAL_PRINTED_BASE_TOTALS = {
   SHD: 262,
   SOR: 252,
   TS26: 84,
-  TWI: 257
+  TWI: 257,
 } as const;
 export const OFFICIAL_STANDALONE_NUMBER_RANGES = {
   ASHP: [1, 40],
@@ -59,19 +59,19 @@ export const OFFICIAL_STANDALONE_NUMBER_RANGES = {
   SECP: [1, 40],
   SHDP: [1, 20],
   SORP: [1, 20],
-  TWIP: [1, 20]
+  TWIP: [1, 20],
 } as const;
 export const OFFICIAL_LEGACY_PROMO_BY_SET = {
   SHD: {
     printedTotal: 20,
-    promoSetCode: "SHDP"
+    promoSetCode: "SHDP",
   },
   SOR: {
     printedTotal: 20,
-    promoSetCode: "SORP"
+    promoSetCode: "SORP",
   },
   TWI: {
     printedTotal: 20,
-    promoSetCode: "TWIP"
-  }
+    promoSetCode: "TWIP",
+  },
 } as const;
