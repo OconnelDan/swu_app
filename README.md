@@ -276,15 +276,17 @@ diferentes:
   error explicativo. Está documentado en el propio código
   (`src/providers/collectionProvider/SwUnlimitedDbRemoteCollectionProvider.ts`)
   con los pasos a seguir si en el futuro se publica una API oficial.
-- **`swu-db.com`**: expone una **API REST pública y documentada**
-  (`https://www.swu-db.com/api`) para el **catálogo** de cartas (nombre, set,
-  número, tipo, rareza e imagen) — nunca colecciones privadas. Sus respuestas
-  `GET` no permiten que GitHub Pages lea el JSON directamente por CORS, así que
-  la aplicación no depende de esa petición en tiempo de ejecución. El comando
-  `npm run catalog:sync` descarga los sets soportados durante el desarrollo y
-  genera `public/data/swu-card-catalog.json`. La PWA sirve ese catálogo desde su
-  propio dominio, lo guarda en la caché offline y resuelve también las variantes
-  Hyperspace, Foil y Prestige hacia el ID base utilizado por la colección.
+- **API oficial de Star Wars: Unlimited**:
+  `https://admin.starwarsunlimited.com/api/card-list` publica el catálogo usado
+  por la propia web del juego. Incluye códigos de expansión, números impresos,
+  tipos de variante, `variantOf`, `validationId` y las imágenes del CDN oficial.
+  La API solo permite peticiones del origen de la web oficial mediante CORS, por
+  lo que GitHub Pages no la consulta directamente. El comando
+  `npm run catalog:sync` descarga sus páginas durante el desarrollo y genera
+  `public/data/swu-card-catalog.json`. La PWA sirve ese archivo desde su propio
+  dominio, lo guarda en la caché offline y enlaza las impresiones Hyperspace,
+  Foil, Showcase, Weekly Play y las demás promos con su carta base sin comparar
+  nombres manualmente.
 
 ## Privacidad y seguridad
 
@@ -293,8 +295,9 @@ diferentes:
   borrar la caché local no los elimina y vuelven a cargarse tras iniciar sesión.
 - Los nombres y las equivalencias de variantes se leen del catálogo compacto
   incluido en la PWA; no se envían códigos de cartas a una API externa. Las
-  imágenes se muestran desde el CDN público de `swu-db.com` mediante etiquetas
-  de imagen y no contienen información de tu colección ni de tus mazos.
+  imágenes se muestran desde el CDN oficial de Star Wars: Unlimited mediante
+  etiquetas de imagen y no contienen información de tu colección ni de tus
+  mazos.
 - Si activas **Cuenta y amigos**, tu email, tu colección y tus mazos guardados
   se guardan en tu proyecto de Supabase, protegidos con Row Level Security:
   solo tú puedes leer o sustituir tus datos. Los amigos aceptados únicamente
