@@ -1,6 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import {
+  BellRing,
+  CheckCircle2,
+  Clock3,
   Eye,
   EyeOff,
   KeyRound,
@@ -8,10 +11,18 @@ import {
   LogIn,
   LogOut,
   MailCheck,
+  Save,
   ShieldCheck,
   UserPlus
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
+import {
+  COLLECTION_BACKUP_INACTIVITY_OPTIONS,
+  loadCollectionBackupSettings,
+  updateCollectionBackupSettings,
+  type CollectionBackupInactivityMinutes,
+  type CollectionBackupSettings
+} from "@/lib/collectionBackupRepository";
 import {
   getAuthErrorMessage,
   requestAccountVerification,
@@ -475,6 +486,197 @@ function PasswordForm({ flow, onCancel, onComplete }: PasswordFormProps) {
   );
 }
 
+function formatAccountDate(value: string | null): string {
+  if (!value) return "Todavía no se ha enviado ninguna copia";
+  return new Intl.DateTimeFormat("es-ES", {
+    dateStyle: "medium",
+    timeStyle: "short"
+  }).format(new Date(value));
+}
+
+interface CollectionBackupSettingsCardProps {
+  email: string;
+}
+
+function CollectionBackupSettingsCard({ email }: CollectionBackupSettingsCardProps) {
+  const [settings, setSettings] = useState<CollectionBackupSettings | null>(null);
+  const [emailEnabled, setEmailEnabled] = useState(false);
+  const [inactivityMinutes, setInactivityMinutes] = useState<CollectionBackupInactivityMinutes>(15);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    setError(null);
+
+    void loadCollectionBackupSettings()
+      .then((loadedSettings) => {
+        if (!active) return;
+        setSettings(loadedSettings);
+        setEmailEnabled(loadedSettings.emailEnabled);
+        setInactivityMinutes(loadedSettings.inactivityMinutes);
+      })
+      .catch((cause) => {
+        if (!active) return;
+        setError(
+          cause instanceof Error
+            ? cause.message
+            : "No se ha podido cargar la configuración de las copias."
+        );
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const handleSave = async () => {
+    setSaving(true);
+    setError(null);
+    setMessage(null);
+
+    try {
+      const updatedSettings = await updateCollectionBackupSettings(emailEnabled, inactivityMinutes);
+      setSettings(updatedSettings);
+      setEmailEnabled(updatedSettings.emailEnabled);
+      setInactivityMinutes(updatedSettings.inactivityMinutes);
+      setMessage(
+        updatedSettings.emailEnabled
+          ? "Copias diarias activadas. Solo se enviará un correo cuando haya cambios."
+          : "Copias diarias por correo desactivadas."
+      );
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : "No se ha podido guardar la configuración de las copias."
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const hasUnsavedChanges =
+    settings !== null &&
+    (settings.emailEnabled !== emailEnabled || settings.inactivityMinutes !== inactivityMinutes);
+
+  return (
+    <section className="card space-y-4" aria-labelledby="collection-backup-heading">
+      <div className="flex items-start gap-3">
+        <BellRing size={24} className="mt-0.5 shrink-0 text-saber-blue" aria-hidden="true" />
+        <div>
+          <h2 id="collection-backup-heading" className="font-display text-base">
+            Copia diaria de la colección
+          </h2>
+          <p className="mt-1 text-sm text-slate-300">
+            Recibe un JSON restaurable cuando tu colección haya cambiado. Nunca se enviará más de un
+            correo por día.
+          </p>
+        </div>
+      </div>
+
+      {loading ? (
+        <p role="status" className="flex items-center gap-2 text-sm text-slate-300">
+          <Loader2 size={16} className="animate-spin" />
+          Cargando la configuración…
+        </p>
+      ) : (
+        <>
+          <label className="flex cursor-pointer items-start justify-between gap-3 rounded-lg border border-space-700 bg-space-950 p-3">
+            <span>
+              <strong className="block text-sm">Enviar la copia automática por correo</strong>
+              <span className="mt-1 block break-all text-xs text-slate-400">{email}</span>
+            </span>
+            <input
+              type="checkbox"
+              className="mt-1 h-5 w-5 accent-saber-blue"
+              checked={emailEnabled}
+              disabled={settings === null}
+              aria-label="Enviar la copia automática por correo"
+              onChange={(event) => {
+                setEmailEnabled(event.currentTarget.checked);
+                setMessage(null);
+              }}
+            />
+          </label>
+
+          <div>
+            <label htmlFor="backup-inactivity" className="mb-1 flex items-center gap-2 text-sm">
+              <Clock3 size={16} className="text-saber-blue" aria-hidden="true" />
+              Esperar después del último cambio
+            </label>
+            <select
+              id="backup-inactivity"
+              className="w-full rounded-lg border border-space-600 bg-space-950 p-2.5 text-sm"
+              value={inactivityMinutes}
+              disabled={settings === null || !emailEnabled}
+              onChange={(event) => {
+                setInactivityMinutes(
+                  Number(event.currentTarget.value) as CollectionBackupInactivityMinutes
+                );
+                setMessage(null);
+              }}
+            >
+              {COLLECTION_BACKUP_INACTIVITY_OPTIONS.map((minutes) => (
+                <option key={minutes} value={minutes}>
+                  {minutes} minutos de inactividad
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="rounded-lg bg-space-950 p-3 text-xs text-slate-400">
+            <p>
+              Si haces más cambios después de recibir el correo de hoy, quedarán pendientes para el
+              día siguiente. Cerrar la aplicación no interrumpe el proceso.
+            </p>
+            <p className="mt-2">
+              <strong className="text-slate-300">Último correo:</strong>{" "}
+              {formatAccountDate(settings?.lastEmailSentAt ?? null)}
+            </p>
+            {settings?.hasPendingChanges && (
+              <p className="mt-2 flex items-start gap-1.5 text-saber-yellow">
+                <Clock3 size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
+                Hay cambios pendientes. Se enviarán cuando se cumpla la espera y no se haya enviado
+                ya la copia de hoy.
+              </p>
+            )}
+          </div>
+
+          {settings?.lastError && (
+            <p role="alert" className="rounded-lg bg-saber-red/10 p-3 text-xs text-saber-red">
+              El último envío no pudo completarse: {settings.lastError}
+            </p>
+          )}
+          <Feedback error={error} message={message} />
+
+          <button
+            type="button"
+            className="btn-primary w-full"
+            disabled={saving || settings === null || !hasUnsavedChanges}
+            onClick={() => void handleSave()}
+          >
+            {saving ? (
+              <Loader2 size={16} className="animate-spin" />
+            ) : hasUnsavedChanges ? (
+              <Save size={16} />
+            ) : (
+              <CheckCircle2 size={16} />
+            )}
+            {saving ? "Guardando…" : hasUnsavedChanges ? "Guardar configuración" : "Guardado"}
+          </button>
+        </>
+      )}
+    </section>
+  );
+}
+
 export function AccountPage() {
   const { session, loading, passwordRecovery, finishPasswordFlow } = useAuth();
   const [searchParams] = useSearchParams();
@@ -608,6 +810,8 @@ export function AccountPage() {
           Cerrar sesión en este dispositivo
         </button>
       </section>
+
+      <CollectionBackupSettingsCard email={session.user.email ?? "Email de la cuenta"} />
 
       <p className="card text-xs text-slate-400">
         Al cerrar sesión volverán a mostrarse los datos locales del modo invitado que existan en
