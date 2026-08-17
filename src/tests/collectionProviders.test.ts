@@ -90,4 +90,12 @@ describe("JsonCollectionProvider", () => {
     const result = await provider.importFromSource({ text: json });
     expect(result.cards[0].ownedCount).toBe(2);
   });
+
+  it("acepta una copia vacía para poder restaurar una colección sin cartas", async () => {
+    const provider = new JsonCollectionProvider();
+    const result = await provider.importFromSource({ text: "[]" });
+
+    expect(result.cards).toEqual([]);
+    expect(result.totalCopies).toBe(0);
+  });
 });
