@@ -32,8 +32,10 @@ export class JsonCollectionProvider implements CollectionProvider {
     if (!Array.isArray(data)) {
       throw new Error("El JSON de colección debe ser un array de cartas.");
     }
+    // Una copia diaria puede representar una colección completamente vacía.
+    // La previsualización obliga a confirmar antes de sustituir la colección.
     if (data.length === 0) {
-      throw new Error("El JSON de colección no contiene ninguna fila.");
+      return buildImportResult("json", processCollectionRows([]), { fileName });
     }
 
     const isAggregated = data.every(
@@ -41,7 +43,8 @@ export class JsonCollectionProvider implements CollectionProvider {
         row &&
         typeof row === "object" &&
         "cardId" in (row as Record<string, unknown>) &&
-        ("ownedCount" in (row as Record<string, unknown>) || "count" in (row as Record<string, unknown>))
+        ("ownedCount" in (row as Record<string, unknown>) ||
+          "count" in (row as Record<string, unknown>))
     );
 
     const rawRows: RawCollectionRow[] = isAggregated
@@ -64,7 +67,10 @@ export class JsonCollectionProvider implements CollectionProvider {
           variantValues: Array.isArray(row.variants)
             ? (row.variants as unknown[])
             : Object.entries(row)
-                .filter(([key]) => !["set", "setCode", "col", "number", "cardNumber", "num", "name"].includes(key))
+                .filter(
+                  ([key]) =>
+                    !["set", "setCode", "col", "number", "cardNumber", "num", "name"].includes(key)
+                )
                 .map(([, value]) => value),
           rowRef: index + 1
         }));
