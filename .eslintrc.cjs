@@ -10,7 +10,9 @@ module.exports = {
   parser: "@typescript-eslint/parser",
   parserOptions: { ecmaVersion: "latest", sourceType: "module" },
   plugins: ["@typescript-eslint", "react-refresh"],
-  ignorePatterns: ["dist", "node_modules"],
+  // Las Edge Functions usan Deno y su propio deno.json. El lint del frontend
+  // se limita a Node/Vite; la lógica compartida del correo sí se prueba con Vitest.
+  ignorePatterns: ["dist", "node_modules", "supabase/functions/**"],
   rules: {
     "react-refresh/only-export-components": ["warn", { allowConstantExport: true }],
     "@typescript-eslint/no-unused-vars": ["warn", { argsIgnorePattern: "^_" }]
