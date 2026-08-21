@@ -12,6 +12,13 @@ import { DataSourceProvider } from "@/contexts/DataSourceProvider";
 // visita; los datos offline corresponden exclusivamente al modo invitado.
 registerSW({ immediate: true });
 
+// La primera caché de imágenes no tenía caducidad y podía mantener diferencias
+// entre dispositivos. La nueva versión utiliza otro nombre, revalida en
+// segundo plano y elimina esta caché heredada una única vez cuando exista.
+if ("caches" in window) {
+  void window.caches.delete("swu-images");
+}
+
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <AuthProvider>
