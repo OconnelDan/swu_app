@@ -392,6 +392,7 @@ returns timestamptz
 language plpgsql
 security invoker
 set search_path = ''
+set statement_timeout = '30s'
 as $$
 declare
   v_user_id uuid := auth.uid();
@@ -602,33 +603,66 @@ set search_path = ''
 as $$
 declare
   v_user_id uuid := auth.uid();
+  v_now timestamptz := clock_timestamp();
 begin
   if v_user_id is null then
     raise exception 'No autenticado';
   end if;
 
+  if not exists (
+    select 1
+    from public.favorite_decks as deck
+    where deck.user_id = v_user_id
+      and deck.is_mounted
+  ) then
+    update public.collection_cards as collection
+    set
+      free_count = collection.owned_count,
+      updated_at = v_now
+    where collection.user_id = v_user_id
+      and collection.free_count is distinct from collection.owned_count;
+
+    return;
+  end if;
+
+  with mounted_requirements as materialized (
+    select
+      required_card."cardId" as card_id,
+      sum(required_card."requiredCount")::integer as required_count
+    from public.favorite_decks as deck
+    cross join lateral jsonb_to_recordset(
+      case
+        when jsonb_typeof(deck.normalized_deck -> 'allRequiredCards') = 'array'
+          then deck.normalized_deck -> 'allRequiredCards'
+        else '[]'::jsonb
+      end
+    ) as required_card("cardId" text, "requiredCount" integer)
+    where deck.user_id = v_user_id
+      and deck.is_mounted
+      and required_card."cardId" is not null
+      and required_card."requiredCount" > 0
+    group by required_card."cardId"
+  ),
+  desired_counts as materialized (
+    select
+      collection.card_id,
+      greatest(
+        collection.owned_count - coalesce(requirement.required_count, 0),
+        0
+      ) as free_count
+    from public.collection_cards as collection
+    left join mounted_requirements as requirement
+      on requirement.card_id = collection.card_id
+    where collection.user_id = v_user_id
+  )
   update public.collection_cards as collection
   set
-    free_count = greatest(
-      collection.owned_count - coalesce((
-        select sum(required_card."requiredCount")::integer
-        from public.favorite_decks as deck
-        cross join lateral jsonb_to_recordset(
-          case
-            when jsonb_typeof(deck.normalized_deck -> 'allRequiredCards') = 'array'
-              then deck.normalized_deck -> 'allRequiredCards'
-            else '[]'::jsonb
-          end
-        ) as required_card("cardId" text, "requiredCount" integer)
-        where deck.user_id = v_user_id
-          and deck.is_mounted
-          and required_card."cardId" = collection.card_id
-          and required_card."requiredCount" > 0
-      ), 0),
-      0
-    ),
-    updated_at = clock_timestamp()
-  where collection.user_id = v_user_id;
+    free_count = desired.free_count,
+    updated_at = v_now
+  from desired_counts as desired
+  where collection.user_id = v_user_id
+    and collection.card_id = desired.card_id
+    and collection.free_count is distinct from desired.free_count;
 end;
 $$;
 
@@ -643,6 +677,7 @@ returns timestamptz
 language plpgsql
 security invoker
 set search_path = ''
+set statement_timeout = '30s'
 as $$
 declare
   v_user_id uuid := auth.uid();
