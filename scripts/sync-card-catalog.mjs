@@ -90,7 +90,17 @@ function getPrintedId(card) {
 function getImageUrl(card) {
   const attributes = relationAttributes(card.attributes.artFront);
   const url = attributes.formats?.card?.url ?? attributes.url ?? "";
-  return url.replace("https://cdn.starwarsunlimited.com//", "https://cdn.starwarsunlimited.com/");
+  if (!url) return "";
+
+  const parsedUrl = new URL(url);
+  if (parsedUrl.protocol !== "https:" || parsedUrl.hostname !== "cdn.starwarsunlimited.com") {
+    throw new Error(`La carta ${card.id} utiliza una URL de imagen oficial no reconocida: ${url}`);
+  }
+
+  // La doble barra tras el dominio forma parte de la clave publicada por el
+  // CDN oficial. No debe normalizarse: /card_... puede devolver 403 mientras
+  // que //card_... sirve correctamente la misma imagen.
+  return url;
 }
 
 function imagePriority(card, canonicalCard) {
