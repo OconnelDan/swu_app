@@ -169,7 +169,11 @@ export function CardFinderPage() {
             <li key={candidate.cardId} className="card">
               <div className="flex items-start gap-3">
                 {settings.showImages && imageUrl && (
-                  <CardImageThumbnail src={imageUrl} className="h-20 w-auto rounded" />
+                  <CardImageThumbnail
+                    src={imageUrl}
+                    fallbackSrc={tryGetCardImageUrl(candidate.cardId)}
+                    className="h-20 w-auto rounded"
+                  />
                 )}
 
                 <div className="flex-1">

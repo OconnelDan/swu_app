@@ -637,6 +637,7 @@ export function ScanCardsPage() {
             {catalogImageUrl && (
               <CardImageThumbnail
                 src={catalogImageUrl}
+                fallbackSrc={tryGetCardImageUrl(recognizedCard.recognition.cardId)}
                 alt={recognizedCard.info.name ?? recognizedCard.info.cardId}
                 className="h-32 w-auto rounded"
               />
