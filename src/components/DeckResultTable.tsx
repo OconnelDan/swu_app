@@ -3,6 +3,7 @@ import type { FriendCardAvailability } from "@/lib/friendsRepository";
 import type { CardTransferPlan } from "@/lib/cardAllocation";
 import { ArrowRightLeft } from "lucide-react";
 import { useSettings } from "@/hooks/useSettings";
+import { tryGetCardImageUrl } from "@/lib/cardImageUrl";
 import { CardImageThumbnail } from "./CardImageThumbnail";
 
 const ZONE_LABELS: Record<DeckZone, string> = {
@@ -111,7 +112,11 @@ export function DeckResultTable({
               <td className="py-2 pr-2">
                 <div className="flex items-center gap-2">
                   {settings.showImages && row.imageUrl && (
-                    <CardImageThumbnail src={row.imageUrl} className="h-10 w-auto rounded" />
+                    <CardImageThumbnail
+                      src={row.imageUrl}
+                      fallbackSrc={tryGetCardImageUrl(row.cardId)}
+                      className="h-10 w-auto rounded"
+                    />
                   )}
                   <span>{row.cardName ?? "—"}</span>
                 </div>
@@ -170,7 +175,11 @@ export function DeckResultTable({
             <div className="flex items-start justify-between gap-2">
               <div className="flex items-start gap-2">
                 {settings.showImages && row.imageUrl && (
-                  <CardImageThumbnail src={row.imageUrl} className="h-14 w-auto rounded" />
+                  <CardImageThumbnail
+                    src={row.imageUrl}
+                    fallbackSrc={tryGetCardImageUrl(row.cardId)}
+                    className="h-14 w-auto rounded"
+                  />
                 )}
                 <div>
                   <p className="font-mono text-xs text-slate-400">{row.cardId}</p>

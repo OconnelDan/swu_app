@@ -1,15 +1,39 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 interface CardImageThumbnailProps {
   src: string;
+  fallbackSrc?: string;
   alt?: string;
   className?: string;
 }
 
-/** Miniatura de carta: al pulsarla (clic o toque) se amplía 2 segundos. */
-export function CardImageThumbnail({ src, alt = "", className }: CardImageThumbnailProps) {
+/**
+ * Miniatura de carta con recuperación automática.
+ *
+ * La URL oficial se intenta primero. Si el CDN la rechaza o el dispositivo
+ * conserva una ruta antigua, se prueba el espejo antes de ocultar la imagen.
+ * Al pulsarla (clic o toque) se amplía durante 2 segundos.
+ */
+export function CardImageThumbnail({
+  src,
+  fallbackSrc,
+  alt = "",
+  className
+}: CardImageThumbnailProps) {
   const [zoomed, setZoomed] = useState(false);
   const [broken, setBroken] = useState(false);
+  const [sourceIndex, setSourceIndex] = useState(0);
+  const sources = useMemo(
+    () => [...new Set([src, fallbackSrc].filter((value): value is string => Boolean(value)))],
+    [fallbackSrc, src]
+  );
+  const activeSrc = sources[sourceIndex];
+
+  useEffect(() => {
+    setSourceIndex(0);
+    setBroken(false);
+    setZoomed(false);
+  }, [fallbackSrc, src]);
 
   useEffect(() => {
     if (!zoomed) return;
@@ -17,17 +41,26 @@ export function CardImageThumbnail({ src, alt = "", className }: CardImageThumbn
     return () => clearTimeout(timer);
   }, [zoomed]);
 
-  if (broken) return null;
+  if (broken || !activeSrc) return null;
+
+  const handleError = () => {
+    if (sourceIndex + 1 < sources.length) {
+      setSourceIndex(sourceIndex + 1);
+      return;
+    }
+    setBroken(true);
+  };
 
   return (
     <>
       <img
-        src={src}
+        src={activeSrc}
         alt={alt}
         loading="lazy"
+        referrerPolicy="no-referrer"
         className={`${className ?? ""} cursor-zoom-in`}
         onClick={() => setZoomed(true)}
-        onError={() => setBroken(true)}
+        onError={handleError}
       />
       {zoomed && (
         <div
@@ -37,7 +70,12 @@ export function CardImageThumbnail({ src, alt = "", className }: CardImageThumbn
           tabIndex={-1}
           aria-label="Cerrar vista ampliada de la carta"
         >
-          <img src={src} alt={alt} className="max-h-[80vh] max-w-full rounded-lg shadow-xl" />
+          <img
+            src={activeSrc}
+            alt={alt}
+            referrerPolicy="no-referrer"
+            className="max-h-[80vh] max-w-full rounded-lg shadow-xl"
+          />
         </div>
       )}
     </>
