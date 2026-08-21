@@ -136,7 +136,11 @@ key` en el frontend.
    instalación existente, ejecuta después
    [`supabase/migrations/20260815_anadir_cartas_con_camara.sql`](./supabase/migrations/20260815_anadir_cartas_con_camara.sql).
    Para añadir las copias diarias por correo, ejecuta finalmente
-   [`supabase/migrations/20260817_backup_diario_coleccion.sql`](./supabase/migrations/20260817_backup_diario_coleccion.sql).
+   [`supabase/migrations/20260817_backup_diario_coleccion.sql`](./supabase/migrations/20260817_backup_diario_coleccion.sql)
+   y, después,
+   [`supabase/migrations/20260821_optimizar_importacion_coleccion.sql`](./supabase/migrations/20260821_optimizar_importacion_coleccion.sql).
+   Esta última migración evita timeouts al sustituir colecciones grandes y no
+   elimina cartas, mazos, preferencias ni copias ya enviadas.
 3. En **Authentication → URL Configuration**, usa como Site URL
    `https://oconneldan.github.io/swu_app/` y añade como Redirect URL
    `https://oconneldan.github.io/swu_app/**` (añade también la URL local que
