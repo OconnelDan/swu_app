@@ -13,6 +13,7 @@ const catalog = JSON.parse(catalogJson) as {
   version: number;
   source: string;
   sets: string[];
+  cards: Record<string, unknown>;
   aliases: Record<string, string>;
   images: Record<string, string>;
 };
@@ -52,6 +53,22 @@ describe("catálogo de cartas incluido", () => {
     });
   });
 
+  it("incluye una URL oficial válida para cada carta base y cada impresión", () => {
+    const expectedImageIds = new Set([
+      ...Object.keys(catalog.cards),
+      ...Object.keys(catalog.aliases)
+    ]);
+    const missingImageIds = [...expectedImageIds].filter((cardId) => !catalog.images[cardId]);
+    const validOfficialUrls = Object.values(catalog.images).every((imageUrl) => {
+      const parsedUrl = new URL(imageUrl);
+      return parsedUrl.protocol === "https:" && parsedUrl.hostname === "cdn.starwarsunlimited.com";
+    });
+
+    expect(missingImageIds).toEqual([]);
+    expect(Object.keys(catalog.images)).toHaveLength(expectedImageIds.size);
+    expect(validOfficialUrls).toBe(true);
+  });
+
   beforeAll(() => {
     fetchMock.mockImplementation(() =>
       Promise.resolve(
@@ -85,7 +102,7 @@ describe("catálogo de cartas incluido", () => {
     });
 
     expect(fetchMock).toHaveBeenCalledWith("/data/swu-card-catalog.json", {
-      cache: "force-cache"
+      cache: "no-cache"
     });
     expect(fetchMock).not.toHaveBeenCalledWith(expect.stringContaining("api.swu-db.com"));
     expect(fetchMock).not.toHaveBeenCalledWith(
@@ -100,6 +117,35 @@ describe("catálogo de cartas incluido", () => {
       cardId: "SEC_262",
       name: "Ando Commission",
       imageUrl: expect.stringMatching(/^https:\/\/cdn\.starwarsunlimited\.com\//)
+    });
+  });
+
+  it.each(["IBH_015", "IBH_021", "IBH_022", "IBH_023"])(
+    "conserva la doble barra publicada por el CDN oficial para %s",
+    async (cardId) => {
+      const provider = new SwUnlimitedDbCardProvider();
+      const info = await provider.getCard(cardId);
+
+      expect(catalog.images[cardId]).toMatch(/^https:\/\/cdn\.starwarsunlimited\.com\/\/card_/);
+      expect(info?.imageUrl).toBe(catalog.images[cardId]);
+    }
+  );
+
+  it("sustituye una URL antigua guardada en IndexedDB por la del catálogo actual", async () => {
+    await db.cardCache.put({
+      cardId: "IBH_022",
+      setCode: "IBH",
+      cardNumber: "022",
+      name: "GR-75 Medium Transport",
+      imageUrl:
+        "https://cdn.starwarsunlimited.com/card_I01010022_EN_GR_75_Medium_Transport_a828aba5c6.png"
+    });
+
+    const provider = new SwUnlimitedDbCardProvider();
+
+    await expect(provider.getCard("IBH_022")).resolves.toMatchObject({
+      cardId: "IBH_022",
+      imageUrl: catalog.images.IBH_022
     });
   });
 
