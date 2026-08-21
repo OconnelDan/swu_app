@@ -14,7 +14,9 @@ const mocks = vi.hoisted(() => ({
   requestAccountVerification: vi.fn(),
   requestPasswordReset: vi.fn(),
   updateAccountPassword: vi.fn(),
-  signOutCurrentSession: vi.fn()
+  signOutCurrentSession: vi.fn(),
+  loadCollectionBackupSettings: vi.fn(),
+  updateCollectionBackupSettings: vi.fn()
 }));
 
 vi.mock("@/hooks/useAuth", () => ({
@@ -34,6 +36,15 @@ vi.mock("@/lib/auth", async (importOriginal) => {
     requestPasswordReset: mocks.requestPasswordReset,
     updateAccountPassword: mocks.updateAccountPassword,
     signOutCurrentSession: mocks.signOutCurrentSession
+  };
+});
+
+vi.mock("@/lib/collectionBackupRepository", async (importOriginal) => {
+  const original = await importOriginal<typeof import("@/lib/collectionBackupRepository")>();
+  return {
+    ...original,
+    loadCollectionBackupSettings: mocks.loadCollectionBackupSettings,
+    updateCollectionBackupSettings: mocks.updateCollectionBackupSettings
   };
 });
 
@@ -78,6 +89,26 @@ describe("pantalla de cuenta", () => {
     mocks.requestPasswordReset.mockReset().mockResolvedValue(undefined);
     mocks.updateAccountPassword.mockReset().mockResolvedValue(undefined);
     mocks.signOutCurrentSession.mockReset().mockResolvedValue(undefined);
+    mocks.loadCollectionBackupSettings.mockReset().mockResolvedValue({
+      emailEnabled: false,
+      inactivityMinutes: 15,
+      timezone: "Europe/Madrid",
+      lastChangeAt: null,
+      lastBackedUpChangeAt: null,
+      lastEmailSentAt: null,
+      hasPendingChanges: false,
+      lastError: null
+    });
+    mocks.updateCollectionBackupSettings.mockReset().mockResolvedValue({
+      emailEnabled: true,
+      inactivityMinutes: 30,
+      timezone: "Europe/Madrid",
+      lastChangeAt: null,
+      lastBackedUpChangeAt: null,
+      lastEmailSentAt: null,
+      hasPendingChanges: false,
+      lastError: null
+    });
   });
 
   it("inicia sesión con email y contraseña", async () => {
@@ -148,5 +179,26 @@ describe("pantalla de cuenta", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent(/no coinciden/i);
     expect(mocks.updateAccountPassword).not.toHaveBeenCalled();
+  });
+
+  it("permite activar y configurar el correo diario desde Mi cuenta", async () => {
+    mocks.auth.session = accountSession();
+    renderPage();
+
+    const toggle = await screen.findByRole("checkbox", {
+      name: "Enviar la copia automática por correo"
+    });
+    expect(toggle).not.toBeChecked();
+
+    fireEvent.click(toggle);
+    fireEvent.change(screen.getByLabelText("Esperar después del último cambio"), {
+      target: { value: "30" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Guardar configuración" }));
+
+    await waitFor(() =>
+      expect(mocks.updateCollectionBackupSettings).toHaveBeenCalledWith(true, 30)
+    );
+    expect(screen.getByRole("status")).toHaveTextContent(/solo se enviará un correo/i);
   });
 });

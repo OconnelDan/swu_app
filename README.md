@@ -90,6 +90,10 @@ Abre `http://localhost:5173`.
    todos los cambios de mazos se guardan directamente en la cuenta. También
    puedes generar o canjear códigos de amistad y consultar qué amigos tienen
    las cartas que te faltan, incluidas sus copias libres.
+9. **Backup diario por correo** _(opcional)_: desde **Mi cuenta** cada usuario
+   puede activar una copia JSON de su colección. Solo se envía si hubo cambios,
+   después de 15, 30 o 60 minutos de inactividad y con un máximo estricto de un
+   correo por día. El proceso continúa aunque se cierre la PWA.
 
 ### Favoritos y reparto entre mazos montados
 
@@ -131,6 +135,8 @@ key` en el frontend.
    ejecuta solamente la segunda. Para activar el escáner de cartas en una
    instalación existente, ejecuta después
    [`supabase/migrations/20260815_anadir_cartas_con_camara.sql`](./supabase/migrations/20260815_anadir_cartas_con_camara.sql).
+   Para añadir las copias diarias por correo, ejecuta finalmente
+   [`supabase/migrations/20260817_backup_diario_coleccion.sql`](./supabase/migrations/20260817_backup_diario_coleccion.sql).
 3. En **Authentication → URL Configuration**, usa como Site URL
    `https://oconneldan.github.io/swu_app/` y añade como Redirect URL
    `https://oconneldan.github.io/swu_app/**` (añade también la URL local que
@@ -148,6 +154,12 @@ key` en el frontend.
    `VITE_SUPABASE_ANON_KEY`. El despliegue se detiene con un mensaje claro si
    falta alguno, evitando publicar accidentalmente la pantalla de cuentas
    deshabilitada.
+
+La copia diaria necesita además desplegar una Edge Function y configurar el
+proveedor de correo y el trabajo programado en Supabase. La guía completa, con
+los comandos y las comprobaciones, está en
+[`GUIA_BACKUP_DIARIO.md`](./GUIA_BACKUP_DIARIO.md). Las claves del proveedor de
+correo nunca se añaden al frontend ni a GitHub Pages.
 
 **Modelo de privacidad**: por defecto, un amigo aceptado solo puede saber
 "¿tienes esta carta puntual, cuántas copias y cuántas están libres?" cuando
@@ -226,7 +238,8 @@ src/
 │                       normalizeDeckJson, compareDeckWithCollection,
 │                       cardAllocation (reparto de cartas entre favoritos),
 │                       cardScanner (OCR local), cardImageUrl, collectionFingerprint,
-│                       favoritesRepository, friendsRepository, backup
+│                       favoritesRepository, friendsRepository, backup,
+│                       collectionBackupRepository
 ├─ schemas/           Validación con Zod (deck JSON, backup JSON)
 ├─ providers/
 │  ├─ cardProvider/    Interfaz CardProvider + implementaciones
@@ -247,9 +260,10 @@ src/
 ├─ scripts/           Generador reproducible del catálogo de cartas
 ```
 
-supabase/schema.sql contiene el esquema SQL (tablas + Row Level Security +
-funciones) para cuentas, persistencia remota y amigos, pensado para pegarse
-directamente en el SQL Editor de Supabase.
+supabase/schema.sql contiene el esquema base (tablas + Row Level Security +
+funciones) para cuentas, persistencia remota y amigos. Las mejoras posteriores
+están versionadas en `supabase/migrations/`; el backup diario añade también la
+Edge Function `supabase/functions/send-collection-backups`.
 
 **Principios de diseño:**
 
@@ -310,6 +324,10 @@ diferentes:
   copia de seguridad de SWU Deck Vault.
 - La copia de seguridad exportable corresponde al modo invitado y es un único
   archivo `.json` bajo tu control.
+- Si una cuenta activa el backup diario, una Edge Function genera un JSON de
+  su colección y lo envía únicamente al email verificado de esa misma cuenta.
+  La API key del proveedor de correo permanece en Supabase Secrets y nunca se
+  incluye en la PWA.
 
 ## Despliegue
 
