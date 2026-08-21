@@ -41,6 +41,10 @@ En **Supabase → SQL Editor → New query**:
 3. Pégalo en el editor.
 4. Pulsa **Run**.
 5. La consulta final debe devolver las tres funciones creadas.
+6. Abre después
+   `supabase/migrations/20260821_optimizar_importacion_coleccion.sql`, copia
+   todo su contenido y ejecútalo también. Esta migración evita que los
+   disparadores del backup ralenticen las importaciones grandes.
 
 La migración deja el correo desactivado para todos los usuarios. Cada persona
 debe activarlo expresamente desde **Mi cuenta**. Al activarlo, la colección
