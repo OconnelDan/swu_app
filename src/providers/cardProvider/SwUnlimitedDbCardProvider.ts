@@ -41,7 +41,7 @@ function parseCatalog(value: unknown): BundledCardCatalog {
 
 async function loadBundledCatalog(): Promise<BundledCardCatalog> {
   if (!bundledCatalogPromise) {
-    bundledCatalogPromise = fetch(getCatalogUrl(), { cache: "force-cache" })
+    bundledCatalogPromise = fetch(getCatalogUrl(), { cache: "no-cache" })
       .then(async (response) => {
         if (!response.ok) {
           throw new Error(`No se ha podido abrir el catálogo incluido (HTTP ${response.status}).`);
@@ -102,29 +102,32 @@ export class SwUnlimitedDbCardProvider implements CardProvider {
 
   async getCard(cardId: string): Promise<CardInfo | undefined> {
     const normalized = normalizeCardIdString(cardId);
-    const cached = await this.cache.getCard(normalized);
-    if (cached) return cached;
 
     try {
       const info = resolveCatalogCard(await loadBundledCatalog(), normalized);
-      if (info?.cardId === normalized) await this.cache.putCards([info]);
-      return info;
+      if (info) {
+        if (info.cardId === normalized) await this.cache.putCards([info]);
+        return info;
+      }
     } catch {
-      return undefined;
+      // Sin conexión, la caché local sigue siendo una última alternativa.
     }
+
+    return this.cache.getCard(normalized);
   }
 
   async getCards(cardIds: string[]): Promise<Map<string, CardInfo>> {
     const uniqueIds = Array.from(new Set(cardIds.map(normalizeCardIdString)));
     const result = await this.cache.getCards(uniqueIds);
-    const missing = uniqueIds.filter((id) => !result.has(id));
-    if (missing.length === 0) return result;
 
     try {
       const catalog = await loadBundledCatalog();
       const canonicalCardsToCache = new Map<string, CardInfo>();
 
-      for (const requestedCardId of missing) {
+      // El catálogo empaquetado es la fuente de verdad. Siempre sustituye una
+      // entrada antigua de IndexedDB para que una URL corregida llegue por
+      // igual a todos los dispositivos y todas las cuentas.
+      for (const requestedCardId of uniqueIds) {
         const info = resolveCatalogCard(catalog, requestedCardId);
         if (!info) continue;
         result.set(requestedCardId, info);
