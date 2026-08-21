@@ -37,12 +37,21 @@ export default defineConfig({
         ]
       },
       workbox: {
+        cleanupOutdatedCaches: true,
         globPatterns: ["**/*.{js,css,html,json,svg,png,ico,woff2}"],
         runtimeCaching: [
           {
             urlPattern: ({ request }) => request.destination === "image",
-            handler: "CacheFirst",
-            options: { cacheName: "swu-images" }
+            handler: "StaleWhileRevalidate",
+            options: {
+              cacheName: "swu-card-images-v2",
+              cacheableResponse: { statuses: [0, 200] },
+              expiration: {
+                maxEntries: 1000,
+                maxAgeSeconds: 60 * 60 * 24 * 30,
+                purgeOnQuotaError: true
+              }
+            }
           }
         ]
       }

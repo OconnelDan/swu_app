@@ -304,7 +304,10 @@ diferentes:
   `public/data/swu-card-catalog.json`. La PWA sirve ese archivo desde su propio
   dominio, lo guarda en la caché offline y enlaza las impresiones Hyperspace,
   Foil, Showcase, Weekly Play y las demás promos con su carta base sin comparar
-  nombres manualmente.
+  nombres manualmente. Las URL se conservan exactamente como las publica el
+  CDN oficial —incluida una posible doble barra tras el dominio—. Si una imagen
+  concreta falla, la interfaz prueba automáticamente la ruta equivalente de
+  `cdn.swu-db.com` antes de ocultar la miniatura.
 
 ## Privacidad y seguridad
 
@@ -313,9 +316,11 @@ diferentes:
   borrar la caché local no los elimina y vuelven a cargarse tras iniciar sesión.
 - Los nombres y las equivalencias de variantes se leen del catálogo compacto
   incluido en la PWA; no se envían códigos de cartas a una API externa. Las
-  imágenes se muestran desde el CDN oficial de Star Wars: Unlimited mediante
-  etiquetas de imagen y no contienen información de tu colección ni de tus
-  mazos.
+  imágenes se solicitan mediante etiquetas de imagen al CDN oficial y, solo si
+  este falla, a su espejo de respaldo. La ruta contiene únicamente el código
+  impreso de la carta, nunca información de tu cuenta, colección o mazos. La
+  caché de imágenes se revalida y caduca para no mantener diferencias
+  indefinidas entre dispositivos.
 - Si activas **Cuenta y amigos**, tu email, tu colección y tus mazos guardados
   se guardan en tu proyecto de Supabase, protegidos con Row Level Security:
   solo tú puedes leer o sustituir tus datos. Los amigos aceptados únicamente
