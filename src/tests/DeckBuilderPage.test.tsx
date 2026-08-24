@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DataSourceContext, type DataSourceValue } from "@/contexts/DataSourceContext";
@@ -7,6 +7,33 @@ import { SwUnlimitedDbCardProvider } from "@/providers/cardProvider/SwUnlimitedD
 import type { CardInfo } from "@/types/card";
 
 const catalogCards: CardInfo[] = [
+  {
+    cardId: "SEC_001",
+    setCode: "SEC",
+    cardNumber: "001",
+    name: "Líder de filtros",
+    type: "Leader",
+    aspects: ["Heroism", "Vigilance"],
+    cardKey: "filter-leader"
+  },
+  {
+    cardId: "SEC_020",
+    setCode: "SEC",
+    cardNumber: "020",
+    name: "Base de filtros",
+    type: "Base",
+    aspects: ["Command"],
+    cardKey: "filter-base"
+  },
+  {
+    cardId: "JTL_002",
+    setCode: "JTL",
+    cardNumber: "002",
+    name: "Segundo líder de filtros",
+    type: "Leader",
+    aspects: ["Aggression"],
+    cardKey: "second-filter-leader"
+  },
   {
     cardId: "SOR_100",
     setCode: "SOR",
@@ -21,7 +48,62 @@ const catalogCards: CardInfo[] = [
     cardNumber: "100",
     name: "Carta vigente",
     type: "Unit",
+    arena: "Ground",
+    rarity: "Common",
     cardKey: "current-card"
+  },
+  {
+    cardId: "SEC_101",
+    setCode: "SEC",
+    cardNumber: "101",
+    name: "Unidad de vigilancia",
+    type: "Unit",
+    arena: "Ground",
+    rarity: "Common",
+    aspects: ["Vigilance"],
+    cardKey: "vigilance-unit"
+  },
+  {
+    cardId: "SEC_102",
+    setCode: "SEC",
+    cardNumber: "102",
+    name: "Unidad incolora",
+    type: "Unit",
+    arena: "Ground",
+    rarity: "Common",
+    aspects: [],
+    cardKey: "colorless-unit"
+  },
+  {
+    cardId: "SEC_103",
+    setCode: "SEC",
+    cardNumber: "103",
+    name: "Unidad agresiva espacial",
+    type: "Unit",
+    arena: "Space",
+    rarity: "Rare",
+    aspects: ["Aggression"],
+    cardKey: "aggression-space-unit"
+  },
+  {
+    cardId: "JTL_104",
+    setCode: "JTL",
+    cardNumber: "104",
+    name: "Evento de mando",
+    type: "Event",
+    rarity: "Uncommon",
+    aspects: ["Command"],
+    cardKey: "command-event"
+  },
+  {
+    cardId: "LAW_105",
+    setCode: "LAW",
+    cardNumber: "105",
+    name: "Mejora astuta",
+    type: "Upgrade",
+    rarity: "Legendary",
+    aspects: ["Cunning"],
+    cardKey: "cunning-upgrade"
   }
 ];
 
@@ -63,6 +145,19 @@ function renderBuilder() {
       </MemoryRouter>
     </DataSourceContext.Provider>
   );
+}
+
+async function choosePremierLeaderAndBase() {
+  fireEvent.click(screen.getByRole("button", { name: /Premier/ }));
+  expect(await screen.findByText("Crear mazo · Premier")).toBeInTheDocument();
+  expect(screen.getByText("Líder de filtros")).toBeInTheDocument();
+  fireEvent.click(
+    within(screen.getByText("Líder de filtros").closest("li")!).getByRole("button", {
+      name: "Elegir"
+    })
+  );
+  expect(screen.getByText("Base de filtros")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Elegir" }));
 }
 
 beforeEach(() => {
@@ -115,5 +210,100 @@ describe("constructor por formatos", () => {
     expect(screen.getByText(/SOR ha rotado de Premier/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Añadir Carta antigua al mazo" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Añadir Carta vigente al mazo" })).toBeEnabled();
+  });
+
+  it("aplica por defecto los aspectos del líder y la base, más las incoloras", async () => {
+    renderBuilder();
+    await choosePremierLeaderAndBase();
+
+    expect(screen.getByText("Unidad de vigilancia")).toBeInTheDocument();
+    expect(screen.getByText("Evento de mando")).toBeInTheDocument();
+    expect(screen.getByText("Unidad incolora")).toBeInTheDocument();
+    expect(screen.queryByText("Unidad agresiva espacial")).not.toBeInTheDocument();
+    expect(screen.queryByText("Mejora astuta")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByText("Filtros"));
+    expect(
+      screen.getByText(/Automático: Heroísmo · Vigilancia · Mando \+ incoloras/)
+    ).toBeInTheDocument();
+  });
+
+  it("sustituye el filtro automático por los aspectos manuales seleccionados", async () => {
+    renderBuilder();
+    await choosePremierLeaderAndBase();
+    fireEvent.click(screen.getByText("Filtros"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Agresividad" }));
+
+    expect(screen.getByText("Unidad agresiva espacial")).toBeInTheDocument();
+    expect(screen.getByText("Unidad incolora")).toBeInTheDocument();
+    expect(screen.queryByText("Unidad de vigilancia")).not.toBeInTheDocument();
+    expect(screen.queryByText("Evento de mando")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Incoloras" }));
+    expect(screen.queryByText("Unidad incolora")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Mando" }));
+    expect(screen.getByText("Unidad agresiva espacial")).toBeInTheDocument();
+    expect(screen.getByText("Evento de mando")).toBeInTheDocument();
+    expect(screen.queryByText("Unidad de vigilancia")).not.toBeInTheDocument();
+  });
+
+  it("combina por defecto los dos líderes y la base de Twin Suns", async () => {
+    renderBuilder();
+    fireEvent.click(screen.getByRole("button", { name: /Twin Suns/ }));
+    expect(await screen.findByText("Crear mazo · Twin Suns")).toBeInTheDocument();
+
+    fireEvent.click(
+      within(screen.getByText("Líder de filtros").closest("li")!).getByRole("button", {
+        name: "Elegir"
+      })
+    );
+    fireEvent.click(
+      within(screen.getByText("Segundo líder de filtros").closest("li")!).getByRole("button", {
+        name: "Elegir"
+      })
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Elegir" }));
+
+    expect(screen.getByText("Unidad de vigilancia")).toBeInTheDocument();
+    expect(screen.getByText("Unidad agresiva espacial")).toBeInTheDocument();
+    expect(screen.getByText("Evento de mando")).toBeInTheDocument();
+    expect(screen.getByText("Unidad incolora")).toBeInTheDocument();
+    expect(screen.queryByText("Mejora astuta")).not.toBeInTheDocument();
+  });
+
+  it("permite combinar varias colecciones y separar unidades terrestres y espaciales", async () => {
+    renderBuilder();
+    fireEvent.click(screen.getByRole("button", { name: /Premier/ }));
+    expect(await screen.findByText("Crear mazo · Premier")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "3. Cartas 0/50" }));
+    fireEvent.click(screen.getByText("Filtros"));
+
+    fireEvent.click(screen.getByRole("button", { name: "SEC" }));
+    expect(screen.getByText("Unidad de vigilancia")).toBeInTheDocument();
+    expect(screen.queryByText("Evento de mando")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "JTL" }));
+    expect(screen.getByText("Unidad de vigilancia")).toBeInTheDocument();
+    expect(screen.getByText("Evento de mando")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Unidades terrestres" }));
+    expect(screen.getByText("Unidad de vigilancia")).toBeInTheDocument();
+    expect(screen.queryByText("Unidad agresiva espacial")).not.toBeInTheDocument();
+    expect(screen.queryByText("Evento de mando")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Eventos" }));
+    expect(screen.getByText("Unidad de vigilancia")).toBeInTheDocument();
+    expect(screen.getByText("Evento de mando")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Todos los tipos" }));
+    fireEvent.click(screen.getByRole("button", { name: "Común" }));
+    expect(screen.getByText("Unidad de vigilancia")).toBeInTheDocument();
+    expect(screen.queryByText("Evento de mando")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Infrecuente" }));
+    expect(screen.getByText("Unidad de vigilancia")).toBeInTheDocument();
+    expect(screen.getByText("Evento de mando")).toBeInTheDocument();
   });
 });
