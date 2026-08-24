@@ -12,6 +12,7 @@ import { FriendsPage } from "@/pages/FriendsPage";
 import { AccountPage } from "@/pages/AccountPage";
 import { SettingsPage } from "@/pages/SettingsPage";
 import { ScanCardsPage } from "@/pages/ScanCardsPage";
+import { DeckBuilderPage } from "@/pages/DeckBuilderPage";
 import type { DeckComparisonResult, NormalizedDeck } from "@/types/deck";
 
 export default function App() {
@@ -50,6 +51,7 @@ export default function App() {
         />
         <Route path="/favoritos" element={<FavoritesPage onOpenResult={setResult} />} />
         <Route path="/montados" element={<MountedDecksPage onOpenResult={setResult} />} />
+        <Route path="/mazos/crear" element={<DeckBuilderPage />} />
         <Route path="/buscar" element={<CardFinderPage />} />
         <Route path="/amigos" element={<FriendsPage />} />
         <Route path="/cuenta" element={<AccountPage />} />
