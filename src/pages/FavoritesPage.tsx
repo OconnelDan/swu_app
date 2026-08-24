@@ -1,16 +1,23 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Copy, Hammer, RefreshCw, Trash2 } from "lucide-react";
+import {
+  DeckFormatBadge,
+  DeckFormatFilter,
+  type DeckFormatFilterValue
+} from "@/components/DeckFormatFilter";
 import { DecksTabs } from "@/components/DecksTabs";
 import { useDataSource } from "@/contexts/DataSourceContext";
 import { useFavorites } from "@/hooks/useFavorites";
 import { useCollection } from "@/hooks/useCollection";
+import { useDeckLegality } from "@/hooks/useDeckLegality";
 import { SkeletonLines } from "@/components/Skeleton";
 import { isFavoriteOutdated } from "@/lib/favoritesRepository";
 import { compareDeckWithCollection } from "@/lib/compareDeckWithCollection";
 import { computeCardAllocations, summarizeMountAvailability } from "@/lib/cardAllocation";
 import { buildMountDeckConfirmationMessage } from "@/lib/mountDeckConfirmation";
 import { SwUnlimitedDbCardProvider } from "@/providers/cardProvider/SwUnlimitedDbCardProvider";
+import { getDeckBaseIds, getDeckFormat, getDeckLeaderIds } from "@/lib/deckFormats";
 import type { DeckComparisonResult, FavoriteDeck, NormalizedDeck } from "@/types/deck";
 
 interface FavoritesPageProps {
@@ -25,11 +32,20 @@ export function FavoritesPage({ onOpenResult }: FavoritesPageProps) {
   const navigate = useNavigate();
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const favoriteDecks = useMemo(
+  const [formatFilter, setFormatFilter] = useState<DeckFormatFilterValue>("all");
+  const allFavoriteDecks = useMemo(
     () => (favorites ?? []).filter((deck) => !deck.isMounted),
     [favorites]
   );
-  const mountedCount = (favorites?.length ?? 0) - favoriteDecks.length;
+  const favoriteDecks = useMemo(
+    () =>
+      formatFilter === "all"
+        ? allFavoriteDecks
+        : allFavoriteDecks.filter((deck) => getDeckFormat(deck.normalizedDeck) === formatFilter),
+    [allFavoriteDecks, formatFilter]
+  );
+  const mountedCount = (favorites?.length ?? 0) - allFavoriteDecks.length;
+  const deckLegality = useDeckLegality(favorites);
   const allocations = useMemo(
     () => computeCardAllocations(collection?.cards ?? [], favorites ?? []),
     [collection?.cards, favorites]
@@ -90,6 +106,17 @@ export function FavoritesPage({ onOpenResult }: FavoritesPageProps) {
   };
 
   const handleMount = async (favorite: FavoriteDeck) => {
+    const legality = deckLegality.byDeckId.get(favorite.id);
+    if (deckLegality.loading) {
+      setError("Espera a que termine la comprobación de legalidad del mazo.");
+      return;
+    }
+    if (!legality?.valid) {
+      setError(
+        legality?.errors[0] ?? "No se puede montar este mazo porque ya no es legal en su formato."
+      );
+      return;
+    }
     const availability = summarizeMountAvailability(favorite.normalizedDeck, allocations);
     const confirmed = confirm(buildMountDeckConfirmationMessage(favorite.name, availability));
     if (!confirmed) return;
@@ -110,7 +137,7 @@ export function FavoritesPage({ onOpenResult }: FavoritesPageProps) {
 
   return (
     <div className="space-y-4">
-      <DecksTabs favoriteCount={favoriteDecks.length} mountedCount={mountedCount} />
+      <DecksTabs favoriteCount={allFavoriteDecks.length} mountedCount={mountedCount} />
 
       <section className="card space-y-1 text-sm">
         <h2 className="font-display text-base">Favoritos</h2>
@@ -120,6 +147,14 @@ export function FavoritesPage({ onOpenResult }: FavoritesPageProps) {
         </p>
       </section>
 
+      <DeckFormatFilter value={formatFilter} decks={allFavoriteDecks} onChange={setFormatFilter} />
+
+      {deckLegality.error && (
+        <p className="card border-saber-yellow/50 text-xs text-saber-yellow">
+          No se ha podido actualizar la legalidad de los mazos: {deckLegality.error}
+        </p>
+      )}
+
       {error && (
         <p role="alert" className="card border-saber-red/50 text-sm text-saber-red">
           {error}
@@ -127,11 +162,14 @@ export function FavoritesPage({ onOpenResult }: FavoritesPageProps) {
       )}
       {favoriteDecks.length === 0 ? (
         <p className="card text-center text-sm text-slate-300">
-          Todavía no tienes mazos en Favoritos.
+          {allFavoriteDecks.length === 0
+            ? "Todavía no tienes mazos en Favoritos."
+            : "No tienes mazos favoritos de este formato."}
         </p>
       ) : (
         <ul className="space-y-3">
           {favoriteDecks.map((favorite) => {
+            const legality = deckLegality.byDeckId.get(favorite.id);
             const outdated = collection
               ? isFavoriteOutdated(favorite, collection.fingerprint)
               : false;
@@ -145,30 +183,54 @@ export function FavoritesPage({ onOpenResult }: FavoritesPageProps) {
               <li key={favorite.id} className="card">
                 <div className="flex items-start justify-between gap-2">
                   <div>
-                    <h3 className="font-semibold">{favorite.name}</h3>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="font-semibold">{favorite.name}</h3>
+                      <DeckFormatBadge deck={favorite.normalizedDeck} />
+                    </div>
                     {favorite.author && (
                       <p className="text-xs text-slate-400">Autor: {favorite.author}</p>
                     )}
                     <p className="mt-1 text-xs text-slate-400">
-                      Líder: {favorite.normalizedDeck.leader?.cardId ?? "—"} · Base:{" "}
-                      {favorite.normalizedDeck.base?.cardId ?? "—"}
+                      Líder{getDeckLeaderIds(favorite.normalizedDeck).length === 1 ? "" : "es"}:{" "}
+                      {getDeckLeaderIds(favorite.normalizedDeck).join(", ") || "—"} · Base
+                      {getDeckBaseIds(favorite.normalizedDeck).length === 1 ? "" : "s"}:{" "}
+                      {getDeckBaseIds(favorite.normalizedDeck).join(", ") || "—"}
                     </p>
                     <p className="text-xs text-slate-500">
                       Guardado: {new Date(favorite.createdAt).toLocaleDateString("es-ES")}
                     </p>
                   </div>
-                  <span
-                    className={
-                      status === "Completo"
-                        ? "badge-complete"
-                        : status === "Incompleto"
-                          ? "badge-missing"
-                          : "badge-warning"
-                    }
-                  >
-                    {status}
-                  </span>
+                  <div className="flex flex-col items-end gap-1">
+                    <span
+                      className={
+                        status === "Completo"
+                          ? "badge-complete"
+                          : status === "Incompleto"
+                            ? "badge-missing"
+                            : "badge-warning"
+                      }
+                    >
+                      {status}
+                    </span>
+                    {!deckLegality.loading && legality && (
+                      <span className={legality.valid ? "badge-complete" : "badge-missing"}>
+                        {legality.valid ? "Legal" : "No legal"}
+                      </span>
+                    )}
+                  </div>
                 </div>
+
+                {legality && !legality.valid && (
+                  <div className="mt-2 rounded-lg border border-saber-red/40 bg-saber-red/10 p-2 text-xs text-saber-red">
+                    <p className="font-semibold">Este mazo se conserva, pero no puede montarse.</p>
+                    {legality.errors.slice(0, 2).map((message) => (
+                      <p key={message}>• {message}</p>
+                    ))}
+                    {legality.errors.length > 2 && (
+                      <p>• Hay {legality.errors.length - 2} incidencia(s) más.</p>
+                    )}
+                  </div>
+                )}
 
                 {outdated && (
                   <p className="mt-2 text-xs text-saber-yellow">
@@ -180,7 +242,7 @@ export function FavoritesPage({ onOpenResult }: FavoritesPageProps) {
                   <button
                     type="button"
                     className="btn-primary"
-                    disabled={busyId !== null}
+                    disabled={busyId !== null || deckLegality.loading || !legality?.valid}
                     onClick={() => void handleMount(favorite)}
                   >
                     <Hammer size={14} />

@@ -1,5 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
-import type { ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   AlertTriangle,
@@ -8,6 +7,7 @@ import {
   Filter,
   Minus,
   Plus,
+  RotateCcw,
   Save,
   Search
 } from "lucide-react";
@@ -18,11 +18,27 @@ import { useCollection } from "@/hooks/useCollection";
 import { useFavorites } from "@/hooks/useFavorites";
 import { computeCardAllocations } from "@/lib/cardAllocation";
 import { compareDeckWithCollection } from "@/lib/compareDeckWithCollection";
-import { buildDeckJson, validatePremierDeck, type DeckBuilderComposition } from "@/lib/deckBuilder";
+import {
+  buildDeckJson,
+  validateDeck,
+  type DeckBuilderComposition,
+  type DeckBuilderSubdeckComposition
+} from "@/lib/deckBuilder";
+import {
+  buildCardLegalityIndex,
+  DECK_FORMAT_DESCRIPTIONS,
+  DECK_FORMAT_LABELS,
+  DECK_FORMATS,
+  getCardCopyLimit,
+  getCardLegality,
+  getMinimumMainDeckSize,
+  getSideboardLimit
+} from "@/lib/deckFormats";
 import { tryGetCardImageUrl } from "@/lib/cardImageUrl";
 import { normalizeDeckJson } from "@/lib/normalizeDeckJson";
 import { SwUnlimitedDbCardProvider } from "@/providers/cardProvider/SwUnlimitedDbCardProvider";
 import type { CardInfo } from "@/types/card";
+import type { DeckFormat, TrilogyCardPool } from "@/types/deck";
 
 type BuilderTab = "leader" | "base" | "cards";
 type OwnedFilter = "all" | "owned" | "free";
@@ -44,6 +60,10 @@ const TYPE_LABELS: Record<string, string> = {
   Base: "Base"
 };
 
+function emptyDeck(name: string): DeckBuilderSubdeckComposition {
+  return { name, leaderIds: [], mainCounts: {}, sideboardCounts: {} };
+}
+
 function fold(value: string): string {
   return value.normalize("NFD").replace(/\p{M}/gu, "").toLocaleLowerCase("es");
 }
@@ -52,14 +72,21 @@ function displayName(card: CardInfo | undefined, fallback = "Carta desconocida")
   return card?.localizedName ?? card?.name ?? fallback;
 }
 
-function hasNoAspectPenalty(card: CardInfo, leader?: CardInfo, base?: CardInfo): boolean {
+function hasNoAspectPenalty(card: CardInfo, leaders: CardInfo[], base?: CardInfo): boolean {
   const available = new Map<string, number>();
-  for (const aspect of [...(leader?.aspects ?? []), ...(base?.aspects ?? [])]) {
+  for (const aspect of [
+    ...leaders.flatMap((leader) => leader.aspects ?? []),
+    ...(base?.aspects ?? [])
+  ]) {
     available.set(aspect, (available.get(aspect) ?? 0) + 1);
   }
   const needed = new Map<string, number>();
   for (const aspect of card.aspects ?? []) needed.set(aspect, (needed.get(aspect) ?? 0) + 1);
   return [...needed].every(([aspect, count]) => count <= (available.get(aspect) ?? 0));
+}
+
+function totalCounts(counts: Record<string, number>): number {
+  return Object.values(counts).reduce((total, count) => total + Math.max(count, 0), 0);
 }
 
 function QuantityButton({
@@ -86,6 +113,81 @@ function QuantityButton({
   );
 }
 
+function FormatChoice({
+  choosingTrilogy,
+  onChoose,
+  onChooseTrilogy,
+  onCancelTrilogy
+}: {
+  choosingTrilogy: boolean;
+  onChoose: (format: DeckFormat, pool?: TrilogyCardPool) => void;
+  onChooseTrilogy: () => void;
+  onCancelTrilogy: () => void;
+}) {
+  if (choosingTrilogy) {
+    return (
+      <div className="space-y-4">
+        <button type="button" className="text-xs text-slate-400" onClick={onCancelTrilogy}>
+          <ArrowLeft size={14} className="inline" /> Volver a formatos
+        </button>
+        <section className="card space-y-2">
+          <h1 className="font-display text-xl">¿Qué reserva de cartas usará Trilogy?</h1>
+          <p className="text-sm text-slate-400">
+            Trilogy no tiene una legalidad independiente. Sus tres mazos deben usar Premier o
+            Eternal.
+          </p>
+        </section>
+        <div className="grid gap-3 sm:grid-cols-2">
+          {(["premier", "eternal"] as TrilogyCardPool[]).map((pool) => (
+            <button
+              key={pool}
+              type="button"
+              className="card min-h-36 text-left transition hover:border-saber-blue"
+              onClick={() => onChoose("trilogy", pool)}
+            >
+              <span className="font-display text-lg">Trilogy · {DECK_FORMAT_LABELS[pool]}</span>
+              <span className="mt-2 block text-sm text-slate-400">
+                {pool === "premier"
+                  ? "Los tres mazos respetarán la rotación Premier vigente."
+                  : "Los tres mazos admitirán todas las colecciones salvo cartas inhabilitadas en Eternal."}
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <Link to="/favoritos" className="inline-flex items-center gap-1 text-xs text-slate-400">
+        <ArrowLeft size={14} /> Volver a Mazos
+      </Link>
+      <section className="card space-y-2">
+        <h1 className="font-display text-xl">Elige el formato del nuevo mazo</h1>
+        <p className="text-sm text-slate-400">
+          La pantalla y las validaciones se adaptarán automáticamente a sus reglas oficiales.
+        </p>
+      </section>
+      <div className="grid gap-3 sm:grid-cols-2">
+        {DECK_FORMATS.map((format) => (
+          <button
+            key={format}
+            type="button"
+            className="card min-h-40 text-left transition hover:border-saber-blue"
+            onClick={() => (format === "trilogy" ? onChooseTrilogy() : onChoose(format))}
+          >
+            <span className="font-display text-lg">{DECK_FORMAT_LABELS[format]}</span>
+            <span className="mt-2 block text-sm text-slate-400">
+              {DECK_FORMAT_DESCRIPTIONS[format]}
+            </span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function DeckBuilderPage() {
   const navigate = useNavigate();
   const collection = useCollection();
@@ -93,12 +195,13 @@ export function DeckBuilderPage() {
   const { saveFavoriteDeck } = useDataSource();
   const [allCards, setAllCards] = useState<CardInfo[] | null>(null);
   const [catalogError, setCatalogError] = useState<string | null>(null);
+  const [format, setFormat] = useState<DeckFormat | null>(null);
+  const [choosingTrilogy, setChoosingTrilogy] = useState(false);
+  const [trilogyCardPool, setTrilogyCardPool] = useState<TrilogyCardPool>("premier");
+  const [name, setName] = useState("");
+  const [decks, setDecks] = useState<DeckBuilderSubdeckComposition[]>([]);
+  const [activeDeckIndex, setActiveDeckIndex] = useState(0);
   const [activeTab, setActiveTab] = useState<BuilderTab>("leader");
-  const [name, setName] = useState("Mi mazo Premier");
-  const [leaderId, setLeaderId] = useState<string>();
-  const [baseId, setBaseId] = useState<string>();
-  const [mainCounts, setMainCounts] = useState<Record<string, number>>({});
-  const [sideboardCounts, setSideboardCounts] = useState<Record<string, number>>({});
   const [query, setQuery] = useState("");
   const [aspect, setAspect] = useState("all");
   const [type, setType] = useState("all");
@@ -131,40 +234,96 @@ export function DeckBuilderPage() {
     };
   }, []);
 
+  const initializeFormat = (nextFormat: DeckFormat, pool: TrilogyCardPool = "premier") => {
+    setFormat(nextFormat);
+    setTrilogyCardPool(pool);
+    setName(
+      nextFormat === "trilogy"
+        ? `Mi conjunto Trilogy ${DECK_FORMAT_LABELS[pool]}`
+        : `Mi mazo ${DECK_FORMAT_LABELS[nextFormat]}`
+    );
+    setDecks(
+      nextFormat === "trilogy"
+        ? [emptyDeck("Mazo 1"), emptyDeck("Mazo 2"), emptyDeck("Mazo 3")]
+        : [emptyDeck("Mazo")]
+    );
+    setActiveDeckIndex(0);
+    setActiveTab("leader");
+    setChoosingTrilogy(false);
+    setError(null);
+  };
+
+  const resetFormat = () => {
+    const hasCards = decks.some(
+      (deck) =>
+        (deck.leaderIds?.length ?? 0) > 0 ||
+        Boolean(deck.baseId) ||
+        totalCounts(deck.mainCounts) > 0 ||
+        totalCounts(deck.sideboardCounts) > 0
+    );
+    if (hasCards && !confirm("Cambiar de formato descartará la composición actual. ¿Continuar?")) {
+      return;
+    }
+    setFormat(null);
+    setDecks([]);
+    setName("");
+    setChoosingTrilogy(false);
+  };
+
   const cardsById = useMemo(
     () => new Map((allCards ?? []).map((card) => [card.cardId, card])),
     [allCards]
   );
+  const legalityIndex = useMemo(() => buildCardLegalityIndex(allCards ?? []), [allCards]);
   const allocations = useMemo(
     () => computeCardAllocations(collection?.cards ?? [], favorites ?? []),
     [collection?.cards, favorites]
   );
-  const leader = leaderId ? cardsById.get(leaderId) : undefined;
-  const base = baseId ? cardsById.get(baseId) : undefined;
+  const currentDeck = decks[activeDeckIndex] ?? emptyDeck("Mazo");
+  const leaderIds = currentDeck.leaderIds ?? [];
+  const leaders = leaderIds
+    .map((leaderId) => cardsById.get(leaderId))
+    .filter((card): card is CardInfo => Boolean(card));
+  const base = currentDeck.baseId ? cardsById.get(currentDeck.baseId) : undefined;
+  const requiredLeaderCount = format === "twin-suns" ? 2 : 1;
+  const sideboardLimit = format ? getSideboardLimit(format) : 0;
+  const minimumMainCount = format ? getMinimumMainDeckSize(format, base) : 50;
+  const currentMainCount = totalCounts(currentDeck.mainCounts);
+  const currentSideboardCount = totalCounts(currentDeck.sideboardCounts);
 
   const composition = useMemo<DeckBuilderComposition>(
-    () => ({ name, leaderId, baseId, mainCounts, sideboardCounts }),
-    [baseId, leaderId, mainCounts, name, sideboardCounts]
+    () => ({
+      ...currentDeck,
+      name,
+      format: format ?? "premier",
+      trilogyCardPool,
+      trilogyDecks: format === "trilogy" ? decks : undefined
+    }),
+    [currentDeck, decks, format, name, trilogyCardPool]
   );
   const validation = useMemo(
-    () => validatePremierDeck(composition, cardsById),
-    [cardsById, composition]
+    () => validateDeck(composition, cardsById, legalityIndex),
+    [cardsById, composition, legalityIndex]
   );
+
   const selectedCopiesByKey = useMemo(() => {
     const counts = new Map<string, number>();
-    for (const zone of [mainCounts, sideboardCounts]) {
-      for (const [cardId, count] of Object.entries(zone)) {
-        const key = cardsById.get(cardId)?.cardKey ?? cardId;
-        counts.set(key, (counts.get(key) ?? 0) + count);
+    const relevantDecks = format === "trilogy" ? decks : [currentDeck];
+    for (const deck of relevantDecks) {
+      for (const zone of [deck.mainCounts, deck.sideboardCounts]) {
+        for (const [cardId, count] of Object.entries(zone)) {
+          const key = cardsById.get(cardId)?.cardKey ?? cardId;
+          counts.set(key, (counts.get(key) ?? 0) + count);
+        }
       }
     }
     return counts;
-  }, [cardsById, mainCounts, sideboardCounts]);
+  }, [cardsById, currentDeck, decks, format]);
 
   const deckStatistics = useMemo(() => {
     const types = new Map<string, number>();
     const costs = new Map<number, number>();
-    for (const [cardId, count] of Object.entries(mainCounts)) {
+    for (const [cardId, count] of Object.entries(currentDeck.mainCounts)) {
       if (count <= 0) continue;
       const card = cardsById.get(cardId);
       const cardType = card?.type ?? "Otra";
@@ -175,7 +334,7 @@ export function DeckBuilderPage() {
       types: [...types.entries()].sort(([left], [right]) => left.localeCompare(right)),
       costs: [...costs.entries()].sort(([left], [right]) => left - right)
     };
-  }, [cardsById, mainCounts]);
+  }, [cardsById, currentDeck.mainCounts]);
 
   const setOptions = useMemo(
     () =>
@@ -184,6 +343,26 @@ export function DeckBuilderPage() {
       ),
     [allCards]
   );
+
+  const roleConflictReason = (card: CardInfo): string | undefined => {
+    if (format !== "trilogy" || (activeTab !== "leader" && activeTab !== "base")) return undefined;
+    const cardKey = card.cardKey ?? card.cardId;
+    const usedElsewhere = decks.some((deck, index) => {
+      if (index === activeDeckIndex) return false;
+      const roleIds =
+        activeTab === "leader" ? (deck.leaderIds ?? []) : deck.baseId ? [deck.baseId] : [];
+      return roleIds.some((cardId) => (cardsById.get(cardId)?.cardKey ?? cardId) === cardKey);
+    });
+    return usedElsewhere
+      ? `Esta ${activeTab === "leader" ? "identidad de líder" : "base"} ya se utiliza en otro mazo de Trilogy.`
+      : undefined;
+  };
+
+  const cardSelectionReason = (card: CardInfo): string | undefined => {
+    if (!format) return undefined;
+    const legality = getCardLegality(card, format, legalityIndex, trilogyCardPool);
+    return legality.legal ? roleConflictReason(card) : legality.reason;
+  };
 
   const filteredCards = useMemo(() => {
     const foldedQuery = fold(query.trim());
@@ -199,26 +378,21 @@ export function DeckBuilderPage() {
         if (activeTab === "cards" && arena !== "all" && card.arena !== arena) return false;
         if (setCode !== "all" && card.setCode !== setCode) return false;
         if (rarity !== "all" && card.rarity !== rarity) return false;
-        if (
-          maximumCost !== "all" &&
-          (card.cost ?? Number.POSITIVE_INFINITY) > Number(maximumCost)
-        ) {
-          return false;
-        }
+        if (maximumCost !== "all" && (card.cost ?? Infinity) > Number(maximumCost)) return false;
         const allocation = allocations.get(card.cardId);
         if (ownedFilter === "owned" && !allocation?.ownedCount) return false;
         if (ownedFilter === "free" && !allocation?.freeCount) return false;
         if (
           activeTab === "cards" &&
           onlyInAspect &&
-          leader &&
+          leaders.length === requiredLeaderCount &&
           base &&
-          !hasNoAspectPenalty(card, leader, base)
+          !hasNoAspectPenalty(card, leaders, base)
         ) {
           return false;
         }
         if (!foldedQuery) return true;
-        const searchable = fold(
+        return fold(
           [
             card.cardId,
             card.name,
@@ -230,8 +404,7 @@ export function DeckBuilderPage() {
           ]
             .filter(Boolean)
             .join(" ")
-        );
-        return searchable.includes(foldedQuery);
+        ).includes(foldedQuery);
       })
       .sort(
         (left, right) =>
@@ -245,58 +418,66 @@ export function DeckBuilderPage() {
     arena,
     aspect,
     base,
-    leader,
+    leaders,
     maximumCost,
     onlyInAspect,
     ownedFilter,
     query,
     rarity,
+    requiredLeaderCount,
     setCode,
     type
   ]);
 
+  const updateCurrentDeck = (
+    updater: (current: DeckBuilderSubdeckComposition) => DeckBuilderSubdeckComposition
+  ) => {
+    setDecks((current) =>
+      current.map((deck, index) => (index === activeDeckIndex ? updater(deck) : deck))
+    );
+  };
+
   const changeCount = (zone: "main" | "sideboard", cardId: string, delta: number) => {
-    const setter = zone === "main" ? setMainCounts : setSideboardCounts;
-    const otherZone = zone === "main" ? sideboardCounts : mainCounts;
-    setter((current) => {
-      if (delta > 0) {
-        const card = cardsById.get(cardId);
-        const copyKey = card?.cardKey ?? cardId;
-        const countForKey = (counts: Record<string, number>) =>
-          Object.entries(counts).reduce(
-            (total, [candidateId, count]) =>
-              (cardsById.get(candidateId)?.cardKey ?? candidateId) === copyKey
-                ? total + count
-                : total,
-            0
-          );
+    if (!format) return;
+    const card = cardsById.get(cardId);
+    if (!card || cardSelectionReason(card)) return;
+    const copyKey = card.cardKey ?? cardId;
+    const limit = getCardCopyLimit(format, card);
+    if (delta > 0 && (selectedCopiesByKey.get(copyKey) ?? 0) >= limit) return;
+    if (delta > 0 && zone === "sideboard" && currentSideboardCount >= sideboardLimit) return;
 
-        if (countForKey(current) + countForKey(otherZone) >= (card?.deckLimit ?? 3)) {
-          return current;
-        }
-        if (zone === "sideboard" && Object.values(current).reduce((a, b) => a + b, 0) >= 10) {
-          return current;
-        }
-      }
-
-      const next = Math.max(0, Math.min(99, (current[cardId] ?? 0) + delta));
-      if (next === 0) {
-        const remaining = { ...current };
-        delete remaining[cardId];
-        return remaining;
-      }
-      return { ...current, [cardId]: next };
+    updateCurrentDeck((current) => {
+      const key = zone === "main" ? "mainCounts" : "sideboardCounts";
+      const counts = current[key];
+      const nextCount = Math.max(0, Math.min(99, (counts[cardId] ?? 0) + delta));
+      const nextCounts = { ...counts };
+      if (nextCount === 0) delete nextCounts[cardId];
+      else nextCounts[cardId] = nextCount;
+      return { ...current, [key]: nextCounts };
     });
   };
 
   const selectCard = (card: CardInfo) => {
+    if (!format || cardSelectionReason(card)) return;
     if (activeTab === "leader") {
-      setLeaderId(card.cardId);
-      setActiveTab("base");
+      updateCurrentDeck((current) => {
+        const selected = current.leaderIds ?? [];
+        if (format === "twin-suns") {
+          const next = selected.includes(card.cardId)
+            ? selected.filter((cardId) => cardId !== card.cardId)
+            : selected.length < 2
+              ? [...selected, card.cardId]
+              : selected;
+          if (next.length === 2) setActiveTab("base");
+          return { ...current, leaderIds: next };
+        }
+        setActiveTab("base");
+        return { ...current, leaderIds: [card.cardId] };
+      });
       return;
     }
     if (activeTab === "base") {
-      setBaseId(card.cardId);
+      updateCurrentDeck((current) => ({ ...current, baseId: card.cardId }));
       setActiveTab("cards");
       return;
     }
@@ -324,6 +505,16 @@ export function DeckBuilderPage() {
     }
   };
 
+  if (!format) {
+    return (
+      <FormatChoice
+        choosingTrilogy={choosingTrilogy}
+        onChoose={initializeFormat}
+        onChooseTrilogy={() => setChoosingTrilogy(true)}
+        onCancelTrilogy={() => setChoosingTrilogy(false)}
+      />
+    );
+  }
   if (collection === undefined || favorites === undefined || allCards === null) {
     if (catalogError) {
       return <p className="card border-saber-red/50 text-sm text-saber-red">{catalogError}</p>;
@@ -332,8 +523,14 @@ export function DeckBuilderPage() {
   }
 
   const shownCards = filteredCards.slice(0, 80);
-  const selectedMain = Object.entries(mainCounts).filter(([, count]) => count > 0);
-  const selectedSideboard = Object.entries(sideboardCounts).filter(([, count]) => count > 0);
+  const selectedMain = Object.entries(currentDeck.mainCounts).filter(([, count]) => count > 0);
+  const selectedSideboard = Object.entries(currentDeck.sideboardCounts).filter(
+    ([, count]) => count > 0
+  );
+  const formatLabel =
+    format === "trilogy"
+      ? `Trilogy · ${DECK_FORMAT_LABELS[trilogyCardPool]}`
+      : DECK_FORMAT_LABELS[format];
 
   return (
     <div className="space-y-4">
@@ -345,16 +542,19 @@ export function DeckBuilderPage() {
           >
             <ArrowLeft size={14} /> Volver a Mazos
           </Link>
-          <h1 className="font-display text-lg">Crear mazo</h1>
+          <h1 className="font-display text-lg">Crear mazo · {formatLabel}</h1>
           <p className="text-xs text-slate-400">
-            Formato Premier · se guardará en Favoritos y no reservará cartas hasta que lo montes.
+            Se guardará en Favoritos y no reservará cartas hasta que lo montes.
           </p>
         </div>
+        <button type="button" className="btn-secondary shrink-0" onClick={resetFormat}>
+          <RotateCcw size={14} /> Cambiar
+        </button>
       </header>
 
       <section className="card space-y-2">
         <label htmlFor="deck-name" className="text-sm font-semibold">
-          Nombre del mazo
+          {format === "trilogy" ? "Nombre del conjunto Trilogy" : "Nombre del mazo"}
         </label>
         <input
           id="deck-name"
@@ -365,13 +565,57 @@ export function DeckBuilderPage() {
         />
       </section>
 
+      {format === "trilogy" && (
+        <section className="card space-y-3">
+          <div>
+            <h2 className="font-display text-base">Tres mazos del conjunto</h2>
+            <p className="text-xs text-slate-400">
+              Los límites de copias, líderes y bases se calculan sumando los tres.
+            </p>
+          </div>
+          <nav className="grid grid-cols-3 gap-2" aria-label="Mazo de Trilogy que estás editando">
+            {decks.map((deck, index) => {
+              const deckBase = deck.baseId ? cardsById.get(deck.baseId) : undefined;
+              const minimum = getMinimumMainDeckSize("trilogy", deckBase);
+              return (
+                <button
+                  key={index}
+                  type="button"
+                  className={activeDeckIndex === index ? "btn-primary px-2" : "btn-secondary px-2"}
+                  onClick={() => {
+                    setActiveDeckIndex(index);
+                    setActiveTab("leader");
+                  }}
+                >
+                  Mazo {index + 1} · {totalCounts(deck.mainCounts)}/{minimum}
+                </button>
+              );
+            })}
+          </nav>
+          <label className="text-xs text-slate-300">
+            Nombre interno del mazo {activeDeckIndex + 1}
+            <input
+              className="mt-1 w-full rounded-lg border border-space-600 bg-space-950 px-3 py-2 text-sm"
+              value={currentDeck.name ?? `Mazo ${activeDeckIndex + 1}`}
+              maxLength={80}
+              onChange={(event) =>
+                updateCurrentDeck((current) => ({ ...current, name: event.target.value }))
+              }
+            />
+          </label>
+        </section>
+      )}
+
       <section className="card space-y-3">
         <nav aria-label="Zona que estás construyendo" className="grid grid-cols-3 gap-1">
           {(
             [
-              ["leader", `1. Líder${leader ? " ✓" : ""}`],
+              [
+                "leader",
+                `1. ${requiredLeaderCount === 1 ? "Líder" : "Líderes"} ${leaderIds.length}/${requiredLeaderCount}`
+              ],
               ["base", `2. Base${base ? " ✓" : ""}`],
-              ["cards", `3. Cartas ${validation.mainCount}/50`]
+              ["cards", `3. Cartas ${currentMainCount}/${minimumMainCount}`]
             ] as [BuilderTab, string][]
           ).map(([tab, label]) => (
             <button
@@ -464,7 +708,7 @@ export function DeckBuilderPage() {
             <input
               type="checkbox"
               checked={onlyInAspect}
-              disabled={!leader || !base}
+              disabled={leaders.length !== requiredLeaderCount || !base}
               onChange={(event) => setOnlyInAspect(event.target.checked)}
             />
             Solo cartas sin penalización de aspecto
@@ -481,19 +725,26 @@ export function DeckBuilderPage() {
         <ul className="grid gap-2 sm:grid-cols-2">
           {shownCards.map((card) => {
             const allocation = allocations.get(card.cardId);
-            const mainCount = mainCounts[card.cardId] ?? 0;
-            const sideCount = sideboardCounts[card.cardId] ?? 0;
-            const selected = card.cardId === leaderId || card.cardId === baseId;
+            const mainCount = currentDeck.mainCounts[card.cardId] ?? 0;
+            const sideCount = currentDeck.sideboardCounts[card.cardId] ?? 0;
+            const selected = leaderIds.includes(card.cardId) || card.cardId === currentDeck.baseId;
             const selectedCopies = selectedCopiesByKey.get(card.cardKey ?? card.cardId) ?? 0;
-            const copyLimitReached = selectedCopies >= (card.deckLimit ?? 3);
+            const copyLimit = getCardCopyLimit(format, card);
+            const copyLimitReached = selectedCopies >= copyLimit;
+            const blockedReason = cardSelectionReason(card);
             return (
               <li
                 key={card.cardId}
-                className={`rounded-xl border p-3 ${selected ? "border-saber-blue bg-space-800" : "border-space-700 bg-space-900"}`}
+                className={`rounded-xl border p-3 ${blockedReason ? "border-saber-red/40 bg-space-950 opacity-75" : selected ? "border-saber-blue bg-space-800" : "border-space-700 bg-space-900"}`}
               >
                 <div className="flex gap-3">
                   {card.imageUrl && (
-                    <button type="button" className="shrink-0" onClick={() => selectCard(card)}>
+                    <button
+                      type="button"
+                      className="shrink-0"
+                      disabled={Boolean(blockedReason)}
+                      onClick={() => selectCard(card)}
+                    >
                       <CardImageThumbnail
                         src={card.imageUrl}
                         fallbackSrc={tryGetCardImageUrl(card.cardId)}
@@ -527,19 +778,32 @@ export function DeckBuilderPage() {
                   </div>
                 </div>
 
+                {blockedReason && (
+                  <p className="mt-2 flex items-start gap-1 text-xs text-saber-red">
+                    <AlertTriangle size={14} className="mt-0.5 shrink-0" /> {blockedReason}
+                  </p>
+                )}
+
                 {activeTab === "leader" || activeTab === "base" ? (
                   <button
                     type="button"
                     className="btn-secondary mt-2 w-full"
+                    disabled={Boolean(blockedReason)}
                     onClick={() => selectCard(card)}
                   >
                     {selected ? <CheckCircle2 size={15} /> : <Plus size={15} />}
-                    {selected ? "Seleccionada" : "Elegir"}
+                    {format === "twin-suns" && activeTab === "leader" && selected
+                      ? "Quitar selección"
+                      : selected
+                        ? "Seleccionada"
+                        : "Elegir"}
                   </button>
                 ) : (
-                  <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+                  <div
+                    className={`mt-2 grid ${sideboardLimit > 0 ? "grid-cols-2" : "grid-cols-1"} gap-2 text-xs`}
+                  >
                     <div className="rounded-lg bg-space-950 p-2 text-center">
-                      <p className="mb-1 text-slate-400">Mazo</p>
+                      <p className="mb-1 text-slate-400">Mazo · máximo {copyLimit}</p>
                       <div className="flex items-center justify-center gap-2">
                         <QuantityButton
                           label={`Restar ${displayName(card)} del mazo`}
@@ -551,33 +815,39 @@ export function DeckBuilderPage() {
                         <strong className="min-w-4">{mainCount}</strong>
                         <QuantityButton
                           label={`Añadir ${displayName(card)} al mazo`}
-                          disabled={copyLimitReached}
+                          disabled={Boolean(blockedReason) || copyLimitReached}
                           onClick={() => changeCount("main", card.cardId, 1)}
                         >
                           <Plus size={14} />
                         </QuantityButton>
                       </div>
                     </div>
-                    <div className="rounded-lg bg-space-950 p-2 text-center">
-                      <p className="mb-1 text-slate-400">Banquillo</p>
-                      <div className="flex items-center justify-center gap-2">
-                        <QuantityButton
-                          label={`Restar ${displayName(card)} del banquillo`}
-                          disabled={sideCount === 0}
-                          onClick={() => changeCount("sideboard", card.cardId, -1)}
-                        >
-                          <Minus size={14} />
-                        </QuantityButton>
-                        <strong className="min-w-4">{sideCount}</strong>
-                        <QuantityButton
-                          label={`Añadir ${displayName(card)} al banquillo`}
-                          disabled={copyLimitReached || validation.sideboardCount >= 10}
-                          onClick={() => changeCount("sideboard", card.cardId, 1)}
-                        >
-                          <Plus size={14} />
-                        </QuantityButton>
+                    {sideboardLimit > 0 && (
+                      <div className="rounded-lg bg-space-950 p-2 text-center">
+                        <p className="mb-1 text-slate-400">Banquillo</p>
+                        <div className="flex items-center justify-center gap-2">
+                          <QuantityButton
+                            label={`Restar ${displayName(card)} del banquillo`}
+                            disabled={sideCount === 0}
+                            onClick={() => changeCount("sideboard", card.cardId, -1)}
+                          >
+                            <Minus size={14} />
+                          </QuantityButton>
+                          <strong className="min-w-4">{sideCount}</strong>
+                          <QuantityButton
+                            label={`Añadir ${displayName(card)} al banquillo`}
+                            disabled={
+                              Boolean(blockedReason) ||
+                              copyLimitReached ||
+                              currentSideboardCount >= sideboardLimit
+                            }
+                            onClick={() => changeCount("sideboard", card.cardId, 1)}
+                          >
+                            <Plus size={14} />
+                          </QuantityButton>
+                        </div>
                       </div>
-                    </div>
+                    )}
                   </div>
                 )}
               </li>
@@ -587,11 +857,19 @@ export function DeckBuilderPage() {
       </section>
 
       <section className="card space-y-3">
-        <h2 className="font-display text-base">Lista del mazo</h2>
-        <dl className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+        <h2 className="font-display text-base">
+          {format === "trilogy" ? `Lista del mazo ${activeDeckIndex + 1}` : "Lista del mazo"}
+        </h2>
+        <dl
+          className={`grid ${sideboardLimit > 0 ? "grid-cols-2 sm:grid-cols-4" : "grid-cols-3"} gap-2 text-xs`}
+        >
           <div>
-            <dt className="text-slate-400">Líder</dt>
-            <dd className="font-semibold">{displayName(leader, "Sin elegir")}</dd>
+            <dt className="text-slate-400">{requiredLeaderCount === 1 ? "Líder" : "Líderes"}</dt>
+            <dd className="font-semibold">
+              {leaders.length
+                ? leaders.map((leader) => displayName(leader)).join(" · ")
+                : "Sin elegir"}
+            </dd>
           </div>
           <div>
             <dt className="text-slate-400">Base</dt>
@@ -599,15 +877,21 @@ export function DeckBuilderPage() {
           </div>
           <div>
             <dt className="text-slate-400">Mazo</dt>
-            <dd className="font-semibold">{validation.mainCount}/50</dd>
+            <dd className="font-semibold">
+              {currentMainCount}/{minimumMainCount}
+            </dd>
           </div>
-          <div>
-            <dt className="text-slate-400">Banquillo</dt>
-            <dd className="font-semibold">{validation.sideboardCount}/10</dd>
-          </div>
+          {sideboardLimit > 0 && (
+            <div>
+              <dt className="text-slate-400">Banquillo</dt>
+              <dd className="font-semibold">
+                {currentSideboardCount}/{sideboardLimit}
+              </dd>
+            </div>
+          )}
         </dl>
 
-        {validation.mainCount > 0 && (
+        {currentMainCount > 0 && (
           <div className="grid gap-2 rounded-lg bg-space-950 p-3 text-xs sm:grid-cols-2">
             <p>
               <span className="text-slate-400">Tipos: </span>
@@ -628,8 +912,11 @@ export function DeckBuilderPage() {
             <h3 className="mb-1 text-sm font-semibold">Mazo principal</h3>
             <ul className="space-y-1 text-xs">
               {selectedMain
-                .sort(([a], [b]) =>
-                  displayName(cardsById.get(a)).localeCompare(displayName(cardsById.get(b)), "es")
+                .sort(([left], [right]) =>
+                  displayName(cardsById.get(left)).localeCompare(
+                    displayName(cardsById.get(right)),
+                    "es"
+                  )
                 )
                 .map(([cardId, count]) => (
                   <li
@@ -651,7 +938,7 @@ export function DeckBuilderPage() {
           </div>
         )}
 
-        {selectedSideboard.length > 0 && (
+        {sideboardLimit > 0 && selectedSideboard.length > 0 && (
           <div>
             <h3 className="mb-1 text-sm font-semibold">Banquillo</h3>
             <ul className="space-y-1 text-xs">
@@ -677,28 +964,26 @@ export function DeckBuilderPage() {
       </section>
 
       <section className="card space-y-2">
-        <h2 className="font-display text-base">Validación Premier</h2>
+        <h2 className="font-display text-base">Validación {formatLabel}</h2>
         {validation.valid ? (
           <p className="flex items-center gap-2 text-sm text-saber-green">
-            <CheckCircle2 size={17} /> La estructura del mazo es válida.
+            <CheckCircle2 size={17} /> La estructura y la legalidad del mazo son válidas.
           </p>
         ) : (
           <ul className="space-y-1 text-sm text-saber-red">
-            {validation.errors.map((message) => (
-              <li key={message}>• {message}</li>
+            {validation.errors.map((message, index) => (
+              <li key={`${message}-${index}`}>• {message}</li>
             ))}
           </ul>
         )}
         {validation.warnings.map((message) => (
           <p key={message} className="flex items-start gap-2 text-xs text-saber-yellow">
-            <AlertTriangle size={15} className="mt-0.5 shrink-0" />
-            {message}
+            <AlertTriangle size={15} className="mt-0.5 shrink-0" /> {message}
           </p>
         ))}
         <p className="text-xs text-slate-500">
-          La validación comprueba líder, base, tamaño, banquillo, tipos y límite de copias. La
-          penalización de aspecto se avisa, pero no hace ilegal una carta. Todavía no bloquea
-          rotaciones, suspensiones ni cartas prohibidas del torneo vigente.
+          Se comprueban tamaño modificado por la base, líderes, base, copias, aspectos, rotación y
+          cartas inhabilitadas. La penalización de aspecto solo genera un aviso.
         </p>
       </section>
 

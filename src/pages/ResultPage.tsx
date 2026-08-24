@@ -5,6 +5,7 @@ import { DeckSummary } from "@/components/DeckSummary";
 import { DeckResultTable } from "@/components/DeckResultTable";
 import { useDataSource } from "@/contexts/DataSourceContext";
 import { useAuth } from "@/hooks/useAuth";
+import { useDeckLegality } from "@/hooks/useDeckLegality";
 import {
   buildMountedDeckComparisonResult,
   computeCardAllocations,
@@ -50,6 +51,9 @@ export function ResultPage({ deck, result, favoriteId = null, onFavoriteSaved }:
   const activeFavorite =
     favoriteFromSource ??
     (savedFavoriteSnapshot?.id === activeFavoriteId ? savedFavoriteSnapshot : undefined);
+  const legalityDecks = useMemo(() => (activeFavorite ? [activeFavorite] : []), [activeFavorite]);
+  const deckLegality = useDeckLegality(legalityDecks);
+  const activeLegality = activeFavorite ? deckLegality.byDeckId.get(activeFavorite.id) : undefined;
   const allocations = useMemo(
     () => computeCardAllocations(collection?.cards ?? [], favorites ?? []),
     [collection?.cards, favorites]
@@ -108,6 +112,17 @@ export function ResultPage({ deck, result, favoriteId = null, onFavoriteSaved }:
   const handleMountFavorite = async () => {
     if (!activeFavorite) {
       setFavoriteError("Espera a que termine de cargar el mazo guardado.");
+      return;
+    }
+    if (deckLegality.loading) {
+      setFavoriteError("Espera a que termine la comprobación de legalidad del mazo.");
+      return;
+    }
+    if (!activeLegality?.valid) {
+      setFavoriteError(
+        activeLegality?.errors[0] ??
+          "No se puede montar este mazo porque ya no es legal en su formato."
+      );
       return;
     }
 
@@ -188,10 +203,25 @@ export function ResultPage({ deck, result, favoriteId = null, onFavoriteSaved }:
         isFavorite={savedAsFavorite}
         isMounted={isMounted}
         mounting={mounting}
-        mountDisabled={!activeFavorite}
+        mountDisabled={!activeFavorite || deckLegality.loading || !activeLegality?.valid}
         onMountDeck={activeFavoriteId ? handleMountFavorite : undefined}
         onRecheck={() => navigate("/comprobar")}
       />
+
+      {activeFavorite && activeLegality && !activeLegality.valid && (
+        <div className="card border-saber-red/50 text-sm text-saber-red">
+          <p className="font-semibold">Este mazo se conserva, pero actualmente no es legal.</p>
+          {activeLegality.errors.slice(0, 3).map((message) => (
+            <p key={message}>• {message}</p>
+          ))}
+        </div>
+      )}
+
+      {activeFavorite && deckLegality.error && (
+        <p className="card border-saber-yellow/50 text-sm text-saber-yellow">
+          No se ha podido comprobar la legalidad del mazo: {deckLegality.error}
+        </p>
+      )}
 
       {favoriteMessage && (
         <p role="status" className="card border-saber-green/50 text-sm text-saber-green">
