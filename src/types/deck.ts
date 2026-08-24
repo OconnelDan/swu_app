@@ -1,5 +1,8 @@
 export type DeckZone = "leader" | "base" | "main" | "sideboard";
 
+export type DeckFormat = "premier" | "eternal" | "twin-suns" | "trilogy";
+export type TrilogyCardPool = "premier" | "eternal";
+
 export interface NormalizedDeckCard {
   cardId: string;
   setCode: string;
@@ -9,14 +12,25 @@ export interface NormalizedDeckCard {
   zoneCounts: Partial<Record<DeckZone, number>>;
 }
 
-export interface NormalizedDeck {
+export interface NormalizedDeckPart {
   name: string;
-  author?: string;
   leader?: NormalizedDeckCard;
+  /** Uno en formatos normales; exactamente dos en Twin Suns. */
+  leaders?: NormalizedDeckCard[];
   base?: NormalizedDeckCard;
   mainDeck: NormalizedDeckCard[];
   sideboard: NormalizedDeckCard[];
   allRequiredCards: NormalizedDeckCard[];
+}
+
+export interface NormalizedDeck extends NormalizedDeckPart {
+  author?: string;
+  /** Los registros antiguos no lo tienen y se interpretan como Premier. */
+  format?: DeckFormat;
+  /** Trilogy debe usar la reserva de cartas de Premier o la de Eternal. */
+  trilogyCardPool?: TrilogyCardPool;
+  /** Los tres mazos individuales cuando el formato es Trilogy. */
+  trilogyDecks?: NormalizedDeckPart[];
   originalJson: unknown;
 }
 
