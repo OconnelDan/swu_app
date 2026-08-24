@@ -12,6 +12,7 @@ import {
   Search
 } from "lucide-react";
 import { CardImageThumbnail } from "@/components/CardImageThumbnail";
+import { CardDetailsModal } from "@/components/CardDetailsModal";
 import { PaginationControls } from "@/components/PaginationControls";
 import { SkeletonLines } from "@/components/Skeleton";
 import { useDataSource } from "@/contexts/DataSourceContext";
@@ -273,6 +274,7 @@ export function DeckBuilderPage() {
   const [cardPage, setCardPage] = useState(1);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [detailsCard, setDetailsCard] = useState<CardInfo | null>(null);
   const editingFavorite = favoriteId
     ? favorites?.find((favorite) => favorite.id === favoriteId)
     : undefined;
@@ -309,10 +311,6 @@ export function DeckBuilderPage() {
 
   useEffect(() => {
     if (!favoriteId || !editingFavorite || initializedFavoriteId.current === favoriteId) return;
-    if (editingFavorite.isMounted) {
-      setError("Desmonta el mazo antes de modificar su composición.");
-      return;
-    }
 
     const saved = compositionFromNormalizedDeck(editingFavorite.normalizedDeck);
     const savedFormat = saved.format ?? "premier";
@@ -643,15 +641,18 @@ export function DeckBuilderPage() {
     setError(null);
     try {
       const normalizedDeck = normalizeDeckJson(buildDeckJson(composition));
+      const comparisonAllocations = favoriteId
+        ? computeCardAllocations(collection.cards, favorites, favoriteId)
+        : allocations;
       const result = compareDeckWithCollection(
         normalizedDeck,
         collection.cards,
         cardsById,
-        allocations
+        comparisonAllocations
       );
       if (favoriteId) await updateFavoriteDeck(favoriteId, normalizedDeck, result);
       else await saveFavoriteDeck(normalizedDeck, result);
-      navigate("/favoritos");
+      navigate(editingFavorite?.isMounted ? "/montados" : "/favoritos");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "No se ha podido guardar el mazo.");
     } finally {
@@ -664,13 +665,6 @@ export function DeckBuilderPage() {
     return (
       <p className="card border-saber-red/50 text-sm text-saber-red">
         El mazo que quieres editar ya no existe en Favoritos.
-      </p>
-    );
-  }
-  if (favoriteId && editingFavorite?.isMounted) {
-    return (
-      <p className="card border-saber-yellow/50 text-sm text-saber-yellow">
-        Desmonta el mazo antes de modificar su composición.
       </p>
     );
   }
@@ -710,7 +704,7 @@ export function DeckBuilderPage() {
       <header className="flex items-start justify-between gap-3">
         <div>
           <Link
-            to="/favoritos"
+            to={editingFavorite?.isMounted ? "/montados" : "/favoritos"}
             className="mb-2 inline-flex items-center gap-1 text-xs text-slate-400"
           >
             <ArrowLeft size={14} /> Volver a Mazos
@@ -719,7 +713,9 @@ export function DeckBuilderPage() {
             {favoriteId ? "Editar mazo" : "Crear mazo"} · {formatLabel}
           </h1>
           <p className="text-xs text-slate-400">
-            Puedes guardarlo aunque esté inacabado. No reservará cartas hasta que lo montes.
+            {editingFavorite?.isMounted
+              ? "Seguirá montado al guardar y se recalcularán las copias que tiene reservadas."
+              : "Puedes guardarlo aunque esté inacabado. No reservará cartas hasta que lo montes."}
           </p>
         </div>
         <button type="button" className="btn-secondary shrink-0" onClick={resetFormat}>
@@ -978,15 +974,21 @@ export function DeckBuilderPage() {
                 className={`rounded-xl border p-3 ${blockedReason ? "border-saber-red/40 bg-space-950 opacity-75" : selected ? "border-saber-blue bg-space-800" : "border-space-700 bg-space-900"}`}
               >
                 <div className="flex gap-3">
-                  {card.imageUrl && (
-                    <div className="shrink-0">
+                  {(card.imageUrl ?? tryGetCardImageUrl(card.cardId)) && (
+                    <button
+                      type="button"
+                      className="shrink-0 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-saber-blue"
+                      aria-label={`Ver detalles de ${displayName(card)}`}
+                      onClick={() => setDetailsCard(card)}
+                    >
                       <CardImageThumbnail
-                        src={card.imageUrl}
+                        src={card.imageUrl ?? tryGetCardImageUrl(card.cardId)!}
                         fallbackSrc={tryGetCardImageUrl(card.cardId)}
                         alt={displayName(card)}
                         className="h-28 w-auto rounded"
+                        zoomOnClick={false}
                       />
-                    </div>
+                    </button>
                   )}
                   <div className="min-w-0 flex-1">
                     <p className="font-mono text-[11px] text-slate-400">{card.cardId}</p>
@@ -1266,6 +1268,15 @@ export function DeckBuilderPage() {
               ? "Guardar mazo en Favoritos"
               : "Guardar borrador en Favoritos"}
       </button>
+
+      {detailsCard && (
+        <CardDetailsModal
+          cardId={detailsCard.cardId}
+          card={detailsCard}
+          imageUrl={detailsCard.imageUrl}
+          onClose={() => setDetailsCard(null)}
+        />
+      )}
     </div>
   );
 }

@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { PackageOpen, RefreshCw } from "lucide-react";
+import { PackageOpen, Pencil, RefreshCw } from "lucide-react";
 import {
   DeckFormatBadge,
   DeckFormatFilter,
@@ -214,6 +214,15 @@ export function MountedDecksPage({ onOpenResult }: MountedDecksPageProps) {
                 )}
 
                 <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    disabled={busyId !== null}
+                    onClick={() => navigate(`/mazos/editar/${deck.id}`)}
+                  >
+                    <Pencil size={14} />
+                    Modificar mazo
+                  </button>
                   <button
                     type="button"
                     className="btn-secondary"

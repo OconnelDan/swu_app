@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { Minus, Search, X } from "lucide-react";
+import { Minus, Search } from "lucide-react";
+import { CardDetailsModal } from "@/components/CardDetailsModal";
 import { CardImageThumbnail } from "@/components/CardImageThumbnail";
 import { PaginationControls } from "@/components/PaginationControls";
 import { SkeletonLines } from "@/components/Skeleton";
@@ -99,15 +100,6 @@ export function CardFinderPage() {
       active = false;
     };
   }, []);
-
-  useEffect(() => {
-    if (!selectedId) return;
-    const closeWithEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setSelectedId(null);
-    };
-    window.addEventListener("keydown", closeWithEscape);
-    return () => window.removeEventListener("keydown", closeWithEscape);
-  }, [selectedId]);
 
   const cardInfos = useMemo(
     () => new Map((catalogCards ?? []).map((card) => [card.cardId, card])),
@@ -242,6 +234,7 @@ export function CardFinderPage() {
                       src={imageUrl}
                       fallbackSrc={tryGetCardImageUrl(candidate.cardId)}
                       className="h-20 w-auto rounded"
+                      zoomOnClick={false}
                     />
                   )}
                   <div className="flex-1">
@@ -298,79 +291,53 @@ export function CardFinderPage() {
       />
 
       {selectedId && (
-        <div
-          className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-3 sm:items-center"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="card-quantity-title"
+        <CardDetailsModal
+          cardId={selectedId}
+          card={selectedInfo}
+          imageUrl={selectedInfo?.imageUrl ?? tryGetCardImageUrl(selectedId)}
+          closeDisabled={busy}
+          showImage={settings.showImages}
+          onClose={() => setSelectedId(null)}
         >
-          <section className="card max-h-[90dvh] w-full max-w-md overflow-y-auto border-space-600 bg-space-900">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="font-mono text-xs text-slate-400">{selectedId}</p>
-                <h2 id="card-quantity-title" className="font-display text-base">
-                  {displayName(selectedInfo, selectedId)}
-                </h2>
-              </div>
-              <button
-                type="button"
-                className="btn-secondary px-3"
-                aria-label="Cerrar"
-                disabled={busy}
-                onClick={() => setSelectedId(null)}
-              >
-                <X size={17} />
-              </button>
+          <dl className="grid grid-cols-3 gap-2 text-center text-xs">
+            <div className="rounded-lg bg-space-950 p-2">
+              <dt className="text-slate-400">Tienes</dt>
+              <dd className="text-lg font-semibold">{selectedAllocation?.ownedCount ?? 0}</dd>
             </div>
+            <div className="rounded-lg bg-space-950 p-2">
+              <dt className="text-slate-400">Libres</dt>
+              <dd className="text-lg font-semibold">{selectedAllocation?.freeCount ?? 0}</dd>
+            </div>
+            <div className="rounded-lg bg-space-950 p-2">
+              <dt className="text-slate-400">En mazos</dt>
+              <dd className="text-lg font-semibold">{selectedAllocation?.allocatedCount ?? 0}</dd>
+            </div>
+          </dl>
 
-            {settings.showImages && selectedInfo?.imageUrl && (
-              <CardImageThumbnail
-                src={selectedInfo.imageUrl}
-                fallbackSrc={tryGetCardImageUrl(selectedId)}
-                className="mx-auto mt-3 max-h-72 w-auto rounded-lg"
-              />
-            )}
+          {selectedAllocation && selectedAllocation.allocations.length > 0 && (
+            <ul className="mt-3 space-y-1 text-xs text-slate-300">
+              {selectedAllocation.allocations.map((item) => (
+                <li key={item.favoriteId} className="rounded-lg bg-space-950 px-3 py-2">
+                  {item.usedCount}x en el mazo montado «{item.favoriteName}»
+                </li>
+              ))}
+            </ul>
+          )}
 
-            <dl className="mt-3 grid grid-cols-3 gap-2 text-center text-xs">
-              <div className="rounded-lg bg-space-950 p-2">
-                <dt className="text-slate-400">Tienes</dt>
-                <dd className="text-lg font-semibold">{selectedAllocation?.ownedCount ?? 0}</dd>
-              </div>
-              <div className="rounded-lg bg-space-950 p-2">
-                <dt className="text-slate-400">Libres</dt>
-                <dd className="text-lg font-semibold">{selectedAllocation?.freeCount ?? 0}</dd>
-              </div>
-              <div className="rounded-lg bg-space-950 p-2">
-                <dt className="text-slate-400">En mazos</dt>
-                <dd className="text-lg font-semibold">{selectedAllocation?.allocatedCount ?? 0}</dd>
-              </div>
-            </dl>
-
-            {selectedAllocation && selectedAllocation.allocations.length > 0 && (
-              <ul className="mt-3 space-y-1 text-xs text-slate-300">
-                {selectedAllocation.allocations.map((item) => (
-                  <li key={item.favoriteId} className="rounded-lg bg-space-950 px-3 py-2">
-                    {item.usedCount}x en el mazo montado «{item.favoriteName}»
-                  </li>
-                ))}
-              </ul>
-            )}
-
-            <button
-              type="button"
-              className="btn-danger mt-4 w-full"
-              disabled={busy || !selectedAllocation?.ownedCount}
-              onClick={() => void handleRemove()}
-            >
-              <Minus size={16} /> {busy ? "Restando..." : "Restar una copia"}
-            </button>
-            {!selectedAllocation?.ownedCount && (
-              <p className="mt-2 text-center text-xs text-slate-400">
-                No puedes restarla porque no está en tu colección.
-              </p>
-            )}
-          </section>
-        </div>
+          <button
+            type="button"
+            className="btn-danger mt-4 w-full"
+            disabled={busy || !selectedAllocation?.ownedCount}
+            onClick={() => void handleRemove()}
+          >
+            <Minus size={16} /> {busy ? "Restando..." : "Restar una copia"}
+          </button>
+          {!selectedAllocation?.ownedCount && (
+            <p className="mt-2 text-center text-xs text-slate-400">
+              No puedes restarla porque no está en tu colección.
+            </p>
+          )}
+        </CardDetailsModal>
       )}
     </div>
   );
