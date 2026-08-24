@@ -387,4 +387,40 @@ describe("constructor por formatos", () => {
     expect(screen.getByText("Unidad de vigilancia")).toBeInTheDocument();
     expect(screen.getByText("Evento de mando")).toBeInTheDocument();
   });
+
+  it("permite acceder a todas las cartas cuando hay más de 80 resultados", async () => {
+    const paginatedCards: CardInfo[] = Array.from({ length: 81 }, (_, index) => ({
+      cardId: `SEC_${String(200 + index).padStart(3, "0")}`,
+      setCode: "SEC",
+      cardNumber: String(200 + index).padStart(3, "0"),
+      name: `Carta paginada ${String(index + 1).padStart(3, "0")}`,
+      type: "Unit",
+      arena: "Ground",
+      aspects: ["Vigilance"],
+      cardKey: `paginated-${index + 1}`
+    }));
+    vi.spyOn(SwUnlimitedDbCardProvider.prototype, "getAllCards").mockResolvedValue([
+      ...catalogCards,
+      ...paginatedCards
+    ]);
+    Object.defineProperty(Element.prototype, "scrollIntoView", {
+      configurable: true,
+      value: vi.fn()
+    });
+
+    renderBuilder();
+    await choosePremierLeaderAndBase();
+    fireEvent.change(screen.getByRole("textbox", { name: "Buscar en el catálogo" }), {
+      target: { value: "Carta paginada" }
+    });
+
+    expect(screen.getByText("81 resultado(s) · mostrando 1–80")).toBeInTheDocument();
+    expect(screen.getByText("Carta paginada 001")).toBeInTheDocument();
+    expect(screen.queryByText("Carta paginada 081")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Ir a la página 2" }));
+    expect(await screen.findByText("81 resultado(s) · mostrando 81–81")).toBeInTheDocument();
+    expect(screen.getByText("Carta paginada 081")).toBeInTheDocument();
+    expect(screen.queryByText("Carta paginada 001")).not.toBeInTheDocument();
+  });
 });
