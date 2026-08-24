@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { OFFICIAL_NON_PREMIER_SPECIAL_SET_CODES } from "@/generated/officialFormatRules";
+import {
+  OFFICIAL_NON_PREMIER_SPECIAL_SET_CODES,
+  OFFICIAL_PREMIER_SET_CODES
+} from "@/generated/officialFormatRules";
 import { buildDeckJson, validateDeck, validatePremierDeck } from "@/lib/deckBuilder";
 import { buildCardLegalityIndex, getCardLegality } from "@/lib/deckFormats";
 import type { CardInfo } from "@/types/card";
@@ -287,8 +290,9 @@ describe("constructor Premier", () => {
     expect(result.errors.some((message) => message.includes("ha rotado"))).toBe(false);
   });
 
-  it("mantiene IBH fuera de Premier salvo que la carta tenga una reimpresión Premier", () => {
-    expect(OFFICIAL_NON_PREMIER_SPECIAL_SET_CODES).toContain("IBH");
+  it("mantiene toda la colección IBH disponible en Premier después de sincronizar", () => {
+    expect(OFFICIAL_PREMIER_SET_CODES).toContain("IBH");
+    expect(OFFICIAL_NON_PREMIER_SPECIAL_SET_CODES).not.toContain("IBH");
 
     const exclusiveHothCard = card("IBH_001", {
       name: "Carta exclusiva de Hoth",
@@ -309,9 +313,7 @@ describe("constructor Premier", () => {
     ]);
     const index = buildCardLegalityIndex([...cards.values()]);
 
-    expect(getCardLegality(exclusiveHothCard, "premier", index)).toMatchObject({
-      legal: false
-    });
+    expect(getCardLegality(exclusiveHothCard, "premier", index)).toEqual({ legal: true });
     expect(getCardLegality(reprintedHothCard, "premier", index)).toEqual({ legal: true });
   });
 
