@@ -12,13 +12,14 @@ export const OFFICIAL_CORE_SET_SEQUENCE = [
 ] as const;
 export const OFFICIAL_PREMIER_SET_CODES = [
   "ASH",
+  "IBH",
   "JTL",
   "LAW",
   "LOF",
   "SEC",
 ] as const;
 export const OFFICIAL_ROTATED_CORE_SET_CODES = ["SOR", "SHD", "TWI"] as const;
-export const OFFICIAL_NON_PREMIER_SPECIAL_SET_CODES = ["IBH", "TS26"] as const;
+export const OFFICIAL_NON_PREMIER_SPECIAL_SET_CODES = ["TS26"] as const;
 export const OFFICIAL_UNREVIEWED_SPECIAL_SET_CODES = [] as const;
 export const OFFICIAL_SUSPENDED_CARDS = {
   premier: [],
