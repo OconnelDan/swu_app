@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { OFFICIAL_NON_PREMIER_SPECIAL_SET_CODES } from "@/generated/officialFormatRules";
 import { buildDeckJson, validateDeck, validatePremierDeck } from "@/lib/deckBuilder";
-import { buildCardLegalityIndex } from "@/lib/deckFormats";
+import { buildCardLegalityIndex, getCardLegality } from "@/lib/deckFormats";
 import type { CardInfo } from "@/types/card";
 
 function card(cardId: string, overrides: Partial<CardInfo> = {}): CardInfo {
@@ -284,6 +285,34 @@ describe("constructor Premier", () => {
     );
 
     expect(result.errors.some((message) => message.includes("ha rotado"))).toBe(false);
+  });
+
+  it("mantiene IBH fuera de Premier salvo que la carta tenga una reimpresión Premier", () => {
+    expect(OFFICIAL_NON_PREMIER_SPECIAL_SET_CODES).toContain("IBH");
+
+    const exclusiveHothCard = card("IBH_001", {
+      name: "Carta exclusiva de Hoth",
+      cardKey: "ibh-exclusive"
+    });
+    const reprintedHothCard = card("IBH_002", {
+      name: "Carta reimpresa de Hoth",
+      cardKey: "ibh-reprint"
+    });
+    const premierReprint = card("SEC_200", {
+      name: "Carta reimpresa de Hoth",
+      cardKey: "ibh-reprint"
+    });
+    const cards = new Map<string, CardInfo>([
+      [exclusiveHothCard.cardId, exclusiveHothCard],
+      [reprintedHothCard.cardId, reprintedHothCard],
+      [premierReprint.cardId, premierReprint]
+    ]);
+    const index = buildCardLegalityIndex([...cards.values()]);
+
+    expect(getCardLegality(exclusiveHothCard, "premier", index)).toMatchObject({
+      legal: false
+    });
+    expect(getCardLegality(reprintedHothCard, "premier", index)).toEqual({ legal: true });
   });
 
   it("aplica en Trilogy los límites compartidos entre sus tres mazos", () => {

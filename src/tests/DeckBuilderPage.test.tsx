@@ -61,7 +61,8 @@ const catalogCards: CardInfo[] = [
     arena: "Ground",
     rarity: "Common",
     aspects: ["Vigilance"],
-    cardKey: "vigilance-unit"
+    cardKey: "vigilance-unit",
+    imageUrl: "https://example.invalid/sec-101.png"
   },
   {
     cardId: "SEC_102",
@@ -226,6 +227,20 @@ describe("constructor por formatos", () => {
     expect(
       screen.getByText(/Automático: Heroísmo · Vigilancia · Mando \+ incoloras/)
     ).toBeInTheDocument();
+  });
+
+  it("amplía la imagen sin seleccionar ni añadir la carta", async () => {
+    renderBuilder();
+    await choosePremierLeaderAndBase();
+
+    fireEvent.click(screen.getByRole("img", { name: "Unidad de vigilancia" }));
+
+    expect(
+      screen.getByRole("button", { name: "Cerrar vista ampliada de la carta" })
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Añadir Unidad de vigilancia al mazo" }))
+      .toBeEnabled();
+    expect(screen.getByRole("button", { name: "3. Cartas 0/50" })).toBeInTheDocument();
   });
 
   it("sustituye el filtro automático por los aspectos manuales seleccionados", async () => {
