@@ -36,6 +36,11 @@ export interface DataSourceValue {
     normalizedDeck: NormalizedDeck,
     result?: DeckComparisonResult
   ) => Promise<FavoriteDeck>;
+  updateFavoriteDeck: (
+    favoriteId: string,
+    normalizedDeck: NormalizedDeck,
+    result?: DeckComparisonResult
+  ) => Promise<FavoriteDeck>;
   updateFavoriteResult: (favoriteId: string, result: DeckComparisonResult) => Promise<void>;
   renameFavoriteDeck: (favoriteId: string, name: string) => Promise<void>;
   deleteFavoriteDeck: (favoriteId: string) => Promise<void>;
