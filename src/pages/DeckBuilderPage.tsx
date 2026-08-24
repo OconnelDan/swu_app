@@ -36,7 +36,7 @@ import {
 } from "@/lib/deckFormats";
 import { tryGetCardImageUrl } from "@/lib/cardImageUrl";
 import { normalizeDeckJson } from "@/lib/normalizeDeckJson";
-import { buildCardRulesSearchText } from "@/lib/cardRulesSearch";
+import { matchesCardSearchQuery } from "@/lib/cardRulesSearch";
 import { SwUnlimitedDbCardProvider } from "@/providers/cardProvider/SwUnlimitedDbCardProvider";
 import type { CardInfo } from "@/types/card";
 import type { DeckFormat, TrilogyCardPool } from "@/types/deck";
@@ -79,10 +79,6 @@ const RARITY_LABELS: Record<string, string> = {
 
 function emptyDeck(name: string): DeckBuilderSubdeckComposition {
   return { name, leaderIds: [], mainCounts: {}, sideboardCounts: {} };
-}
-
-function fold(value: string): string {
-  return value.normalize("NFD").replace(/\p{M}/gu, "").toLocaleLowerCase("es");
 }
 
 function displayName(card: CardInfo | undefined, fallback = "Carta desconocida"): string {
@@ -453,7 +449,7 @@ export function DeckBuilderPage() {
   };
 
   const filteredCards = useMemo(() => {
-    const foldedQuery = fold(query.trim());
+    const hasQuery = query.trim().length > 0;
     return (allCards ?? [])
       .filter((card) => {
         if (activeTab === "leader" && card.type !== "Leader") return false;
@@ -489,17 +485,8 @@ export function DeckBuilderPage() {
         const allocation = allocations.get(card.cardId);
         if (ownedFilter === "owned" && !allocation?.ownedCount) return false;
         if (ownedFilter === "free" && !allocation?.freeCount) return false;
-        if (!foldedQuery) return true;
-        return fold(
-          [
-            card.cardId,
-            card.name,
-            card.localizedName,
-            buildCardRulesSearchText(card)
-          ]
-            .filter(Boolean)
-            .join(" ")
-        ).includes(foldedQuery);
+        if (!hasQuery) return true;
+        return matchesCardSearchQuery(card, query);
       })
       .sort(
         (left, right) =>
@@ -740,7 +727,7 @@ export function DeckBuilderPage() {
           <input
             aria-label="Buscar en el catálogo"
             className="w-full rounded-lg border border-space-600 bg-space-950 py-2 pl-9 pr-3 text-sm"
-            placeholder="Nombre, código, texto, rasgo o palabra clave..."
+            placeholder="Busca y combina con / · un número indica el coste"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
           />
