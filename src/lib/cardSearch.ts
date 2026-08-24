@@ -86,13 +86,13 @@ function getMatchScore(card: SearchableCard, query: string): number | undefined 
   return undefined;
 }
 
-/** Busca, prioriza coincidencias exactas de código y limita los resultados. */
+/** Busca y prioriza coincidencias exactas de código. El límite es opcional. */
 export function searchCards<T extends SearchableCard>(
   cards: T[],
   query: string,
-  limit = 30
+  limit?: number
 ): T[] {
-  return cards
+  const matches = cards
     .map((card, index) => ({
       card,
       index,
@@ -102,7 +102,8 @@ export function searchCards<T extends SearchableCard>(
       (entry): entry is { card: T; index: number; score: number } =>
         entry.score !== undefined
     )
-    .sort((a, b) => a.score - b.score || a.index - b.index)
-    .slice(0, limit)
-    .map(({ card }) => card);
+    .sort((a, b) => a.score - b.score || a.index - b.index);
+  return (limit === undefined ? matches : matches.slice(0, Math.max(0, limit))).map(
+    ({ card }) => card
+  );
 }
