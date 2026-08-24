@@ -3,10 +3,33 @@ import { tryGetCardImageUrl } from "@/lib/cardImageUrl";
 import { normalizeCardIdString, parseCardId } from "@/lib/normalizeCardId";
 import type { CardInfo, CardProvider } from "@/types/card";
 
-type CatalogCardTuple = [name: string, subtitle: string, type: string, rarity: string];
+type CatalogCardTuple = [
+  name: string,
+  subtitle: string,
+  localizedName: string,
+  localizedSubtitle: string,
+  type: string,
+  rarity: string,
+  cost: number | null,
+  aspects: string[],
+  traits: string[],
+  arena: string,
+  text: string,
+  localizedText: string,
+  power: number | null,
+  hp: number | null,
+  upgradePower: number | null,
+  upgradeHp: number | null,
+  unique: boolean,
+  keywords: string[],
+  cardKey: string,
+  deckLimit: number
+];
 
 interface BundledCardCatalog {
-  version: 2;
+  version: 3;
+  sets: string[];
+  setNames: Record<string, string>;
   cards: Record<string, CatalogCardTuple>;
   aliases: Record<string, string>;
   images: Record<string, string>;
@@ -29,7 +52,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function parseCatalog(value: unknown): BundledCardCatalog {
   if (
     !isRecord(value) ||
-    value.version !== 2 ||
+    value.version !== 3 ||
+    !Array.isArray(value.sets) ||
+    !isRecord(value.setNames) ||
     !isRecord(value.cards) ||
     !isRecord(value.aliases) ||
     !isRecord(value.images)
@@ -64,15 +89,56 @@ function resolveCatalogCard(
   const entry = catalog.cards[canonicalCardId];
   if (!entry) return undefined;
 
-  const [name, subtitle, type, rarity] = entry;
+  const [
+    name,
+    subtitle,
+    localizedTitle,
+    localizedSubtitle,
+    type,
+    rarity,
+    cost,
+    aspects,
+    traits,
+    arena,
+    text,
+    localizedText,
+    power,
+    hp,
+    upgradePower,
+    upgradeHp,
+    unique,
+    keywords,
+    cardKey,
+    deckLimit
+  ] = entry;
   const { setCode, cardNumber } = parseCardId(canonicalCardId);
   return {
     cardId: canonicalCardId,
     setCode,
     cardNumber,
     name: subtitle ? `${name}, ${subtitle}` : name,
+    localizedName: localizedTitle
+      ? localizedSubtitle
+        ? `${localizedTitle}, ${localizedSubtitle}`
+        : localizedTitle
+      : undefined,
     type: type || undefined,
     rarity: rarity || undefined,
+    setName: catalog.setNames[setCode],
+    cost: cost ?? undefined,
+    aspects,
+    traits,
+    arena: arena || undefined,
+    text: text || undefined,
+    localizedText: localizedText || undefined,
+    power: power ?? undefined,
+    hp: hp ?? undefined,
+    upgradePower: upgradePower ?? undefined,
+    upgradeHp: upgradeHp ?? undefined,
+    unique,
+    keywords,
+    cardKey,
+    deckLimit,
     // Si se ha escaneado una variante, se muestra esa impresión concreta,
     // aunque la copia se guarde con el ID de la carta base de la colección.
     imageUrl:
@@ -142,5 +208,11 @@ export class SwUnlimitedDbCardProvider implements CardProvider {
     }
 
     return result;
+  }
+
+  /** Devuelve una sola entrada por carta de reglas, lista para búsqueda y construcción de mazos. */
+  async getAllCards(): Promise<CardInfo[]> {
+    const catalog = await loadBundledCatalog();
+    return Object.keys(catalog.cards).map((cardId) => resolveCatalogCard(catalog, cardId)!);
   }
 }
