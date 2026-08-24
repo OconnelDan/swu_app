@@ -6,6 +6,7 @@ import { DeckBuilderPage } from "@/pages/DeckBuilderPage";
 import { normalizeDeckJson } from "@/lib/normalizeDeckJson";
 import { SwUnlimitedDbCardProvider } from "@/providers/cardProvider/SwUnlimitedDbCardProvider";
 import type { CardInfo } from "@/types/card";
+import type { NormalizedDeck } from "@/types/deck";
 
 const catalogCards: CardInfo[] = [
   {
@@ -62,6 +63,13 @@ const catalogCards: CardInfo[] = [
     arena: "Ground",
     rarity: "Common",
     aspects: ["Vigilance"],
+    traits: ["Rebel"],
+    keywords: ["Sentinel"],
+    localizedText: "Centinela. Cuando se juegue: cura 1 de daño de una unidad.",
+    cost: 2,
+    power: 2,
+    hp: 4,
+    setName: "Secretos del poder",
     cardKey: "vigilance-unit",
     imageUrl: "https://example.invalid/sec-101.png"
   },
@@ -252,9 +260,7 @@ describe("constructor por formatos", () => {
     const updateFavoriteDeck = vi.fn().mockResolvedValue(favorite);
 
     render(
-      <DataSourceContext.Provider
-        value={dataSource({ favorites: [favorite], updateFavoriteDeck })}
-      >
+      <DataSourceContext.Provider value={dataSource({ favorites: [favorite], updateFavoriteDeck })}>
         <MemoryRouter initialEntries={["/mazos/editar/draft-id"]}>
           <Routes>
             <Route path="/mazos/editar/:favoriteId" element={<DeckBuilderPage />} />
@@ -274,6 +280,58 @@ describe("constructor por formatos", () => {
       expect.objectContaining({ name: "Borrador recuperable" }),
       expect.any(Object)
     );
+  });
+
+  it("modifica mazo principal y banquillo de un mazo montado y lo mantiene montado", async () => {
+    const normalizedDeck = normalizeDeckJson({
+      metadata: { name: "Premier montado", format: "Premier" },
+      leader: { id: "SEC_001", count: 1 },
+      base: { id: "SEC_020", count: 1 },
+      deck: [{ id: "SEC_101", count: 1 }],
+      sideboard: []
+    });
+    const mountedFavorite = {
+      id: "mounted-id",
+      name: normalizedDeck.name,
+      originalJson: normalizedDeck.originalJson,
+      normalizedDeck,
+      createdAt: "2026-08-24T09:00:00.000Z",
+      updatedAt: "2026-08-24T09:00:00.000Z",
+      isMounted: true,
+      mountedAt: "2026-08-24T09:05:00.000Z",
+      allocationPriority: 1
+    };
+    const updateFavoriteDeck = vi.fn().mockResolvedValue(mountedFavorite);
+
+    render(
+      <DataSourceContext.Provider
+        value={dataSource({ favorites: [mountedFavorite], updateFavoriteDeck })}
+      >
+        <MemoryRouter initialEntries={["/mazos/editar/mounted-id"]}>
+          <Routes>
+            <Route path="/mazos/editar/:favoriteId" element={<DeckBuilderPage />} />
+            <Route path="/montados" element={<p>Listado de montados</p>} />
+          </Routes>
+        </MemoryRouter>
+      </DataSourceContext.Provider>
+    );
+
+    expect(await screen.findByText("Editar mazo · Premier")).toBeInTheDocument();
+    expect(screen.getByText(/Seguirá montado al guardar/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Restar Unidad de vigilancia del mazo" }));
+    fireEvent.click(screen.getByRole("button", { name: "Añadir Unidad incolora al mazo" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Añadir Unidad de vigilancia al banquillo" })
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Guardar cambios" }));
+
+    await waitFor(() => expect(updateFavoriteDeck).toHaveBeenCalledTimes(1));
+    const updatedDeck = updateFavoriteDeck.mock.calls[0][1] as NormalizedDeck;
+    expect(updatedDeck.mainDeck.map((card) => card.cardId)).toContain("SEC_102");
+    expect(updatedDeck.mainDeck.map((card) => card.cardId)).not.toContain("SEC_101");
+    expect(updatedDeck.sideboard.map((card) => card.cardId)).toContain("SEC_101");
+    expect(await screen.findByText("Listado de montados")).toBeInTheDocument();
   });
 
   it("pide el formato primero y adapta Twin Suns a dos líderes y 80 cartas", async () => {
@@ -335,17 +393,24 @@ describe("constructor por formatos", () => {
     ).toBeInTheDocument();
   });
 
-  it("amplía la imagen sin seleccionar ni añadir la carta", async () => {
+  it("abre una ficha persistente sin seleccionar ni añadir la carta", async () => {
     renderBuilder();
     await choosePremierLeaderAndBase();
 
-    fireEvent.click(screen.getByRole("img", { name: "Unidad de vigilancia" }));
+    fireEvent.click(screen.getByRole("button", { name: "Ver detalles de Unidad de vigilancia" }));
 
+    const dialog = screen.getByRole("dialog", { name: "Unidad de vigilancia" });
+    expect(within(dialog).getByText(/Cuando se juegue: cura 1 de daño/i)).toBeInTheDocument();
+    expect(within(dialog).getByText("Centinela")).toBeInTheDocument();
+    expect(within(dialog).getByText("Secretos del poder")).toBeInTheDocument();
+    expect(within(dialog).queryByRole("button", { name: /Añadir/i })).not.toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Cerrar vista ampliada de la carta" })
-    ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Añadir Unidad de vigilancia al mazo" }))
-      .toBeEnabled();
+      screen.getByRole("button", { name: "Añadir Unidad de vigilancia al mazo" })
+    ).toBeEnabled();
+    expect(screen.getByRole("button", { name: "3. Cartas 0/50" })).toBeInTheDocument();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cerrar detalles de la carta" }));
+    expect(screen.queryByRole("dialog", { name: "Unidad de vigilancia" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "3. Cartas 0/50" })).toBeInTheDocument();
   });
 

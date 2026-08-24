@@ -146,6 +146,42 @@ describe("Favoritos y mazos montados", () => {
     expect(await screen.findByText("Constructor recuperado")).toBeInTheDocument();
   });
 
+  it("permite modificar un favorito terminado", async () => {
+    const favorite = savedDeck("favorite", "Mazo favorito", 1, false);
+
+    render(
+      <DataSourceContext.Provider value={dataSource([favorite], collection)}>
+        <MemoryRouter initialEntries={["/favoritos"]}>
+          <Routes>
+            <Route path="/favoritos" element={<FavoritesPage onOpenResult={vi.fn()} />} />
+            <Route path="/mazos/editar/:favoriteId" element={<p>Editar favorito terminado</p>} />
+          </Routes>
+        </MemoryRouter>
+      </DataSourceContext.Provider>
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Modificar mazo" }));
+    expect(await screen.findByText("Editar favorito terminado")).toBeInTheDocument();
+  });
+
+  it("permite modificar un mazo montado sin desmontarlo primero", async () => {
+    const mounted = savedDeck("mounted", "Mazo físico editable", 1, true, 1);
+
+    render(
+      <DataSourceContext.Provider value={dataSource([mounted], collection)}>
+        <MemoryRouter initialEntries={["/montados"]}>
+          <Routes>
+            <Route path="/montados" element={<MountedDecksPage onOpenResult={vi.fn()} />} />
+            <Route path="/mazos/editar/:favoriteId" element={<p>Editar mazo montado</p>} />
+          </Routes>
+        </MemoryRouter>
+      </DataSourceContext.Provider>
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Modificar mazo" }));
+    expect(await screen.findByText("Editar mazo montado")).toBeInTheDocument();
+  });
+
   it("un favorito no consume cartas y puede montarse de forma explícita", async () => {
     const idea = savedDeck("idea", "Idea para probar", 2, false);
     const alreadyMounted = savedDeck("mounted", "Mazo físico", 1, true, 1);

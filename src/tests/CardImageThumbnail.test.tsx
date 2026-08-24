@@ -52,4 +52,20 @@ describe("miniatura de carta", () => {
       "https://example.invalid/new.png"
     );
   });
+
+  it("permite desactivar la ampliación temporal en pantallas con modal propio", () => {
+    render(
+      <CardImageThumbnail
+        src="https://example.invalid/card.png"
+        alt="Carta con ficha"
+        zoomOnClick={false}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("img", { name: "Carta con ficha" }));
+
+    expect(
+      screen.queryByRole("button", { name: "Cerrar vista ampliada de la carta" })
+    ).not.toBeInTheDocument();
+  });
 });
