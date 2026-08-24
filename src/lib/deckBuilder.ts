@@ -56,6 +56,31 @@ function countAspects(aspects: string[] | undefined): Map<string, number> {
   return counts;
 }
 
+/**
+ * Twin Suns comprueba Heroísmo/Villanía únicamente en las caras que empiezan
+ * boca arriba. El catálogo aplana las dos caras de Chancellor Palpatine en una
+ * sola lista de aspectos, aunque su cara inicial es siempre Heroísmo.
+ *
+ * Se usa cardKey para que la regla también cubra futuras reimpresiones de la
+ * misma carta; el cardId queda como respaldo para catálogos antiguos.
+ */
+const TWIN_SUNS_STARTING_ALIGNMENT_BY_CARD_KEY: Readonly<Record<string, "Heroism" | "Villainy">> = {
+  "0026166404": "Heroism"
+};
+
+function getTwinSunsStartingAlignment(card: CardInfo | undefined): "Heroism" | "Villainy" | undefined {
+  if (!card) return undefined;
+
+  const specialStartingAlignment =
+    (card.cardKey ? TWIN_SUNS_STARTING_ALIGNMENT_BY_CARD_KEY[card.cardKey] : undefined) ??
+    (card.cardId === "TWI_017" ? "Heroism" : undefined);
+  if (specialStartingAlignment) return specialStartingAlignment;
+
+  if (card.aspects?.includes("Heroism")) return "Heroism";
+  if (card.aspects?.includes("Villainy")) return "Villainy";
+  return undefined;
+}
+
 function missingAspectIcons(card: CardInfo, available: Map<string, number>): number {
   const needed = countAspects(card.aspects);
   let missing = 0;
@@ -140,8 +165,10 @@ function validateSingleDeck(
   }
 
   if (options.format === "twin-suns") {
-    const leaderAspects = leaders.flatMap((leaderId) => cardsById.get(leaderId)?.aspects ?? []);
-    if (leaderAspects.includes("Heroism") && leaderAspects.includes("Villainy")) {
+    const startingAlignments = leaders.map((leaderId) =>
+      getTwinSunsStartingAlignment(cardsById.get(leaderId))
+    );
+    if (startingAlignments.includes("Heroism") && startingAlignments.includes("Villainy")) {
       errors.push(`${prefix}los dos líderes no pueden combinar Heroísmo y Villanía.`);
     }
   }
