@@ -6,6 +6,7 @@ import { format } from "prettier";
 const API_BASE = "https://admin.starwarsunlimited.com/api";
 const CATALOG_ENDPOINT = "card-list";
 const CATALOG_LOCALE = "en";
+const RULES_CHAPTER_ID = 2;
 const PAGE_SIZE = 250;
 const DOWNLOAD_CONCURRENCY = 4;
 const MAX_ATTEMPTS = 5;
@@ -18,9 +19,39 @@ const META_OUTPUT_PATH = resolve(
   dirname(fileURLToPath(import.meta.url)),
   "../src/generated/officialCardCatalogMeta.ts"
 );
+const FORMAT_RULES_OUTPUT_PATH = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  "../src/generated/officialFormatRules.ts"
+);
+
+// La API todavía no publica de forma fiable la legalidad de los productos
+// especiales. Estos dos productos oficiales no pertenecen a Premier. Si
+// aparece un producto especial nuevo, se genera como pendiente de revisión y
+// la aplicación lo bloquea en Premier hasta que una fuente oficial lo aclare.
+const NON_PREMIER_SPECIAL_SET_CODES = new Set(["IBH", "TS26"]);
+const PREMIER_SPECIAL_SET_CODES = new Set([]);
 
 function sleep(milliseconds) {
   return new Promise((resolvePromise) => setTimeout(resolvePromise, milliseconds));
+}
+
+async function fetchJson(url, description) {
+  let lastError;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      const response = await fetch(url, {
+        headers: { Accept: "application/json" },
+        signal: AbortSignal.timeout(60_000)
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return await response.json();
+    } catch (cause) {
+      lastError = cause;
+      if (attempt < MAX_ATTEMPTS) await sleep(attempt * 1_000);
+    }
+  }
+
+  throw new Error(`No se ha podido descargar ${description}: ${String(lastError)}`);
 }
 
 function sortRecord(record) {
@@ -149,29 +180,11 @@ async function fetchPage(start) {
   url.searchParams.set("pagination[start]", String(start));
   url.searchParams.set("pagination[limit]", String(PAGE_SIZE));
 
-  let lastError;
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    try {
-      const response = await fetch(url, {
-        headers: { Accept: "application/json" },
-        signal: AbortSignal.timeout(60_000)
-      });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
-      const payload = await response.json();
-      if (!payload || !Array.isArray(payload.data) || !payload.meta?.pagination) {
-        throw new Error("respuesta sin data/meta.pagination");
-      }
-      return payload;
-    } catch (cause) {
-      lastError = cause;
-      if (attempt < MAX_ATTEMPTS) await sleep(attempt * 1_000);
-    }
+  const payload = await fetchJson(url, `la página del catálogo que empieza en ${start}`);
+  if (!payload || !Array.isArray(payload.data) || !payload.meta?.pagination) {
+    throw new Error(`La página del catálogo que empieza en ${start} no contiene data/paginación.`);
   }
-
-  throw new Error(
-    `No se ha podido descargar la página que empieza en ${start}: ${String(lastError)}`
-  );
+  return payload;
 }
 
 async function fetchAllCards() {
@@ -196,6 +209,90 @@ async function fetchAllCards() {
     throw new Error(`La API anunció ${total} impresiones, pero se descargaron ${cards.length}.`);
   }
   return cards;
+}
+
+function collectStrings(value, result = []) {
+  if (typeof value === "string") result.push(value);
+  else if (Array.isArray(value)) value.forEach((entry) => collectStrings(entry, result));
+  else if (value && typeof value === "object") {
+    Object.values(value).forEach((entry) => collectStrings(entry, result));
+  }
+  return result;
+}
+
+function extractSuspendedCardUids(rulesChapter) {
+  const html = collectStrings(rulesChapter).find((value) =>
+    /<h1>Suspended Cards<\/h1>/i.test(value)
+  );
+  if (!html) throw new Error("La página oficial de reglas no contiene 'Suspended Cards'.");
+
+  const start = html.search(/<h1>Suspended Cards<\/h1>/i);
+  const end = html.search(/<h2>What is a suspended card\?/i);
+  if (start < 0 || end <= start) {
+    throw new Error("No se ha podido delimitar la lista oficial de cartas suspendidas.");
+  }
+
+  const block = html.slice(start, end).replaceAll("&nbsp;", " ");
+  const labels = [
+    { key: "premier", expression: /<strong>Premier:\s*<\/strong>/i },
+    { key: "twinSuns", expression: /<strong>Twin Suns:\s*<\/strong>/i },
+    { key: "eternal", expression: /<strong>Eternal:\s*<\/strong>/i }
+  ];
+  const positions = labels.map(({ key, expression }) => {
+    const match = expression.exec(block);
+    if (!match) throw new Error(`Falta la sección ${key} en la lista de cartas suspendidas.`);
+    return {
+      key,
+      labelStart: match.index,
+      contentStart: match.index + match[0].length
+    };
+  });
+
+  return Object.fromEntries(
+    positions.map(({ key, contentStart: sectionStart }, index) => {
+      const sectionEnd = positions[index + 1]?.labelStart ?? block.length;
+      const section = block.slice(sectionStart, sectionEnd);
+      const uids = [...section.matchAll(/data-card="([0-9]+)"/gi)].map((match) => match[1]);
+      return [key, [...new Set(uids)]];
+    })
+  );
+}
+
+function getCardKey(card) {
+  return card.attributes.validationId ?? card.attributes.cardUid;
+}
+
+function getRuleCard(ruleEntry, cardsByUid, canonicalByCardId) {
+  const uid = ruleEntry?.card?.data?.attributes?.cardUid;
+  if (!uid) return undefined;
+  const printedCard = uid ? cardsByUid.get(uid) : undefined;
+  const canonicalCard = printedCard ? canonicalByCardId.get(printedCard.id) : undefined;
+  if (!canonicalCard)
+    throw new Error(`Una excepción oficial referencia una carta desconocida (${uid}).`);
+  return canonicalCard;
+}
+
+function formatSuspendedCards(uidsByFormat, cardsByUid, canonicalByCardId) {
+  return Object.fromEntries(
+    Object.entries(uidsByFormat).map(([formatName, uids]) => [
+      formatName,
+      uids.map((uid) => {
+        const printedCard = cardsByUid.get(uid);
+        const canonicalCard = printedCard ? canonicalByCardId.get(printedCard.id) : undefined;
+        if (!canonicalCard) {
+          throw new Error(`La lista de suspendidas referencia una carta desconocida (${uid}).`);
+        }
+        const attributes = canonicalCard.attributes;
+        return {
+          cardId: getPrintedId(canonicalCard),
+          cardKey: getCardKey(canonicalCard),
+          name: attributes.subtitle
+            ? `${attributes.title}, ${attributes.subtitle}`
+            : attributes.title
+        };
+      })
+    ])
+  );
 }
 
 function resolveCanonicalCard(card, cardsById, cardsByUid) {
@@ -232,7 +329,15 @@ function resolveCanonicalCard(card, cardsById, cardsByUid) {
   throw new Error(`La carta ${card.id} contiene un ciclo al resolver su impresión base.`);
 }
 
-const downloadedCards = await fetchAllCards();
+const [downloadedCards, filtersPayload, deckRulePayload, rulesChapterPayload] = await Promise.all([
+  fetchAllCards(),
+  fetchJson(`${API_BASE}/card-filters?locale=en`, "los filtros y colecciones oficiales"),
+  fetchJson(`${API_BASE}/deck-rule?locale=en&populate=deep,5`, "las excepciones de construcción"),
+  fetchJson(
+    `${API_BASE}/game-info-chapters/${RULES_CHAPTER_ID}?locale=en&populate=deep,4`,
+    "la lista oficial de cartas suspendidas"
+  )
+]);
 const scannableCards = downloadedCards.filter((card) => !isToken(card));
 const cardsById = new Map(downloadedCards.map((card) => [card.id, card]));
 const cardsByUid = new Map(downloadedCards.map((card) => [card.attributes.cardUid, card]));
@@ -241,6 +346,27 @@ const canonicalByCardId = new Map();
 for (const card of scannableCards) {
   canonicalByCardId.set(card.id, resolveCanonicalCard(card, cardsById, cardsByUid));
 }
+
+const deckRuleAttributes = deckRulePayload?.data?.attributes ?? {};
+const officialCopyLimits = new Map();
+for (const exception of deckRuleAttributes.limitExceptions ?? []) {
+  const canonicalCard = getRuleCard(exception, cardsByUid, canonicalByCardId);
+  if (!canonicalCard) continue;
+  officialCopyLimits.set(getCardKey(canonicalCard), Number(exception.limit));
+}
+
+const officialDeckSizeModifiers = {};
+for (const exception of deckRuleAttributes.deckTotalLimitExceptions ?? []) {
+  const canonicalCard = getRuleCard(exception, cardsByUid, canonicalByCardId);
+  if (!canonicalCard) continue;
+  officialDeckSizeModifiers[getCardKey(canonicalCard)] = Number(exception.limitAdjustment);
+}
+
+const suspendedCards = formatSuspendedCards(
+  extractSuspendedCardUids(rulesChapterPayload),
+  cardsByUid,
+  canonicalByCardId
+);
 
 const cards = {};
 const canonicalCardByPrintedId = new Map();
@@ -281,8 +407,8 @@ for (const canonicalCard of new Map(
     nullableNumber(attributes.upgradeHp),
     attributes.unique === true,
     relationNames(attributes.keywords),
-    attributes.validationId ?? attributes.cardUid ?? canonicalId,
-    getDeckLimit(attributes.text)
+    getCardKey(canonicalCard) ?? canonicalId,
+    officialCopyLimits.get(getCardKey(canonicalCard)) ?? getDeckLimit(attributes.text)
   ];
 }
 
@@ -368,6 +494,61 @@ for (const card of scannableCards) {
   legacyPromoBySet[expansionCode] = candidate;
 }
 
+const expansionSortValues = new Map(
+  (filtersPayload?.data?.expansions ?? []).map((expansion) => [
+    expansion.code,
+    Number(expansion.sortValue)
+  ])
+);
+const releasedStandardSetCodes = Object.entries(printedBaseTotals)
+  .filter(([setCode, total]) => {
+    const standardNumbers = new Set(
+      scannableCards
+        .filter(
+          (card) => getPrintedSetCode(card) === setCode && variantNames(card).includes("Standard")
+        )
+        .map(getPrintedNumber)
+    );
+    return standardNumbers.size >= Number(total) * 0.9;
+  })
+  .map(([setCode]) => setCode);
+const coreSetSequence = releasedStandardSetCodes
+  .filter((setCode) => Number(printedBaseTotals[setCode]) >= 200)
+  .sort(
+    (left, right) =>
+      (expansionSortValues.get(left) ?? Number.MAX_SAFE_INTEGER) -
+        (expansionSortValues.get(right) ?? Number.MAX_SAFE_INTEGER) || left.localeCompare(right)
+  );
+if (coreSetSequence.length < 3) {
+  throw new Error("No se han reconocido suficientes colecciones principales para Premier.");
+}
+
+// Las colecciones principales se publican en bloques de tres símbolos de
+// rotación. Premier admite los dos bloques más recientes, incluso cuando el
+// último todavía no ha publicado sus tres colecciones.
+const newestRotationGroup = Math.floor((coreSetSequence.length - 1) / 3);
+const firstLegalRotationGroup = Math.max(newestRotationGroup - 1, 0);
+const premierCoreSetCodes = coreSetSequence.filter(
+  (_setCode, index) => Math.floor(index / 3) >= firstLegalRotationGroup
+);
+const rotatedCoreSetCodes = coreSetSequence.filter(
+  (_setCode, index) => Math.floor(index / 3) < firstLegalRotationGroup
+);
+const specialStandardSetCodes = releasedStandardSetCodes
+  .filter((setCode) => Number(printedBaseTotals[setCode]) < 200)
+  .sort();
+const unreviewedSpecialSetCodes = specialStandardSetCodes.filter(
+  (setCode) =>
+    !NON_PREMIER_SPECIAL_SET_CODES.has(setCode) && !PREMIER_SPECIAL_SET_CODES.has(setCode)
+);
+const premierSetCodes = [...premierCoreSetCodes, ...PREMIER_SPECIAL_SET_CODES].sort();
+
+for (const setCode of unreviewedSpecialSetCodes) {
+  console.warn(
+    `::warning::La legalidad Premier de ${setCode} necesita revisión oficial. Se bloqueará por seguridad.`
+  );
+}
+
 const catalog = {
   version: 3,
   source: `${API_BASE}/${CATALOG_ENDPOINT}?locale=${CATALOG_LOCALE}`,
@@ -392,6 +573,44 @@ const metaSource = [
 ].join("\n");
 await writeFile(META_OUTPUT_PATH, await format(metaSource, { parser: "typescript" }), "utf8");
 
+const formatRulesSource = [
+  "// Archivo generado por `npm run catalog:sync`. No editar manualmente.",
+  `export const OFFICIAL_FORMAT_RULES_LAST_UPDATED = ${JSON.stringify(
+    rulesChapterPayload?.data?.attributes?.updatedAt ?? new Date().toISOString()
+  )};`,
+  `export const OFFICIAL_CORE_SET_SEQUENCE = ${JSON.stringify(coreSetSequence, null, 2)} as const;`,
+  `export const OFFICIAL_PREMIER_SET_CODES = ${JSON.stringify(premierSetCodes, null, 2)} as const;`,
+  `export const OFFICIAL_ROTATED_CORE_SET_CODES = ${JSON.stringify(rotatedCoreSetCodes, null, 2)} as const;`,
+  `export const OFFICIAL_NON_PREMIER_SPECIAL_SET_CODES = ${JSON.stringify(
+    [...NON_PREMIER_SPECIAL_SET_CODES].sort(),
+    null,
+    2
+  )} as const;`,
+  `export const OFFICIAL_UNREVIEWED_SPECIAL_SET_CODES = ${JSON.stringify(
+    unreviewedSpecialSetCodes,
+    null,
+    2
+  )} as const;`,
+  `export const OFFICIAL_SUSPENDED_CARDS = ${JSON.stringify(suspendedCards, null, 2)} as const;`,
+  `export const OFFICIAL_CARD_COPY_LIMITS = ${JSON.stringify(
+    sortRecord(Object.fromEntries(officialCopyLimits)),
+    null,
+    2
+  )} as const;`,
+  `export const OFFICIAL_DECK_SIZE_MODIFIERS = ${JSON.stringify(
+    sortRecord(officialDeckSizeModifiers),
+    null,
+    2
+  )} as const;`,
+  ""
+].join("\n");
+await mkdir(dirname(FORMAT_RULES_OUTPUT_PATH), { recursive: true });
+await writeFile(
+  FORMAT_RULES_OUTPUT_PATH,
+  await format(formatRulesSource, { parser: "typescript" }),
+  "utf8"
+);
+
 console.log(
   [
     `Catálogo oficial actualizado: ${Object.keys(cards).length} cartas base`,
@@ -399,6 +618,8 @@ console.log(
     `${Object.keys(images).length} imágenes`,
     `${sets.length} códigos de colección`,
     `${ambiguousPrintCodes.length} códigos ambiguos omitidos`,
-    `${correctedNumbers.length} números corregidos mediante serialCode`
+    `${correctedNumbers.length} números corregidos mediante serialCode`,
+    `${premierSetCodes.length} colecciones legales en Premier`,
+    `${Object.values(suspendedCards).flat().length} suspensiones oficiales`
   ].join(", ") + "."
 );
