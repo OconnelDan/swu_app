@@ -87,6 +87,48 @@ const catalogCards: CardInfo[] = [
     cardKey: "aggression-space-unit"
   },
   {
+    cardId: "SEC_106",
+    setCode: "SEC",
+    cardNumber: "106",
+    name: "Test saboteur",
+    localizedName: "Saboteador de prueba",
+    type: "Unit",
+    arena: "Ground",
+    aspects: ["Vigilance"],
+    keywords: ["Saboteur"],
+    text: "Saboteur (When this unit attacks, ignore Sentinel and defeat the defender's Shields.)",
+    localizedText:
+      "Sabotaje (Cuando esta unidad ataca, ignora Centinela y derrota los Escudos del defensor.)",
+    cardKey: "false-sentinel-reminder"
+  },
+  {
+    cardId: "SEC_107",
+    setCode: "SEC",
+    cardNumber: "107",
+    name: "Sentinel unit",
+    localizedName: "Unidad con Centinela",
+    type: "Unit",
+    arena: "Ground",
+    aspects: ["Vigilance"],
+    keywords: ["Sentinel"],
+    text: "Sentinel (Units in this arena can't attack your non-Sentinel units or your base.)",
+    localizedText:
+      "Centinela (Las unidades de este campo de batalla no pueden atacar a tus unidades sin Centinela ni a tu base.)",
+    cardKey: "sentinel-unit"
+  },
+  {
+    cardId: "SEC_108",
+    setCode: "SEC",
+    cardNumber: "108",
+    name: "Grant Sentinel",
+    localizedName: "Concede Centinela",
+    type: "Event",
+    aspects: ["Command"],
+    text: "Give a unit Sentinel for this phase.",
+    localizedText: "Dale Centinela a una unidad para esta fase.",
+    cardKey: "grant-sentinel"
+  },
+  {
     cardId: "JTL_104",
     setCode: "JTL",
     cardNumber: "104",
@@ -241,6 +283,23 @@ describe("constructor por formatos", () => {
     expect(screen.getByRole("button", { name: "Añadir Unidad de vigilancia al mazo" }))
       .toBeEnabled();
     expect(screen.getByRole("button", { name: "3. Cartas 0/50" })).toBeInTheDocument();
+  });
+
+  it("no encuentra keywords mencionadas solo dentro del recordatorio de otra keyword", async () => {
+    renderBuilder();
+    await choosePremierLeaderAndBase();
+
+    const search = screen.getByRole("textbox", { name: "Buscar en el catálogo" });
+    fireEvent.change(search, { target: { value: "Centinela" } });
+
+    expect(screen.getByText("Unidad con Centinela")).toBeInTheDocument();
+    expect(screen.getByText("Concede Centinela")).toBeInTheDocument();
+    expect(screen.queryByText("Saboteador de prueba")).not.toBeInTheDocument();
+
+    fireEvent.change(search, { target: { value: "Sentinel" } });
+    expect(screen.getByText("Unidad con Centinela")).toBeInTheDocument();
+    expect(screen.getByText("Concede Centinela")).toBeInTheDocument();
+    expect(screen.queryByText("Saboteador de prueba")).not.toBeInTheDocument();
   });
 
   it("sustituye el filtro automático por los aspectos manuales seleccionados", async () => {
