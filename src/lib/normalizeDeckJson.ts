@@ -221,7 +221,8 @@ export function normalizeDeckJson(input: unknown): NormalizedDeck {
   }
 
   const part = normalizeDeckPart(raw, name);
-  if (part.allRequiredCards.length === 0) {
+  const isBuilderDraft = raw.metadata?.source === "SWU Deck Vault";
+  if (part.allRequiredCards.length === 0 && !isBuilderDraft) {
     throw new Error(
       "No se ha reconocido ninguna carta en el JSON (deck, mainDeck, cards, deck_grouped...)."
     );

@@ -42,6 +42,23 @@ export interface DeckValidation {
 
 export type PremierDeckValidation = DeckValidation;
 
+/**
+ * Distingue un borrador estructuralmente incompleto de un mazo completo que
+ * incumple otra regla (rotación, alineamiento, copias, etc.).
+ */
+export function isDeckDraftIncomplete(
+  validation: DeckValidation
+): boolean {
+  return (
+    validation.mainCount < validation.minimumMainCount ||
+    validation.errors.some(
+      (message) =>
+        message.includes("selecciona exactamente") ||
+        message.includes("Trilogy necesita exactamente tres mazos")
+    )
+  );
+}
+
 function totalCounts(counts: Record<string, number>): number {
   return Object.values(counts).reduce((total, count) => total + Math.max(count, 0), 0);
 }
