@@ -312,9 +312,6 @@ export function DataSourceProvider({ children }: DataSourceProviderProps) {
       const snapshot = requireAccountSnapshot();
       const favorite = snapshot.favoriteDecks.find((entry) => entry.id === favoriteId);
       if (!favorite) throw new Error("El mazo ya no existe en tu cuenta.");
-      if (favorite.isMounted) {
-        throw new Error("Desmonta el mazo antes de modificar su composición.");
-      }
       const updated: FavoriteDeck = {
         ...favorite,
         name: normalizedDeck.name,
