@@ -1,6 +1,7 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { AlertTriangle, Camera, FileUp } from "lucide-react";
+import { PaginationControls } from "@/components/PaginationControls";
 import { ExcelCollectionProvider } from "@/providers/collectionProvider/ExcelCollectionProvider";
 import { CsvCollectionProvider } from "@/providers/collectionProvider/CsvCollectionProvider";
 import { JsonCollectionProvider } from "@/providers/collectionProvider/JsonCollectionProvider";
@@ -8,6 +9,7 @@ import { useDataSource } from "@/contexts/DataSourceContext";
 import type { CollectionImportResult } from "@/types/collection";
 
 type Mode = "excel" | "csv" | "json";
+const WARNING_PAGE_SIZE = 30;
 
 function detectMode(fileName: string): Mode {
   if (fileName.endsWith(".csv")) return "csv";
@@ -20,9 +22,21 @@ export function ImportCollectionPage() {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [warningPage, setWarningPage] = useState(1);
   const [jsonText, setJsonText] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { mode, collection, replaceCollection } = useDataSource();
+
+  useEffect(() => setWarningPage(1), [pendingResult]);
+
+  const warningCount = pendingResult?.warnings.length ?? 0;
+  const warningPageCount = Math.max(1, Math.ceil(warningCount / WARNING_PAGE_SIZE));
+  useEffect(() => {
+    setWarningPage((page) => Math.min(page, warningPageCount));
+  }, [warningPageCount]);
+  const firstWarning = (warningPage - 1) * WARNING_PAGE_SIZE;
+  const visibleWarnings =
+    pendingResult?.warnings.slice(firstWarning, firstWarning + WARNING_PAGE_SIZE) ?? [];
 
   const handleFile = async (file: File) => {
     setError(null);
@@ -217,10 +231,19 @@ export function ImportCollectionPage() {
                 {pendingResult.warnings.length} advertencia(s)
               </summary>
               <ul className="mt-1 list-inside list-disc space-y-1">
-                {pendingResult.warnings.slice(0, 30).map((w, i) => (
-                  <li key={i}>{w.message}</li>
+                {visibleWarnings.map((w, i) => (
+                  <li key={firstWarning + i}>{w.message}</li>
                 ))}
               </ul>
+              <div className="mt-3">
+                <PaginationControls
+                  currentPage={warningPage}
+                  pageSize={WARNING_PAGE_SIZE}
+                  totalItems={pendingResult.warnings.length}
+                  label="advertencias de importación"
+                  onPageChange={setWarningPage}
+                />
+              </div>
             </details>
           )}
           <button
