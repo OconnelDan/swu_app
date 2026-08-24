@@ -72,13 +72,18 @@ Abre `http://localhost:5173`.
    las faltantes, copiar la lista, descargarla en TXT o CSV y guardar el mazo
    como favorito. Si ya está guardado, también puedes **Montar mazo** sin salir
    del resultado. Se muestran imágenes si el catálogo de cartas está activo.
-4. **Mazos → Crear mazo**: construye una lista Premier eligiendo líder, base,
-   mazo principal y banquillo desde todo el catálogo oficial. Puedes filtrar por
-   aspectos, tipo, arena, colección, rareza, coste y copias poseídas o libres.
-   La app valida la estructura, el límite de copias y avisa de penalizaciones de
-   aspecto antes de guardarlo en Favoritos.
-5. **Mazos → Favoritos**: guarda ideas o mazos que quieras probar sin reservar
-   ninguna carta. Cuando decidas prepararlo físicamente, pulsa **Montar mazo**.
+4. **Mazos → Crear mazo**: construye listas Premier, Eternal, Twin Suns o
+   Trilogy eligiendo sus líderes, bases, mazos principales y banquillos cuando
+   correspondan. Puedes filtrar por aspectos, tipo, arena, colección, rareza,
+   coste y copias poseídas o libres. La búsqueda admite varias condiciones
+   separadas por `/` (por ejemplo, `centinela / rebelde / 3`); un número aislado
+   representa el coste exacto. Los resultados se paginan sin ocultar las cartas
+   posteriores a la primera página.
+5. **Mazos → Favoritos**: puedes guardar el trabajo en cualquier momento aunque
+   todavía falten líderes, base o cartas. Los borradores muestran el aviso
+   **Mazo inacabado** y se recuperan con **Continuar editando**. Guardar cambios
+   actualiza el mismo favorito sin crear duplicados. Solo un mazo legal y con la
+   estructura completa puede montarse y reservar cartas de la colección.
 6. **Mazos → Montados**: consulta los mazos que sí reservan cartas, su reparto
    físico real y las copias pendientes. Al abrir un mazo incompleto, cada carta
    disponible en otros mazos tiene su propio botón **Mover cartas a este mazo**
@@ -87,7 +92,8 @@ Abre `http://localhost:5173`.
 7. **Buscar**: localiza cualquier carta del catálogo por código o nombre,
    comprueba si está libre o en qué mazos montados está usada y pulsa sobre ella
    para restar una copia. Si la copia está asignada, se muestra una confirmación
-   indicando qué mazo puede quedar incompleto.
+   indicando qué mazo puede quedar incompleto. Todas las coincidencias son
+   accesibles mediante paginación.
 8. **Ajustes**: tema y mostrar/ocultar imágenes. En modo invitado también
    permite exportar/importar una copia local y borrar los datos del dispositivo.
 9. **Cuenta y amigos** _(opcional, requiere configurar Supabase)_: crea una
@@ -105,7 +111,9 @@ Abre `http://localhost:5173`.
 ### Favoritos y reparto entre mazos montados
 
 Guardar una lista en **Favoritos** solo conserva la idea: no descuenta copias
-libres. Como cada carta física solo puede estar en un mazo a la vez, la app
+libres. Puede ser un borrador incompleto y editarse durante varios días; su
+estado se calcula a partir de la composición, sin necesitar una migración de
+base de datos. Como cada carta física solo puede estar en un mazo a la vez, la app
 reparte la colección exclusivamente entre los **Mazos montados**. Los que ya
 estaban montados mantienen prioridad y un nuevo mazo utiliza primero las
 copias que continúen libres, sin quitárselas automáticamente a otro. La pantalla
@@ -365,13 +373,13 @@ ejemplo `/mi-repo/` para GitHub Pages).
 ## Limitaciones conocidas y mejoras futuras
 
 - Un mazo nuevo se monta con prioridad inferior a los que ya estaban montados.
-  La reasignación controlada de cartas para dar prioridad a otro mazo es la
-  siguiente mejora prevista; por ahora puedes desmontar uno y montar otro.
+  Desde el detalle se puede trasladar la prioridad de cartas concretas; no se
+  reasigna automáticamente toda la composición de otros mazos.
 - No hay integración de colección con `sw-unlimited-db.com` (ver más arriba
   por qué, y cómo activarla si en el futuro existe una API oficial).
-- El constructor Premier valida estructura, tamaños, tipos, límites de copias y
-  penalizaciones de aspecto. Todavía no aplica automáticamente las rotaciones,
-  suspensiones ni prohibiciones vigentes de juego organizado.
+- El constructor valida Premier, Eternal, Twin Suns y Trilogy: estructura,
+  tamaños, tipos, límites de copias, aspectos, rotaciones, suspensiones y cartas
+  inhabilitadas incluidas en las reglas oficiales sincronizadas.
 - Las cuentas no tienen modo offline para colección y mazos: se evita mantener
   una segunda copia local que pueda quedar desactualizada o sobrescribir la
   base de datos al volver la conexión.
