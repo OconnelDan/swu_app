@@ -36,6 +36,7 @@ import {
 } from "@/lib/deckFormats";
 import { tryGetCardImageUrl } from "@/lib/cardImageUrl";
 import { normalizeDeckJson } from "@/lib/normalizeDeckJson";
+import { buildCardRulesSearchText } from "@/lib/cardRulesSearch";
 import { SwUnlimitedDbCardProvider } from "@/providers/cardProvider/SwUnlimitedDbCardProvider";
 import type { CardInfo } from "@/types/card";
 import type { DeckFormat, TrilogyCardPool } from "@/types/deck";
@@ -494,10 +495,7 @@ export function DeckBuilderPage() {
             card.cardId,
             card.name,
             card.localizedName,
-            card.text,
-            card.localizedText,
-            ...(card.traits ?? []),
-            ...(card.keywords ?? [])
+            buildCardRulesSearchText(card)
           ]
             .filter(Boolean)
             .join(" ")
