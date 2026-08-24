@@ -7,7 +7,11 @@ import {
   type DataMode,
   type DataSourceValue
 } from "@/contexts/DataSourceContext";
-import { db, replaceCollection as replaceLocalCollection } from "@/db/db";
+import {
+  db,
+  removeCollectionCard as removeLocalCollectionCard,
+  replaceCollection as replaceLocalCollection
+} from "@/db/db";
 import { useAuth } from "@/hooks/useAuth";
 import { computeCollectionFingerprint } from "@/lib/collectionFingerprint";
 import {
@@ -16,6 +20,7 @@ import {
   loadCloudDataSnapshot,
   mountCloudFavoriteDeck,
   prioritizeCloudFavoriteDeckCard,
+  removeCloudCollectionCard,
   replaceCloudCollection,
   unmountCloudFavoriteDeck,
   upsertCloudFavoriteDeck,
@@ -232,6 +237,20 @@ export function DataSourceProvider({ children }: DataSourceProviderProps) {
     [commitAccountMutation, requireAccountSnapshot, userId]
   );
 
+  const removeCollectionCard = useCallback(
+    async (cardId: string, quantity = 1): Promise<number> => {
+      if (!userId) return removeLocalCollectionCard(cardId, quantity);
+
+      requireAccountSnapshot();
+      let ownedCount = 0;
+      await commitAccountMutation(async () => {
+        ownedCount = await removeCloudCollectionCard(cardId, quantity);
+      });
+      return ownedCount;
+    },
+    [commitAccountMutation, requireAccountSnapshot, userId]
+  );
+
   const saveFavoriteDeck = useCallback(
     async (
       normalizedDeck: NormalizedDeck,
@@ -391,6 +410,7 @@ export function DataSourceProvider({ children }: DataSourceProviderProps) {
       refresh,
       replaceCollection,
       addCollectionCard,
+      removeCollectionCard,
       saveFavoriteDeck,
       updateFavoriteResult,
       renameFavoriteDeck,
@@ -403,6 +423,7 @@ export function DataSourceProvider({ children }: DataSourceProviderProps) {
     [
       activeCloudSnapshot,
       addCollectionCard,
+      removeCollectionCard,
       cloudError,
       collection,
       deleteFavoriteDeck,

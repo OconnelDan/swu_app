@@ -31,6 +31,7 @@ export interface DataSourceValue {
     importResult: CollectionImportResult
   ) => Promise<void>;
   addCollectionCard: (card: CollectionCardIdentity, quantity?: number) => Promise<number>;
+  removeCollectionCard: (cardId: string, quantity?: number) => Promise<number>;
   saveFavoriteDeck: (
     normalizedDeck: NormalizedDeck,
     result?: DeckComparisonResult
