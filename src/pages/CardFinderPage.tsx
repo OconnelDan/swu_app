@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Minus, Search, X } from "lucide-react";
 import { CardImageThumbnail } from "@/components/CardImageThumbnail";
+import { PaginationControls } from "@/components/PaginationControls";
 import { SkeletonLines } from "@/components/Skeleton";
 import { useDataSource } from "@/contexts/DataSourceContext";
 import { useCollection } from "@/hooks/useCollection";
@@ -16,6 +17,8 @@ interface CardCandidate {
   cardId: string;
   name?: string;
 }
+
+const SEARCH_PAGE_SIZE = 30;
 
 function displayName(info: CardInfo | undefined, fallback?: string): string {
   return info?.localizedName ?? info?.name ?? fallback ?? "Carta sin nombre en el catálogo";
@@ -65,6 +68,7 @@ export function CardFinderPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [resultPage, setResultPage] = useState(1);
 
   const collection = useCollection();
   const favorites = useFavorites();
@@ -118,6 +122,13 @@ export function CardFinderPage() {
     () => (hasQuery ? searchCards(candidates, query) : []),
     [candidates, hasQuery, query]
   );
+  useEffect(() => setResultPage(1), [query]);
+  const resultPageCount = Math.max(1, Math.ceil(results.length / SEARCH_PAGE_SIZE));
+  useEffect(() => {
+    setResultPage((page) => Math.min(page, resultPageCount));
+  }, [resultPageCount]);
+  const firstResult = (resultPage - 1) * SEARCH_PAGE_SIZE;
+  const visibleResults = results.slice(firstResult, firstResult + SEARCH_PAGE_SIZE);
   const selectedInfo = selectedId ? cardInfos.get(selectedId) : undefined;
   const selectedAllocation = selectedId ? allocations.get(selectedId) : undefined;
 
@@ -202,8 +213,15 @@ export function CardFinderPage() {
         </p>
       )}
 
+      {hasQuery && results.length > 0 && (
+        <p id="card-finder-results" className="scroll-mt-20 text-xs text-slate-400">
+          {results.length} resultado(s) · mostrando {firstResult + 1}–
+          {firstResult + visibleResults.length}
+        </p>
+      )}
+
       <ul className="space-y-2">
-        {results.map((candidate) => {
+        {visibleResults.map((candidate) => {
           const allocation = allocations.get(candidate.cardId);
           const status = getCardLocationStatus(allocation);
           const info = cardInfos.get(candidate.cardId);
@@ -262,6 +280,22 @@ export function CardFinderPage() {
           );
         })}
       </ul>
+
+      <PaginationControls
+        currentPage={resultPage}
+        pageSize={SEARCH_PAGE_SIZE}
+        totalItems={results.length}
+        label="resultados de búsqueda"
+        onPageChange={(page) => {
+          setResultPage(page);
+          requestAnimationFrame(() =>
+            document.getElementById("card-finder-results")?.scrollIntoView({
+              behavior: "smooth",
+              block: "start"
+            })
+          );
+        }}
+      />
 
       {selectedId && (
         <div
