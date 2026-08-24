@@ -42,6 +42,7 @@ import type { DeckFormat, TrilogyCardPool } from "@/types/deck";
 
 type BuilderTab = "leader" | "base" | "cards";
 type OwnedFilter = "all" | "owned" | "free";
+type CardTypeFilter = "ground-unit" | "space-unit" | "event" | "upgrade";
 
 const ASPECT_LABELS: Record<string, string> = {
   Aggression: "Agresividad",
@@ -58,6 +59,21 @@ const TYPE_LABELS: Record<string, string> = {
   Upgrade: "Mejora",
   Leader: "Líder",
   Base: "Base"
+};
+
+const CARD_TYPE_FILTERS: { value: CardTypeFilter; label: string }[] = [
+  { value: "ground-unit", label: "Unidades terrestres" },
+  { value: "space-unit", label: "Unidades espaciales" },
+  { value: "event", label: "Eventos" },
+  { value: "upgrade", label: "Mejoras" }
+];
+
+const RARITY_LABELS: Record<string, string> = {
+  Common: "Común",
+  Uncommon: "Infrecuente",
+  Rare: "Rara",
+  Legendary: "Legendaria",
+  Special: "Especial"
 };
 
 function emptyDeck(name: string): DeckBuilderSubdeckComposition {
@@ -87,6 +103,47 @@ function hasNoAspectPenalty(card: CardInfo, leaders: CardInfo[], base?: CardInfo
 
 function totalCounts(counts: Record<string, number>): number {
   return Object.values(counts).reduce((total, count) => total + Math.max(count, 0), 0);
+}
+
+function toggleSelection<T extends string>(values: T[], value: T): T[] {
+  return values.includes(value) ? values.filter((item) => item !== value) : [...values, value];
+}
+
+function getCardTypeFilter(card: CardInfo): CardTypeFilter | undefined {
+  if (card.type === "Event") return "event";
+  if (card.type === "Upgrade") return "upgrade";
+  if (card.type !== "Unit") return undefined;
+  if (card.arena === "Ground") return "ground-unit";
+  if (card.arena === "Space") return "space-unit";
+  return undefined;
+}
+
+function FilterChip({
+  label,
+  pressed,
+  onClick,
+  title
+}: {
+  label: string;
+  pressed: boolean;
+  onClick: () => void;
+  title?: string;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={pressed}
+      className={`min-h-9 rounded-full border px-3 py-1.5 text-xs transition ${
+        pressed
+          ? "border-saber-blue bg-saber-blue/20 text-saber-blue"
+          : "border-space-600 bg-space-900 text-slate-300"
+      }`}
+      title={title}
+      onClick={onClick}
+    >
+      {label}
+    </button>
+  );
 }
 
 function QuantityButton({
@@ -203,16 +260,25 @@ export function DeckBuilderPage() {
   const [activeDeckIndex, setActiveDeckIndex] = useState(0);
   const [activeTab, setActiveTab] = useState<BuilderTab>("leader");
   const [query, setQuery] = useState("");
-  const [aspect, setAspect] = useState("all");
-  const [type, setType] = useState("all");
-  const [arena, setArena] = useState("all");
-  const [setCode, setSetCode] = useState("all");
-  const [rarity, setRarity] = useState("all");
+  const [manualAspects, setManualAspects] = useState<string[] | null>(null);
+  const [includeColorless, setIncludeColorless] = useState(true);
+  const [selectedTypes, setSelectedTypes] = useState<CardTypeFilter[]>([]);
+  const [selectedSetCodes, setSelectedSetCodes] = useState<string[]>([]);
+  const [selectedRarities, setSelectedRarities] = useState<string[]>([]);
   const [maximumCost, setMaximumCost] = useState("all");
   const [ownedFilter, setOwnedFilter] = useState<OwnedFilter>("all");
-  const [onlyInAspect, setOnlyInAspect] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const resetFilters = () => {
+    setManualAspects(null);
+    setIncludeColorless(true);
+    setSelectedTypes([]);
+    setSelectedSetCodes([]);
+    setSelectedRarities([]);
+    setMaximumCost("all");
+    setOwnedFilter("all");
+  };
 
   useEffect(() => {
     let active = true;
@@ -249,6 +315,8 @@ export function DeckBuilderPage() {
     );
     setActiveDeckIndex(0);
     setActiveTab("leader");
+    setQuery("");
+    resetFilters();
     setChoosingTrilogy(false);
     setError(null);
   };
@@ -267,6 +335,8 @@ export function DeckBuilderPage() {
     setFormat(null);
     setDecks([]);
     setName("");
+    setQuery("");
+    resetFilters();
     setChoosingTrilogy(false);
   };
 
@@ -286,6 +356,10 @@ export function DeckBuilderPage() {
     .filter((card): card is CardInfo => Boolean(card));
   const base = currentDeck.baseId ? cardsById.get(currentDeck.baseId) : undefined;
   const requiredLeaderCount = format === "twin-suns" ? 2 : 1;
+  const automaticAspects = [
+    ...new Set([...leaders.flatMap((leader) => leader.aspects ?? []), ...(base?.aspects ?? [])])
+  ];
+  const automaticAspectReady = leaders.length === requiredLeaderCount && Boolean(base);
   const sideboardLimit = format ? getSideboardLimit(format) : 0;
   const minimumMainCount = format ? getMinimumMainDeckSize(format, base) : 50;
   const currentMainCount = totalCounts(currentDeck.mainCounts);
@@ -343,6 +417,19 @@ export function DeckBuilderPage() {
       ),
     [allCards]
   );
+  const rarityOptions = useMemo(
+    () =>
+      [...new Set((allCards ?? []).map((card) => card.rarity).filter(Boolean) as string[])].sort(
+        (left, right) =>
+          (Object.keys(RARITY_LABELS).indexOf(left) === -1
+            ? Number.MAX_SAFE_INTEGER
+            : Object.keys(RARITY_LABELS).indexOf(left)) -
+            (Object.keys(RARITY_LABELS).indexOf(right) === -1
+              ? Number.MAX_SAFE_INTEGER
+              : Object.keys(RARITY_LABELS).indexOf(right)) || left.localeCompare(right, "es")
+      ),
+    [allCards]
+  );
 
   const roleConflictReason = (card: CardInfo): string | undefined => {
     if (format !== "trilogy" || (activeTab !== "leader" && activeTab !== "base")) return undefined;
@@ -373,24 +460,34 @@ export function DeckBuilderPage() {
         if (activeTab === "cards" && !["Unit", "Event", "Upgrade"].includes(card.type ?? "")) {
           return false;
         }
-        if (activeTab === "cards" && type !== "all" && card.type !== type) return false;
-        if (aspect !== "all" && !(card.aspects ?? []).includes(aspect)) return false;
-        if (activeTab === "cards" && arena !== "all" && card.arena !== arena) return false;
-        if (setCode !== "all" && card.setCode !== setCode) return false;
-        if (rarity !== "all" && card.rarity !== rarity) return false;
+        if (
+          activeTab === "cards" &&
+          selectedTypes.length > 0 &&
+          !selectedTypes.includes(getCardTypeFilter(card) as CardTypeFilter)
+        ) {
+          return false;
+        }
+        if (activeTab === "cards") {
+          const cardAspects = card.aspects ?? [];
+          if (cardAspects.length === 0) {
+            if (!includeColorless) return false;
+          } else if (manualAspects !== null) {
+            if (!cardAspects.some((item) => manualAspects.includes(item))) return false;
+          } else if (automaticAspectReady && !hasNoAspectPenalty(card, leaders, base)) {
+            return false;
+          }
+        }
+        if (selectedSetCodes.length > 0 && !selectedSetCodes.includes(card.setCode)) return false;
+        if (
+          selectedRarities.length > 0 &&
+          (!card.rarity || !selectedRarities.includes(card.rarity))
+        ) {
+          return false;
+        }
         if (maximumCost !== "all" && (card.cost ?? Infinity) > Number(maximumCost)) return false;
         const allocation = allocations.get(card.cardId);
         if (ownedFilter === "owned" && !allocation?.ownedCount) return false;
         if (ownedFilter === "free" && !allocation?.freeCount) return false;
-        if (
-          activeTab === "cards" &&
-          onlyInAspect &&
-          leaders.length === requiredLeaderCount &&
-          base &&
-          !hasNoAspectPenalty(card, leaders, base)
-        ) {
-          return false;
-        }
         if (!foldedQuery) return true;
         return fold(
           [
@@ -415,19 +512,27 @@ export function DeckBuilderPage() {
     activeTab,
     allCards,
     allocations,
-    arena,
-    aspect,
+    automaticAspectReady,
     base,
+    includeColorless,
     leaders,
+    manualAspects,
     maximumCost,
-    onlyInAspect,
     ownedFilter,
     query,
-    rarity,
-    requiredLeaderCount,
-    setCode,
-    type
+    selectedRarities,
+    selectedSetCodes,
+    selectedTypes
   ]);
+
+  const activeFilterCount =
+    (manualAspects !== null ? 1 : 0) +
+    (!includeColorless ? 1 : 0) +
+    (selectedTypes.length > 0 ? 1 : 0) +
+    (selectedSetCodes.length > 0 ? 1 : 0) +
+    (selectedRarities.length > 0 ? 1 : 0) +
+    (maximumCost !== "all" ? 1 : 0) +
+    (ownedFilter !== "all" ? 1 : 0);
 
   const updateCurrentDeck = (
     updater: (current: DeckBuilderSubdeckComposition) => DeckBuilderSubdeckComposition
@@ -646,73 +751,138 @@ export function DeckBuilderPage() {
         <details className="rounded-lg border border-space-700 bg-space-950/50 p-3">
           <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-semibold">
             <Filter size={15} /> Filtros
+            {activeTab === "cards" && manualAspects === null && automaticAspectReady && (
+              <span className="rounded-full bg-saber-green/15 px-2 py-0.5 text-[11px] text-saber-green">
+                Aspectos automáticos
+              </span>
+            )}
+            {activeFilterCount > 0 && (
+              <span className="rounded-full bg-saber-blue/20 px-2 py-0.5 text-[11px] text-saber-blue">
+                {activeFilterCount} activo(s)
+              </span>
+            )}
           </summary>
-          <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
-            <select value={aspect} onChange={(event) => setAspect(event.target.value)}>
-              <option value="all">Todos los aspectos</option>
-              {Object.entries(ASPECT_LABELS).map(([value, label]) => (
-                <option key={value} value={value}>
-                  {label}
-                </option>
-              ))}
-            </select>
-            <select
-              value={type}
-              disabled={activeTab !== "cards"}
-              onChange={(event) => setType(event.target.value)}
-            >
-              <option value="all">Todos los tipos</option>
-              <option value="Unit">Unidades</option>
-              <option value="Event">Eventos</option>
-              <option value="Upgrade">Mejoras</option>
-            </select>
-            <select value={arena} onChange={(event) => setArena(event.target.value)}>
-              <option value="all">Todas las arenas</option>
-              <option value="Ground">Terrestre</option>
-              <option value="Space">Espacial</option>
-            </select>
-            <select value={setCode} onChange={(event) => setSetCode(event.target.value)}>
-              <option value="all">Todas las colecciones</option>
-              {setOptions.map(([code, setName]) => (
-                <option key={code} value={code}>
-                  {code} · {setName ?? code}
-                </option>
-              ))}
-            </select>
-            <select value={rarity} onChange={(event) => setRarity(event.target.value)}>
-              <option value="all">Todas las rarezas</option>
-              {["Common", "Uncommon", "Rare", "Legendary", "Special"].map((value) => (
-                <option key={value} value={value}>
-                  {value}
-                </option>
-              ))}
-            </select>
-            <select value={maximumCost} onChange={(event) => setMaximumCost(event.target.value)}>
-              <option value="all">Cualquier coste</option>
-              {[0, 1, 2, 3, 4, 5, 6, 7, 8].map((value) => (
-                <option key={value} value={value}>
-                  Coste máximo {value}
-                </option>
-              ))}
-            </select>
-            <select
-              value={ownedFilter}
-              onChange={(event) => setOwnedFilter(event.target.value as OwnedFilter)}
-            >
-              <option value="all">Poseídas y no poseídas</option>
-              <option value="owned">Solo las que tengo</option>
-              <option value="free">Solo copias libres</option>
-            </select>
+          <div className="mt-4 space-y-5">
+            <fieldset className="space-y-2" disabled={activeTab !== "cards"}>
+              <legend className="text-xs font-semibold text-slate-200">Aspectos</legend>
+              <p className="text-[11px] text-slate-400">
+                {manualAspects === null
+                  ? automaticAspectReady
+                    ? `Automático: ${automaticAspects.map((item) => ASPECT_LABELS[item] ?? item).join(" · ") || "sin aspectos"}${includeColorless ? " + incoloras" : ""}.`
+                    : "El filtro automático se aplicará al completar el líder y la base."
+                  : `Manual: ${manualAspects.map((item) => ASPECT_LABELS[item] ?? item).join(" · ") || "ningún aspecto"}${includeColorless ? " + incoloras" : ""}.`}
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <FilterChip
+                  label="Líder + base (automático)"
+                  pressed={manualAspects === null}
+                  onClick={() => setManualAspects(null)}
+                />
+                {Object.entries(ASPECT_LABELS).map(([value, label]) => (
+                  <FilterChip
+                    key={value}
+                    label={label}
+                    pressed={manualAspects?.includes(value) ?? false}
+                    onClick={() =>
+                      setManualAspects((current) =>
+                        current === null ? [value] : toggleSelection(current, value)
+                      )
+                    }
+                  />
+                ))}
+                <FilterChip
+                  label="Incoloras"
+                  pressed={includeColorless}
+                  onClick={() => setIncludeColorless((current) => !current)}
+                />
+              </div>
+            </fieldset>
+
+            <fieldset className="space-y-2" disabled={activeTab !== "cards"}>
+              <legend className="text-xs font-semibold text-slate-200">Tipos</legend>
+              <div className="flex flex-wrap gap-2">
+                <FilterChip
+                  label="Todos los tipos"
+                  pressed={selectedTypes.length === 0}
+                  onClick={() => setSelectedTypes([])}
+                />
+                {CARD_TYPE_FILTERS.map((option) => (
+                  <FilterChip
+                    key={option.value}
+                    label={option.label}
+                    pressed={selectedTypes.includes(option.value)}
+                    onClick={() =>
+                      setSelectedTypes((current) => toggleSelection(current, option.value))
+                    }
+                  />
+                ))}
+              </div>
+            </fieldset>
+
+            <fieldset className="space-y-2">
+              <legend className="text-xs font-semibold text-slate-200">Colecciones</legend>
+              <div className="flex max-h-36 flex-wrap gap-2 overflow-y-auto pr-1">
+                <FilterChip
+                  label="Todas"
+                  pressed={selectedSetCodes.length === 0}
+                  onClick={() => setSelectedSetCodes([])}
+                />
+                {setOptions.map(([code, setName]) => (
+                  <FilterChip
+                    key={code}
+                    label={code}
+                    title={setName ?? code}
+                    pressed={selectedSetCodes.includes(code)}
+                    onClick={() => setSelectedSetCodes((current) => toggleSelection(current, code))}
+                  />
+                ))}
+              </div>
+            </fieldset>
+
+            <fieldset className="space-y-2">
+              <legend className="text-xs font-semibold text-slate-200">Rarezas</legend>
+              <div className="flex flex-wrap gap-2">
+                <FilterChip
+                  label="Todas"
+                  pressed={selectedRarities.length === 0}
+                  onClick={() => setSelectedRarities([])}
+                />
+                {rarityOptions.map((value) => (
+                  <FilterChip
+                    key={value}
+                    label={RARITY_LABELS[value] ?? value}
+                    pressed={selectedRarities.includes(value)}
+                    onClick={() =>
+                      setSelectedRarities((current) => toggleSelection(current, value))
+                    }
+                  />
+                ))}
+              </div>
+            </fieldset>
+
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <select value={maximumCost} onChange={(event) => setMaximumCost(event.target.value)}>
+                <option value="all">Cualquier coste</option>
+                {[0, 1, 2, 3, 4, 5, 6, 7, 8].map((value) => (
+                  <option key={value} value={value}>
+                    Coste máximo {value}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={ownedFilter}
+                onChange={(event) => setOwnedFilter(event.target.value as OwnedFilter)}
+              >
+                <option value="all">Poseídas y no poseídas</option>
+                <option value="owned">Solo las que tengo</option>
+                <option value="free">Solo copias libres</option>
+              </select>
+            </div>
+
+            <button type="button" className="btn-secondary w-full" onClick={resetFilters}>
+              <RotateCcw size={14} /> Restablecer filtros
+            </button>
           </div>
-          <label className="mt-3 flex items-center gap-2 text-xs text-slate-300">
-            <input
-              type="checkbox"
-              checked={onlyInAspect}
-              disabled={leaders.length !== requiredLeaderCount || !base}
-              onChange={(event) => setOnlyInAspect(event.target.checked)}
-            />
-            Solo cartas sin penalización de aspecto
-          </label>
         </details>
 
         <p className="text-xs text-slate-400">
