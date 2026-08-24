@@ -1,8 +1,9 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DataSourceContext, type DataSourceValue } from "@/contexts/DataSourceContext";
 import { DeckBuilderPage } from "@/pages/DeckBuilderPage";
+import { normalizeDeckJson } from "@/lib/normalizeDeckJson";
 import { SwUnlimitedDbCardProvider } from "@/providers/cardProvider/SwUnlimitedDbCardProvider";
 import type { CardInfo } from "@/types/card";
 
@@ -152,7 +153,7 @@ const catalogCards: CardInfo[] = [
   }
 ];
 
-function dataSource(): DataSourceValue {
+function dataSource(overrides: Partial<DataSourceValue> = {}): DataSourceValue {
   return {
     mode: "guest",
     collection: {
@@ -172,19 +173,21 @@ function dataSource(): DataSourceValue {
     addCollectionCard: vi.fn(),
     removeCollectionCard: vi.fn(),
     saveFavoriteDeck: vi.fn(),
+    updateFavoriteDeck: vi.fn(),
     updateFavoriteResult: vi.fn(),
     renameFavoriteDeck: vi.fn(),
     deleteFavoriteDeck: vi.fn(),
     duplicateFavoriteDeck: vi.fn(),
     mountFavoriteDeck: vi.fn(),
     unmountFavoriteDeck: vi.fn(),
-    prioritizeFavoriteDeckCard: vi.fn()
+    prioritizeFavoriteDeckCard: vi.fn(),
+    ...overrides
   };
 }
 
-function renderBuilder() {
+function renderBuilder(overrides: Partial<DataSourceValue> = {}) {
   render(
-    <DataSourceContext.Provider value={dataSource()}>
+    <DataSourceContext.Provider value={dataSource(overrides)}>
       <MemoryRouter>
         <DeckBuilderPage />
       </MemoryRouter>
@@ -214,6 +217,65 @@ afterEach(() => {
 });
 
 describe("constructor por formatos", () => {
+  it("guarda un borrador aunque todavía no alcance el mínimo del formato", async () => {
+    const saveFavoriteDeck = vi.fn().mockResolvedValue(undefined);
+    renderBuilder({ saveFavoriteDeck });
+
+    fireEvent.click(screen.getByRole("button", { name: /Premier/ }));
+    expect(await screen.findByText("Crear mazo · Premier")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Guardar borrador en Favoritos" })).toBeEnabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Guardar borrador en Favoritos" }));
+    await waitFor(() => expect(saveFavoriteDeck).toHaveBeenCalledTimes(1));
+    expect(saveFavoriteDeck.mock.calls[0][0]).toMatchObject({
+      format: "premier",
+      mainDeck: []
+    });
+  });
+
+  it("recupera un favorito y guarda los cambios sobre el mismo borrador", async () => {
+    const normalizedDeck = normalizeDeckJson({
+      metadata: { name: "Borrador recuperable", format: "Premier" },
+      leader: { id: "SEC_001", count: 1 },
+      base: { id: "SEC_020", count: 1 },
+      deck: [{ id: "SEC_101", count: 1 }]
+    });
+    const favorite = {
+      id: "draft-id",
+      name: normalizedDeck.name,
+      originalJson: normalizedDeck.originalJson,
+      normalizedDeck,
+      createdAt: "2026-08-24T09:00:00.000Z",
+      updatedAt: "2026-08-24T09:00:00.000Z",
+      isMounted: false
+    };
+    const updateFavoriteDeck = vi.fn().mockResolvedValue(favorite);
+
+    render(
+      <DataSourceContext.Provider
+        value={dataSource({ favorites: [favorite], updateFavoriteDeck })}
+      >
+        <MemoryRouter initialEntries={["/mazos/editar/draft-id"]}>
+          <Routes>
+            <Route path="/mazos/editar/:favoriteId" element={<DeckBuilderPage />} />
+          </Routes>
+        </MemoryRouter>
+      </DataSourceContext.Provider>
+    );
+
+    expect(await screen.findByText("Editar mazo · Premier")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("Borrador recuperable")).toBeInTheDocument();
+    expect(screen.getAllByText("Unidad de vigilancia").length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole("button", { name: "Guardar cambios" }));
+
+    await waitFor(() => expect(updateFavoriteDeck).toHaveBeenCalledTimes(1));
+    expect(updateFavoriteDeck).toHaveBeenCalledWith(
+      "draft-id",
+      expect.objectContaining({ name: "Borrador recuperable" }),
+      expect.any(Object)
+    );
+  });
+
   it("pide el formato primero y adapta Twin Suns a dos líderes y 80 cartas", async () => {
     renderBuilder();
 

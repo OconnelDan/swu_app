@@ -58,6 +58,23 @@ describe("normalizeDeckJson", () => {
 
   it("lanza error con JSON vacío / sin cartas reconocibles", () => {
     expect(() => normalizeDeckJson({})).toThrow();
+    expect(() => normalizeDeckJson({ metadata: { name: "Vacío" }, deck: [] })).toThrow();
+  });
+
+  it("permite un borrador vacío generado por el constructor", () => {
+    const deck = normalizeDeckJson({
+      metadata: {
+        name: "Borrador inicial",
+        format: "Premier",
+        source: "SWU Deck Vault"
+      },
+      deck: [],
+      sideboard: []
+    });
+
+    expect(deck.name).toBe("Borrador inicial");
+    expect(deck.format).toBe("premier");
+    expect(deck.mainDeck).toEqual([]);
   });
 
   it("lanza error si una carta no tiene id", () => {

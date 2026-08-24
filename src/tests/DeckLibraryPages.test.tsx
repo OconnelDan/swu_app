@@ -14,7 +14,10 @@ vi.mock("@/hooks/useAuth", () => ({
   useAuth: () => ({ session: null, loading: false })
 }));
 
-const deckLegalityMock = vi.hoisted(() => ({ invalidDeckIds: new Set<string>() }));
+const deckLegalityMock = vi.hoisted(() => ({
+  invalidDeckIds: new Set<string>(),
+  incompleteDeckIds: new Set<string>()
+}));
 
 vi.mock("@/hooks/useDeckLegality", () => ({
   useDeckLegality: (decks: FavoriteDeck[] | undefined) => ({
@@ -24,12 +27,16 @@ vi.mock("@/hooks/useDeckLegality", () => ({
       (decks ?? []).map((deck) => [
         deck.id,
         {
-          valid: !deckLegalityMock.invalidDeckIds.has(deck.id),
-          errors: deckLegalityMock.invalidDeckIds.has(deck.id)
-            ? ["La carta de prueba ha rotado de Premier."]
-            : [],
+          valid:
+            !deckLegalityMock.invalidDeckIds.has(deck.id) &&
+            !deckLegalityMock.incompleteDeckIds.has(deck.id),
+          errors: deckLegalityMock.incompleteDeckIds.has(deck.id)
+            ? ["el mazo principal necesita 40 carta(s) más."]
+            : deckLegalityMock.invalidDeckIds.has(deck.id)
+              ? ["La carta de prueba ha rotado de Premier."]
+              : [],
           warnings: [],
-          mainCount: 50,
+          mainCount: deckLegalityMock.incompleteDeckIds.has(deck.id) ? 10 : 50,
           sideboardCount: 0,
           minimumMainCount: 50,
           sideboardLimit: 10,
@@ -90,6 +97,7 @@ function dataSource(
     addCollectionCard: vi.fn(),
     removeCollectionCard: vi.fn(),
     saveFavoriteDeck: vi.fn(),
+    updateFavoriteDeck: vi.fn(),
     updateFavoriteResult: vi.fn(),
     renameFavoriteDeck: vi.fn(),
     deleteFavoriteDeck: vi.fn(),
@@ -112,10 +120,32 @@ const collection: CollectionCard[] = [
 
 afterEach(() => {
   deckLegalityMock.invalidDeckIds.clear();
+  deckLegalityMock.incompleteDeckIds.clear();
   vi.restoreAllMocks();
 });
 
 describe("Favoritos y mazos montados", () => {
+  it("marca un borrador como inacabado y permite continuar editándolo", async () => {
+    const draft = savedDeck("draft", "Twin Suns en proceso", 10, false, undefined, "Twin Suns");
+    deckLegalityMock.incompleteDeckIds.add(draft.id);
+
+    render(
+      <DataSourceContext.Provider value={dataSource([draft], collection)}>
+        <MemoryRouter initialEntries={["/favoritos"]}>
+          <Routes>
+            <Route path="/favoritos" element={<FavoritesPage onOpenResult={vi.fn()} />} />
+            <Route path="/mazos/editar/:favoriteId" element={<p>Constructor recuperado</p>} />
+          </Routes>
+        </MemoryRouter>
+      </DataSourceContext.Provider>
+    );
+
+    expect(screen.getByText("Mazo inacabado")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Montar mazo" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Continuar editando" }));
+    expect(await screen.findByText("Constructor recuperado")).toBeInTheDocument();
+  });
+
   it("un favorito no consume cartas y puede montarse de forma explícita", async () => {
     const idea = savedDeck("idea", "Idea para probar", 2, false);
     const alreadyMounted = savedDeck("mounted", "Mazo físico", 1, true, 1);
