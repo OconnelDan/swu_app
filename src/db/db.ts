@@ -56,6 +56,23 @@ export async function replaceCollection(
   });
 }
 
+/** Resta copias en modo invitado sin permitir cantidades negativas. */
+export async function removeCollectionCard(cardId: string, quantity = 1): Promise<number> {
+  if (!Number.isInteger(quantity) || quantity < 1 || quantity > 99) {
+    throw new Error("La cantidad debe estar entre 1 y 99.");
+  }
+
+  return db.transaction("rw", db.collectionEntries, async () => {
+    const current = await db.collectionEntries.get(cardId);
+    if (!current) throw new Error("La carta ya no está en tu colección.");
+
+    const ownedCount = Math.max(current.ownedCount - quantity, 0);
+    if (ownedCount === 0) await db.collectionEntries.delete(cardId);
+    else await db.collectionEntries.put({ ...current, ownedCount });
+    return ownedCount;
+  });
+}
+
 export async function getSetting<T>(key: string, fallback: T): Promise<T> {
   const record = await db.settings.get(key);
   return record ? (record.value as T) : fallback;
