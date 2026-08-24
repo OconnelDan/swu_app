@@ -19,6 +19,40 @@ const LOCALIZED_KEYWORD_LABELS: Readonly<Record<string, readonly string[]>> = {
   Support: ["Support", "Apoyo"]
 };
 
+const LOCALIZED_TRAIT_LABELS: Readonly<Record<string, readonly string[]>> = {
+  "Bounty Hunter": ["Bounty Hunter", "Cazarrecompensas"],
+  "Capital Ship": ["Capital Ship", "Nave capital"],
+  "First Order": ["First Order", "Primera Orden"],
+  "New Republic": ["New Republic", "Nueva República"],
+  Armor: ["Armor", "Armadura"],
+  Clone: ["Clone", "Clon"],
+  Condition: ["Condition", "Condición"],
+  Creature: ["Creature", "Criatura"],
+  Droid: ["Droid", "Droide"],
+  Fighter: ["Fighter", "Caza"],
+  Force: ["Force", "Fuerza"],
+  Item: ["Item", "Objeto"],
+  Lightsaber: ["Lightsaber", "Sable de luz"],
+  Mandalorian: ["Mandalorian", "Mandaloriano"],
+  Modification: ["Modification", "Modificación"],
+  Musician: ["Musician", "Músico"],
+  Official: ["Official", "Oficial"],
+  Pilot: ["Pilot", "Piloto"],
+  Rebel: ["Rebel", "Rebelde"],
+  Republic: ["Republic", "República"],
+  Separatist: ["Separatist", "Separatista"],
+  Speeder: ["Speeder", "Deslizador"],
+  Supply: ["Supply", "Suministro"],
+  Tactic: ["Tactic", "Táctica"],
+  Tank: ["Tank", "Tanque"],
+  Transport: ["Transport", "Transporte"],
+  Trooper: ["Trooper", "Soldado"],
+  Underworld: ["Underworld", "Bajos fondos"],
+  Vehicle: ["Vehicle", "Vehículo"],
+  Walker: ["Walker", "Caminante"],
+  Weapon: ["Weapon", "Arma"]
+};
+
 function fold(value: string): string {
   return value.normalize("NFD").replace(/\p{M}/gu, "").toLocaleLowerCase("es");
 }
@@ -99,9 +133,37 @@ export function buildCardRulesSearchText(card: CardInfo): string {
   return [
     stripKeywordReminderText(card.text, card.keywords),
     stripKeywordReminderText(card.localizedText, card.keywords),
-    ...(card.traits ?? []),
+    ...(card.traits ?? []).flatMap((trait) => LOCALIZED_TRAIT_LABELS[trait] ?? [trait]),
     ...(card.keywords ?? [])
   ]
     .filter(Boolean)
     .join(" ");
+}
+
+function foldSearchPhrase(value: string): string {
+  return fold(value).replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Admite varias condiciones separadas por `/`. Todas deben cumplirse. Una
+ * condición formada solo por dígitos se interpreta como coste exacto; las
+ * demás se buscan como frases completas dentro de los datos de la carta.
+ */
+export function matchesCardSearchQuery(card: CardInfo, query: string): boolean {
+  const conditions = query
+    .split("/")
+    .map(foldSearchPhrase)
+    .filter(Boolean);
+  if (conditions.length === 0) return true;
+
+  const searchableText = foldSearchPhrase(
+    [card.cardId, card.name, card.localizedName, buildCardRulesSearchText(card)]
+      .filter(Boolean)
+      .join(" ")
+  );
+
+  return conditions.every((condition) => {
+    if (/^\d+$/.test(condition)) return card.cost === Number(condition);
+    return searchableText.includes(condition);
+  });
 }
