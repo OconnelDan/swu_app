@@ -24,6 +24,32 @@ export async function saveFavoriteDeck(
   return favorite;
 }
 
+/** Sustituye la composición de un favorito sin alterar su identidad ni crear una copia. */
+export async function updateFavoriteDeck(
+  favoriteId: string,
+  normalizedDeck: NormalizedDeck,
+  result?: DeckComparisonResult
+): Promise<FavoriteDeck> {
+  const favorite = await db.favoriteDecks.get(favoriteId);
+  if (!favorite) throw new Error("El mazo ya no existe.");
+  if (favorite.isMounted) {
+    throw new Error("Desmonta el mazo antes de modificar su composición.");
+  }
+
+  const updated: FavoriteDeck = {
+    ...favorite,
+    name: normalizedDeck.name,
+    author: normalizedDeck.author,
+    originalJson: normalizedDeck.originalJson,
+    normalizedDeck,
+    updatedAt: new Date().toISOString(),
+    lastResult: result,
+    lastResultFingerprint: result?.collectionFingerprint
+  };
+  await db.favoriteDecks.put(updated);
+  return updated;
+}
+
 export async function updateFavoriteResult(
   favoriteId: string,
   result: DeckComparisonResult

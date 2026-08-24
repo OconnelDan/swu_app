@@ -10,6 +10,7 @@ import {
   renameFavoriteDeck,
   saveFavoriteDeck,
   unmountFavoriteDeck,
+  updateFavoriteDeck,
   updateFavoriteResult
 } from "@/lib/favoritesRepository";
 import { normalizeDeckJson } from "@/lib/normalizeDeckJson";
@@ -18,6 +19,22 @@ import { compareDeckWithCollection } from "@/lib/compareDeckWithCollection";
 describe("persistencia de favoritos (IndexedDB)", () => {
   beforeEach(async () => {
     await db.favoriteDecks.clear();
+  });
+
+  it("actualiza un borrador conservando su identidad y sin crear duplicados", async () => {
+    const deck = normalizeDeckJson({ name: "Borrador", deck: [{ id: "SOR_001", count: 2 }] });
+    const saved = await saveFavoriteDeck(deck);
+    const updatedDeck = normalizeDeckJson({
+      name: "Borrador continuado",
+      deck: [{ id: "SOR_002", count: 1 }]
+    });
+
+    const updated = await updateFavoriteDeck(saved.id, updatedDeck);
+
+    expect(updated.id).toBe(saved.id);
+    expect(updated.createdAt).toBe(saved.createdAt);
+    expect(updated.name).toBe("Borrador continuado");
+    expect(await listFavoriteDecks()).toHaveLength(1);
   });
 
   it("caso 10: guarda, lista, renombra, duplica y elimina un favorito", async () => {

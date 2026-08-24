@@ -35,6 +35,7 @@ import {
   renameFavoriteDeck as renameLocalFavoriteDeck,
   saveFavoriteDeck as saveLocalFavoriteDeck,
   unmountFavoriteDeck as unmountLocalFavoriteDeck,
+  updateFavoriteDeck as updateLocalFavoriteDeck,
   updateFavoriteResult as updateLocalFavoriteResult
 } from "@/lib/favoritesRepository";
 import { v4 as uuid } from "@/lib/uuid";
@@ -300,6 +301,36 @@ export function DataSourceProvider({ children }: DataSourceProviderProps) {
     [commitAccountMutation, requireAccountSnapshot, userId]
   );
 
+  const updateFavoriteDeck = useCallback(
+    async (
+      favoriteId: string,
+      normalizedDeck: NormalizedDeck,
+      result?: DeckComparisonResult
+    ): Promise<FavoriteDeck> => {
+      if (!userId) return updateLocalFavoriteDeck(favoriteId, normalizedDeck, result);
+
+      const snapshot = requireAccountSnapshot();
+      const favorite = snapshot.favoriteDecks.find((entry) => entry.id === favoriteId);
+      if (!favorite) throw new Error("El mazo ya no existe en tu cuenta.");
+      if (favorite.isMounted) {
+        throw new Error("Desmonta el mazo antes de modificar su composición.");
+      }
+      const updated: FavoriteDeck = {
+        ...favorite,
+        name: normalizedDeck.name,
+        author: normalizedDeck.author,
+        originalJson: normalizedDeck.originalJson,
+        normalizedDeck,
+        updatedAt: new Date().toISOString(),
+        lastResult: result,
+        lastResultFingerprint: result?.collectionFingerprint
+      };
+      await commitAccountMutation(() => upsertCloudFavoriteDeck(updated));
+      return updated;
+    },
+    [commitAccountMutation, requireAccountSnapshot, userId]
+  );
+
   const renameFavoriteDeck = useCallback(
     async (favoriteId: string, name: string) => {
       if (!userId) {
@@ -412,6 +443,7 @@ export function DataSourceProvider({ children }: DataSourceProviderProps) {
       addCollectionCard,
       removeCollectionCard,
       saveFavoriteDeck,
+      updateFavoriteDeck,
       updateFavoriteResult,
       renameFavoriteDeck,
       deleteFavoriteDeck,
@@ -437,6 +469,7 @@ export function DataSourceProvider({ children }: DataSourceProviderProps) {
       renameFavoriteDeck,
       replaceCollection,
       saveFavoriteDeck,
+      updateFavoriteDeck,
       unmountFavoriteDeck,
       updateFavoriteResult
     ]

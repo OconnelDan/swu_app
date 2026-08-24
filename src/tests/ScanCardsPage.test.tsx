@@ -49,6 +49,7 @@ function dataSource(overrides: Partial<DataSourceValue> = {}): DataSourceValue {
     addCollectionCard: vi.fn().mockResolvedValue(1),
     removeCollectionCard: vi.fn().mockResolvedValue(0),
     saveFavoriteDeck: vi.fn(),
+    updateFavoriteDeck: vi.fn(),
     updateFavoriteResult: vi.fn(),
     renameFavoriteDeck: vi.fn(),
     deleteFavoriteDeck: vi.fn(),

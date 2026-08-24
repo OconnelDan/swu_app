@@ -52,6 +52,7 @@ export default function App() {
         <Route path="/favoritos" element={<FavoritesPage onOpenResult={setResult} />} />
         <Route path="/montados" element={<MountedDecksPage onOpenResult={setResult} />} />
         <Route path="/mazos/crear" element={<DeckBuilderPage />} />
+        <Route path="/mazos/editar/:favoriteId" element={<DeckBuilderPage />} />
         <Route path="/buscar" element={<CardFinderPage />} />
         <Route path="/amigos" element={<FriendsPage />} />
         <Route path="/cuenta" element={<AccountPage />} />
