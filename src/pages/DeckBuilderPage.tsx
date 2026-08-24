@@ -12,6 +12,7 @@ import {
   Search
 } from "lucide-react";
 import { CardImageThumbnail } from "@/components/CardImageThumbnail";
+import { PaginationControls } from "@/components/PaginationControls";
 import { SkeletonLines } from "@/components/Skeleton";
 import { useDataSource } from "@/contexts/DataSourceContext";
 import { useCollection } from "@/hooks/useCollection";
@@ -68,6 +69,8 @@ const CARD_TYPE_FILTERS: { value: CardTypeFilter; label: string }[] = [
   { value: "event", label: "Eventos" },
   { value: "upgrade", label: "Mejoras" }
 ];
+
+const CARD_PAGE_SIZE = 80;
 
 const RARITY_LABELS: Record<string, string> = {
   Common: "Común",
@@ -264,6 +267,7 @@ export function DeckBuilderPage() {
   const [selectedRarities, setSelectedRarities] = useState<string[]>([]);
   const [maximumCost, setMaximumCost] = useState("all");
   const [ownedFilter, setOwnedFilter] = useState<OwnedFilter>("all");
+  const [cardPage, setCardPage] = useState(1);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -510,6 +514,26 @@ export function DeckBuilderPage() {
     selectedTypes
   ]);
 
+  useEffect(() => {
+    setCardPage(1);
+  }, [
+    activeDeckIndex,
+    activeTab,
+    includeColorless,
+    manualAspects,
+    maximumCost,
+    ownedFilter,
+    query,
+    selectedRarities,
+    selectedSetCodes,
+    selectedTypes
+  ]);
+
+  const cardPageCount = Math.max(1, Math.ceil(filteredCards.length / CARD_PAGE_SIZE));
+  useEffect(() => {
+    setCardPage((page) => Math.min(page, cardPageCount));
+  }, [cardPageCount]);
+
   const activeFilterCount =
     (manualAspects !== null ? 1 : 0) +
     (!includeColorless ? 1 : 0) +
@@ -612,7 +636,8 @@ export function DeckBuilderPage() {
     return <SkeletonLines count={7} />;
   }
 
-  const shownCards = filteredCards.slice(0, 80);
+  const firstShownCard = (cardPage - 1) * CARD_PAGE_SIZE;
+  const shownCards = filteredCards.slice(firstShownCard, firstShownCard + CARD_PAGE_SIZE);
   const selectedMain = Object.entries(currentDeck.mainCounts).filter(([, count]) => count > 0);
   const selectedSideboard = Object.entries(currentDeck.sideboardCounts).filter(
     ([, count]) => count > 0
@@ -870,10 +895,10 @@ export function DeckBuilderPage() {
           </div>
         </details>
 
-        <p className="text-xs text-slate-400">
+        <p id="deck-builder-results" className="scroll-mt-20 text-xs text-slate-400">
           {filteredCards.length} resultado(s)
-          {filteredCards.length > shownCards.length
-            ? ` · mostrando los primeros ${shownCards.length}`
+          {shownCards.length > 0
+            ? ` · mostrando ${firstShownCard + 1}–${firstShownCard + shownCards.length}`
             : ""}
         </p>
 
@@ -1005,6 +1030,22 @@ export function DeckBuilderPage() {
             );
           })}
         </ul>
+
+        <PaginationControls
+          currentPage={cardPage}
+          pageSize={CARD_PAGE_SIZE}
+          totalItems={filteredCards.length}
+          label="cartas del constructor"
+          onPageChange={(page) => {
+            setCardPage(page);
+            requestAnimationFrame(() =>
+              document.getElementById("deck-builder-results")?.scrollIntoView({
+                behavior: "smooth",
+                block: "start"
+              })
+            );
+          }}
+        />
       </section>
 
       <section className="card space-y-3">
