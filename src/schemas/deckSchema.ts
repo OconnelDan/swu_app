@@ -15,13 +15,11 @@ const leaderBaseRefSchema = z.union([
   z.string().min(1) // formatos que solo dan "leader_id": "JTL_001"
 ]);
 
-/** Esquema laxo: acepta cualquier combinación de las claves reconocidas. */
-export const rawDeckJsonSchema = z
+const rawDeckPartSchema = z
   .object({
-    metadata: z.object({ name: z.string().optional(), author: z.string().optional() }).partial().optional(),
     name: z.string().optional(),
-    author: z.string().optional(),
     leader: leaderBaseRefSchema.optional(),
+    leaders: z.array(leaderBaseRefSchema).optional(),
     leader_id: z.string().optional(),
     base: leaderBaseRefSchema.optional(),
     base_id: z.string().optional(),
@@ -32,6 +30,29 @@ export const rawDeckJsonSchema = z
     sideboard: z.array(cardEntrySchema).optional(),
     deck_grouped: z.record(z.array(cardEntrySchema)).optional(),
     sideboard_grouped: z.record(z.array(cardEntrySchema)).optional()
+  })
+  .passthrough();
+
+export type RawDeckPart = z.infer<typeof rawDeckPartSchema>;
+
+/** Esquema laxo: acepta cualquier combinación de las claves reconocidas. */
+export const rawDeckJsonSchema = rawDeckPartSchema
+  .extend({
+    metadata: z
+      .object({
+        name: z.string().optional(),
+        author: z.string().optional(),
+        format: z.string().optional(),
+        cardPool: z.string().optional(),
+        trilogyCardPool: z.string().optional()
+      })
+      .partial()
+      .optional(),
+    author: z.string().optional(),
+    format: z.string().optional(),
+    trilogyCardPool: z.string().optional(),
+    trilogyDecks: z.array(rawDeckPartSchema).optional(),
+    decks: z.array(rawDeckPartSchema).optional()
   })
   .passthrough();
 
