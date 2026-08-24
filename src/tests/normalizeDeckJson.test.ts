@@ -13,6 +13,7 @@ describe("normalizeDeckJson", () => {
 
     expect(deck.name).toBe("Asajj Red Roja V3");
     expect(deck.author).toBe("Oconnel");
+    expect(deck.format).toBe("premier");
     expect(deck.leader?.cardId).toBe("JTL_001");
     expect(deck.base?.cardId).toBe("SEC_024");
     expect(deck.mainDeck.map((c) => c.cardId)).toContain("ASH_188");
@@ -76,5 +77,58 @@ describe("normalizeDeckJson", () => {
     expect(deck1.mainDeck[0].cardId).toBe("SOR_010");
     expect(deck2.mainDeck[0].cardId).toBe("SOR_010");
     expect(deck3.mainDeck[0].cardId).toBe("SOR_010");
+  });
+
+  it("normaliza Twin Suns con sus dos líderes", () => {
+    const deck = normalizeDeckJson({
+      metadata: { name: "Gemelos", format: "Twin Suns" },
+      leaders: [
+        { id: "SEC_001", count: 1 },
+        { id: "SEC_002", count: 1 }
+      ],
+      base: { id: "SEC_030", count: 1 },
+      deck: [{ id: "SEC_040", count: 1 }]
+    });
+
+    expect(deck.format).toBe("twin-suns");
+    expect(deck.leaders?.map((leader) => leader.cardId)).toEqual(["SEC_001", "SEC_002"]);
+    expect(deck.allRequiredCards.map((card) => card.cardId)).toEqual([
+      "SEC_001",
+      "SEC_002",
+      "SEC_030",
+      "SEC_040"
+    ]);
+  });
+
+  it("normaliza Trilogy y agrega las copias de sus tres mazos", () => {
+    const deck = normalizeDeckJson({
+      metadata: { name: "Equipo", format: "Trilogy", cardPool: "Eternal" },
+      trilogyDecks: [
+        {
+          name: "Uno",
+          leader: { id: "SOR_001", count: 1 },
+          base: { id: "SOR_020", count: 1 },
+          deck: [{ id: "SOR_100", count: 2 }]
+        },
+        {
+          name: "Dos",
+          leader: { id: "SHD_001", count: 1 },
+          base: { id: "SHD_020", count: 1 },
+          deck: [{ id: "SOR_100", count: 1 }]
+        },
+        {
+          name: "Tres",
+          leader: { id: "TWI_001", count: 1 },
+          base: { id: "TWI_020", count: 1 },
+          deck: [{ id: "TWI_100", count: 3 }]
+        }
+      ]
+    });
+
+    expect(deck.format).toBe("trilogy");
+    expect(deck.trilogyCardPool).toBe("eternal");
+    expect(deck.trilogyDecks).toHaveLength(3);
+    expect(deck.allRequiredCards.find((card) => card.cardId === "SOR_100")?.requiredCount).toBe(3);
+    expect(deck.sideboard).toEqual([]);
   });
 });

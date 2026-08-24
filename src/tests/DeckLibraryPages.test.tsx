@@ -14,15 +14,43 @@ vi.mock("@/hooks/useAuth", () => ({
   useAuth: () => ({ session: null, loading: false })
 }));
 
+const deckLegalityMock = vi.hoisted(() => ({ invalidDeckIds: new Set<string>() }));
+
+vi.mock("@/hooks/useDeckLegality", () => ({
+  useDeckLegality: (decks: FavoriteDeck[] | undefined) => ({
+    loading: false,
+    error: null,
+    byDeckId: new Map(
+      (decks ?? []).map((deck) => [
+        deck.id,
+        {
+          valid: !deckLegalityMock.invalidDeckIds.has(deck.id),
+          errors: deckLegalityMock.invalidDeckIds.has(deck.id)
+            ? ["La carta de prueba ha rotado de Premier."]
+            : [],
+          warnings: [],
+          mainCount: 50,
+          sideboardCount: 0,
+          minimumMainCount: 50,
+          sideboardLimit: 10,
+          aspectPenaltyCopies: 0,
+          illegalCardIds: []
+        }
+      ])
+    )
+  })
+}));
+
 function savedDeck(
   id: string,
   name: string,
   requiredCount: number,
   isMounted: boolean,
-  allocationPriority?: number
+  allocationPriority?: number,
+  format = "Premier"
 ): FavoriteDeck {
   const normalizedDeck = normalizeDeckJson({
-    name,
+    metadata: { name, format },
     deck: [{ id: "SOR_001", count: requiredCount }]
   });
   return {
@@ -83,6 +111,7 @@ const collection: CollectionCard[] = [
 ];
 
 afterEach(() => {
+  deckLegalityMock.invalidDeckIds.clear();
   vi.restoreAllMocks();
 });
 
@@ -236,5 +265,70 @@ describe("Favoritos y mazos montados", () => {
     expect(window.confirm).toHaveBeenCalledWith(
       expect.stringContaining("1× SOR_001 desde «Mazo B»")
     );
+  });
+
+  it("filtra Favoritos por Premier, Eternal, Twin Suns y Trilogy", () => {
+    const premier = savedDeck("premier", "Mazo Premier", 1, false);
+    const eternal = savedDeck("eternal", "Mazo Eternal", 1, false, undefined, "Eternal");
+
+    render(
+      <DataSourceContext.Provider value={dataSource([premier, eternal], collection)}>
+        <MemoryRouter>
+          <FavoritesPage onOpenResult={vi.fn()} />
+        </MemoryRouter>
+      </DataSourceContext.Provider>
+    );
+
+    expect(screen.getByText("Mazo Premier")).toBeInTheDocument();
+    expect(screen.getByText("Mazo Eternal")).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Premier (1)" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Eternal (1)" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Twin Suns (0)" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Trilogy (0)" })).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Filtrar mazos por formato"), {
+      target: { value: "eternal" }
+    });
+
+    expect(screen.queryByText("Mazo Premier")).not.toBeInTheDocument();
+    expect(screen.getByText("Mazo Eternal")).toBeInTheDocument();
+  });
+
+  it("conserva un favorito ilegal y bloquea volver a montarlo", () => {
+    const illegal = savedDeck("illegal", "Mazo rotado", 1, false);
+    const mountFavoriteDeck = vi.fn();
+    deckLegalityMock.invalidDeckIds.add(illegal.id);
+
+    render(
+      <DataSourceContext.Provider value={dataSource([illegal], collection, { mountFavoriteDeck })}>
+        <MemoryRouter>
+          <FavoritesPage onOpenResult={vi.fn()} />
+        </MemoryRouter>
+      </DataSourceContext.Provider>
+    );
+
+    expect(screen.getByText("Mazo rotado")).toBeInTheDocument();
+    expect(screen.getByText("No legal")).toBeInTheDocument();
+    expect(screen.getByText(/se conserva, pero no puede montarse/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Montar mazo" })).toBeDisabled();
+    expect(mountFavoriteDeck).not.toHaveBeenCalled();
+  });
+
+  it("mantiene montado un mazo que deja de ser legal y permite desmontarlo", () => {
+    const mounted = savedDeck("mounted-illegal", "Mazo antiguo", 1, true, 1);
+    deckLegalityMock.invalidDeckIds.add(mounted.id);
+
+    render(
+      <DataSourceContext.Provider value={dataSource([mounted], collection)}>
+        <MemoryRouter>
+          <MountedDecksPage onOpenResult={vi.fn()} />
+        </MemoryRouter>
+      </DataSourceContext.Provider>
+    );
+
+    expect(screen.getByText("Mazo antiguo")).toBeInTheDocument();
+    expect(screen.getByText("No legal")).toBeInTheDocument();
+    expect(screen.getByText(/Se conserva montado/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Desmontar mazo" })).toBeEnabled();
   });
 });

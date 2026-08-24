@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { buildDeckJson, validatePremierDeck } from "@/lib/deckBuilder";
+import { buildDeckJson, validateDeck, validatePremierDeck } from "@/lib/deckBuilder";
+import { buildCardLegalityIndex } from "@/lib/deckFormats";
 import type { CardInfo } from "@/types/card";
 
 function card(cardId: string, overrides: Partial<CardInfo> = {}): CardInfo {
@@ -20,23 +21,23 @@ function card(cardId: string, overrides: Partial<CardInfo> = {}): CardInfo {
 describe("constructor Premier", () => {
   it("valida líder, base, 50 cartas y un banquillo de hasta 10", () => {
     const cards = new Map<string, CardInfo>([
-      ["SOR_001", card("SOR_001", { type: "Leader", aspects: ["Vigilance", "Villainy"] })],
-      ["SOR_021", card("SOR_021", { type: "Base", aspects: ["Command"] })]
+      ["JTL_001", card("JTL_001", { type: "Leader", aspects: ["Vigilance", "Villainy"] })],
+      ["JTL_021", card("JTL_021", { type: "Base", aspects: ["Command"] })]
     ]);
     const mainCounts: Record<string, number> = {};
     for (let index = 30; index < 46; index += 1) {
-      const cardId = `SOR_${String(index).padStart(3, "0")}`;
+      const cardId = `JTL_${String(index).padStart(3, "0")}`;
       cards.set(cardId, card(cardId));
       mainCounts[cardId] = 3;
     }
-    cards.set("SOR_046", card("SOR_046"));
-    mainCounts.SOR_046 = 2;
+    cards.set("JTL_046", card("JTL_046"));
+    mainCounts.JTL_046 = 2;
 
     const result = validatePremierDeck(
       {
         name: "Mazo válido",
-        leaderId: "SOR_001",
-        baseId: "SOR_021",
+        leaderId: "JTL_001",
+        baseId: "JTL_021",
         mainCounts,
         sideboardCounts: {}
       },
@@ -124,5 +125,198 @@ describe("constructor Premier", () => {
       deck: [{ id: "SOR_100", count: 3 }],
       sideboard: [{ id: "SOR_101", count: 2 }]
     });
+  });
+
+  it("aplica Data Vault y Thermal Oscillator al mínimo del formato", () => {
+    const cards = new Map<string, CardInfo>([
+      ["JTL_001", card("JTL_001", { type: "Leader" })],
+      ["JTL_024", card("JTL_024", { type: "Base", cardKey: "4028826022" })],
+      ["JTL_025", card("JTL_025", { type: "Base", cardKey: "4301437393" })]
+    ]);
+    const dataVault = validateDeck(
+      {
+        name: "Almacén",
+        format: "premier",
+        leaderId: "JTL_001",
+        baseId: "JTL_024",
+        mainCounts: {},
+        sideboardCounts: {}
+      },
+      cards
+    );
+    const oscillator = validateDeck(
+      {
+        name: "Oscilador",
+        format: "premier",
+        leaderId: "JTL_001",
+        baseId: "JTL_025",
+        mainCounts: {},
+        sideboardCounts: {}
+      },
+      cards
+    );
+
+    expect(dataVault.minimumMainCount).toBe(60);
+    expect(oscillator.minimumMainCount).toBe(45);
+  });
+
+  it("valida Twin Suns con dos líderes, 80 cartas, singleton y sin banquillo", () => {
+    const cards = new Map<string, CardInfo>([
+      ["JTL_001", card("JTL_001", { type: "Leader", aspects: ["Heroism"] })],
+      ["SEC_002", card("SEC_002", { type: "Leader", aspects: ["Command"] })],
+      ["JTL_021", card("JTL_021", { type: "Base" })]
+    ]);
+    const mainCounts: Record<string, number> = {};
+    for (let index = 30; index < 110; index += 1) {
+      const cardId = `SEC_${String(index).padStart(3, "0")}`;
+      cards.set(cardId, card(cardId));
+      mainCounts[cardId] = 1;
+    }
+
+    const result = validateDeck(
+      {
+        name: "Twin Suns",
+        format: "twin-suns",
+        leaderIds: ["JTL_001", "SEC_002"],
+        baseId: "JTL_021",
+        mainCounts,
+        sideboardCounts: {}
+      },
+      cards
+    );
+
+    expect(result).toMatchObject({ valid: true, mainCount: 80, sideboardLimit: 0 });
+  });
+
+  it("rechaza mezclar Heroísmo y Villanía entre los líderes de Twin Suns", () => {
+    const cards = new Map<string, CardInfo>([
+      ["JTL_001", card("JTL_001", { type: "Leader", aspects: ["Heroism"] })],
+      ["SEC_002", card("SEC_002", { type: "Leader", aspects: ["Villainy"] })],
+      ["JTL_021", card("JTL_021", { type: "Base" })]
+    ]);
+    const result = validateDeck(
+      {
+        name: "No válido",
+        format: "twin-suns",
+        leaderIds: ["JTL_001", "SEC_002"],
+        baseId: "JTL_021",
+        mainCounts: {},
+        sideboardCounts: {}
+      },
+      cards
+    );
+
+    expect(result.errors).toContain("los dos líderes no pueden combinar Heroísmo y Villanía.");
+  });
+
+  it("mantiene en Twin Suns una excepción oficial de hasta 15 copias", () => {
+    const vulture = card("JTL_256", {
+      name: "Swarming Vulture Droid",
+      cardKey: "2177194044",
+      deckLimit: 15
+    });
+    const cards = new Map<string, CardInfo>([
+      ["JTL_001", card("JTL_001", { type: "Leader" })],
+      ["SEC_002", card("SEC_002", { type: "Leader" })],
+      ["JTL_021", card("JTL_021", { type: "Base" })],
+      [vulture.cardId, vulture]
+    ]);
+    const result = validateDeck(
+      {
+        name: "Enjambre",
+        format: "twin-suns",
+        leaderIds: ["JTL_001", "SEC_002"],
+        baseId: "JTL_021",
+        mainCounts: { JTL_256: 15 },
+        sideboardCounts: {}
+      },
+      cards
+    );
+
+    expect(result.errors.some((message) => message.includes("el máximo es"))).toBe(false);
+  });
+
+  it("bloquea en Eternal una carta suspendida oficialmente", () => {
+    const ig2000 = card("JTL_140", {
+      name: "IG-2000, Assassin's Aggressor",
+      cardKey: "3722493191"
+    });
+    const cards = new Map<string, CardInfo>([
+      ["JTL_001", card("JTL_001", { type: "Leader" })],
+      ["JTL_021", card("JTL_021", { type: "Base" })],
+      [ig2000.cardId, ig2000]
+    ]);
+    const result = validateDeck(
+      {
+        name: "Suspendida",
+        format: "eternal",
+        leaderId: "JTL_001",
+        baseId: "JTL_021",
+        mainCounts: { JTL_140: 1 },
+        sideboardCounts: {}
+      },
+      cards
+    );
+
+    expect(result.errors.some((message) => message.includes("está inhabilitada en Eternal"))).toBe(
+      true
+    );
+  });
+
+  it("permite una impresión rotada si comparte identidad con una reimpresión Premier", () => {
+    const rotated = card("SOR_100", { cardKey: "same-card" });
+    const legalReprint = card("SEC_100", { cardKey: "same-card" });
+    const cards = new Map<string, CardInfo>([
+      [rotated.cardId, rotated],
+      [legalReprint.cardId, legalReprint]
+    ]);
+    const result = validateDeck(
+      {
+        name: "Reimpresión",
+        format: "premier",
+        leaderId: "JTL_001",
+        baseId: "JTL_021",
+        mainCounts: { SOR_100: 1 },
+        sideboardCounts: {}
+      },
+      cards,
+      buildCardLegalityIndex([...cards.values()])
+    );
+
+    expect(result.errors.some((message) => message.includes("ha rotado"))).toBe(false);
+  });
+
+  it("aplica en Trilogy los límites compartidos entre sus tres mazos", () => {
+    const cards = new Map<string, CardInfo>();
+    const trilogyDecks = [0, 1, 2].map((index) => {
+      const leaderId = `JTL_00${index + 1}`;
+      const baseId = `SEC_02${index + 1}`;
+      cards.set(leaderId, card(leaderId, { type: "Leader" }));
+      cards.set(baseId, card(baseId, { type: "Base" }));
+      return {
+        name: `Mazo ${index + 1}`,
+        leaderIds: [leaderId],
+        baseId,
+        mainCounts: { JTL_100: 2 },
+        sideboardCounts: {}
+      };
+    });
+    cards.set("JTL_100", card("JTL_100"));
+
+    const result = validateDeck(
+      {
+        name: "Trilogía",
+        format: "trilogy",
+        trilogyCardPool: "premier",
+        mainCounts: {},
+        sideboardCounts: {},
+        trilogyDecks
+      },
+      cards
+    );
+
+    expect(result.errors).toContain(
+      "JTL_100 suma 6 copias entre los tres mazos; el máximo compartido es 3."
+    );
   });
 });
