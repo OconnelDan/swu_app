@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { buildCardRulesSearchText, stripKeywordReminderText } from "@/lib/cardRulesSearch";
+import {
+  buildCardRulesSearchText,
+  matchesCardSearchQuery,
+  stripKeywordReminderText
+} from "@/lib/cardRulesSearch";
 import type { CardInfo } from "@/types/card";
 
 function card(overrides: Partial<CardInfo>): CardInfo {
@@ -62,5 +66,36 @@ describe("texto de reglas para búsquedas", () => {
     expect(stripKeywordReminderText(text, ["Ambush", "Saboteur"]).trim()).toBe(
       "Ambush \nSaboteur"
     );
+  });
+
+  it("combina frases separadas por barras y exige que se cumplan todas", () => {
+    const target = card({
+      cost: 3,
+      traits: ["Rebel"],
+      keywords: ["Sentinel"],
+      localizedText: "Centinela\nCuando se juegue: Roba una carta."
+    });
+
+    expect(matchesCardSearchQuery(target, "cuando se juegue")).toBe(true);
+    expect(matchesCardSearchQuery(target, " cuando   se juegue / rebelde ")).toBe(true);
+    expect(matchesCardSearchQuery(target, "cuando se juegue / rebelde / 3")).toBe(true);
+    expect(matchesCardSearchQuery(target, "rebelde / cuando se juegue / centinela")).toBe(true);
+    expect(matchesCardSearchQuery(target, "cuando se juegue / imperial")).toBe(false);
+  });
+
+  it("interpreta una condición numérica como coste exacto", () => {
+    const target = card({ cost: 3, localizedText: "Inflige 2 de daño." });
+
+    expect(matchesCardSearchQuery(target, "3")).toBe(true);
+    expect(matchesCardSearchQuery(target, "2")).toBe(false);
+    expect(matchesCardSearchQuery(target, "daño / 3")).toBe(true);
+    expect(matchesCardSearchQuery(target, "daño / 2")).toBe(false);
+    expect(matchesCardSearchQuery(target, "TST_001")).toBe(true);
+  });
+
+  it("ignora condiciones vacías creadas por barras sobrantes", () => {
+    const target = card({ traits: ["Rebel"] });
+    expect(matchesCardSearchQuery(target, "/ rebelde //")).toBe(true);
+    expect(matchesCardSearchQuery(target, " / ")).toBe(true);
   });
 });

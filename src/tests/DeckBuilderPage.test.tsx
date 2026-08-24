@@ -110,6 +110,8 @@ const catalogCards: CardInfo[] = [
     type: "Unit",
     arena: "Ground",
     aspects: ["Vigilance"],
+    cost: 3,
+    traits: ["Rebel"],
     keywords: ["Sentinel"],
     text: "Sentinel (Units in this arena can't attack your non-Sentinel units or your base.)",
     localizedText:
@@ -299,6 +301,11 @@ describe("constructor por formatos", () => {
     fireEvent.change(search, { target: { value: "Sentinel" } });
     expect(screen.getByText("Unidad con Centinela")).toBeInTheDocument();
     expect(screen.getByText("Concede Centinela")).toBeInTheDocument();
+    expect(screen.queryByText("Saboteador de prueba")).not.toBeInTheDocument();
+
+    fireEvent.change(search, { target: { value: "Centinela / rebelde / 3" } });
+    expect(screen.getByText("Unidad con Centinela")).toBeInTheDocument();
+    expect(screen.queryByText("Concede Centinela")).not.toBeInTheDocument();
     expect(screen.queryByText("Saboteador de prueba")).not.toBeInTheDocument();
   });
 
