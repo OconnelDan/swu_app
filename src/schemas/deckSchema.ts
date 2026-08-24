@@ -53,6 +53,7 @@ export const rawDeckJsonSchema = rawDeckPartSchema
         name: z.string().optional(),
         author: z.string().optional(),
         format: z.string().optional(),
+        source: z.string().optional(),
         cardPool: z.string().optional(),
         trilogyCardPool: z.string().optional()
       })
