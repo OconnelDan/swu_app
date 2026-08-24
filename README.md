@@ -78,22 +78,29 @@ Abre `http://localhost:5173`.
    coste y copias poseídas o libres. La búsqueda admite varias condiciones
    separadas por `/` (por ejemplo, `centinela / rebelde / 3`); un número aislado
    representa el coste exacto. Los resultados se paginan sin ocultar las cartas
-   posteriores a la primera página.
+   posteriores a la primera página. Al pulsar la miniatura de una carta se abre
+   una ficha persistente con su imagen grande, texto traducido y datos de juego;
+   se cierra manualmente y no modifica la composición del mazo.
 5. **Mazos → Favoritos**: puedes guardar el trabajo en cualquier momento aunque
    todavía falten líderes, base o cartas. Los borradores muestran el aviso
    **Mazo inacabado** y se recuperan con **Continuar editando**. Guardar cambios
    actualiza el mismo favorito sin crear duplicados. Solo un mazo legal y con la
-   estructura completa puede montarse y reservar cartas de la colección.
+   estructura completa puede montarse y reservar cartas de la colección. Los
+   mazos terminados también pueden volver a abrirse con **Modificar mazo** para
+   cambiar líder, base, mazo principal o banquillo.
 6. **Mazos → Montados**: consulta los mazos que sí reservan cartas, su reparto
    físico real y las copias pendientes. Al abrir un mazo incompleto, cada carta
    disponible en otros mazos tiene su propio botón **Mover cartas a este mazo**
-   y una confirmación previa con el origen exacto de las copias. **Desmontar
+   y una confirmación previa con el origen exacto de las copias. **Modificar
+   mazo** permite cambiar su composición sin desmontarlo; al guardar conserva
+   su prioridad y recalcula automáticamente las copias reservadas. **Desmontar
    mazo** libera las cartas y devuelve la lista a Favoritos sin borrar su JSON.
 7. **Buscar**: localiza cualquier carta del catálogo por código o nombre,
    comprueba si está libre o en qué mazos montados está usada y pulsa sobre ella
    para restar una copia. Si la copia está asignada, se muestra una confirmación
    indicando qué mazo puede quedar incompleto. Todas las coincidencias son
-   accesibles mediante paginación.
+   accesibles mediante paginación. Su ficha ampliada conserva el control para
+   restar una copia de la colección.
 8. **Ajustes**: tema y mostrar/ocultar imágenes. En modo invitado también
    permite exportar/importar una copia local y borrar los datos del dispositivo.
 9. **Cuenta y amigos** _(opcional, requiere configurar Supabase)_: crea una

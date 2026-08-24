@@ -24,7 +24,7 @@ export async function saveFavoriteDeck(
   return favorite;
 }
 
-/** Sustituye la composición de un favorito sin alterar su identidad ni crear una copia. */
+/** Sustituye la composición sin alterar la identidad ni el estado montado del mazo. */
 export async function updateFavoriteDeck(
   favoriteId: string,
   normalizedDeck: NormalizedDeck,
@@ -32,9 +32,6 @@ export async function updateFavoriteDeck(
 ): Promise<FavoriteDeck> {
   const favorite = await db.favoriteDecks.get(favoriteId);
   if (!favorite) throw new Error("El mazo ya no existe.");
-  if (favorite.isMounted) {
-    throw new Error("Desmonta el mazo antes de modificar su composición.");
-  }
 
   const updated: FavoriteDeck = {
     ...favorite,

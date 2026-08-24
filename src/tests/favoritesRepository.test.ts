@@ -37,6 +37,31 @@ describe("persistencia de favoritos (IndexedDB)", () => {
     expect(await listFavoriteDecks()).toHaveLength(1);
   });
 
+  it("modifica un mazo montado sin desmontarlo ni cambiar su prioridad", async () => {
+    const originalDeck = normalizeDeckJson({
+      name: "Mazo físico",
+      deck: [{ id: "SOR_001", count: 2 }]
+    });
+    const saved = await saveFavoriteDeck(originalDeck);
+    await mountFavoriteDeck(saved.id);
+    const mountedBefore = (await db.favoriteDecks.get(saved.id))!;
+
+    const modifiedDeck = normalizeDeckJson({
+      name: "Mazo físico modificado",
+      deck: [{ id: "SOR_002", count: 3 }],
+      sideboard: [{ id: "SOR_003", count: 1 }]
+    });
+    const updated = await updateFavoriteDeck(saved.id, modifiedDeck);
+
+    expect(updated.id).toBe(saved.id);
+    expect(updated.isMounted).toBe(true);
+    expect(updated.mountedAt).toBe(mountedBefore.mountedAt);
+    expect(updated.allocationPriority).toBe(mountedBefore.allocationPriority);
+    expect(updated.normalizedDeck.mainDeck[0].cardId).toBe("SOR_002");
+    expect(updated.normalizedDeck.sideboard[0].cardId).toBe("SOR_003");
+    expect(await listFavoriteDecks()).toHaveLength(1);
+  });
+
   it("caso 10: guarda, lista, renombra, duplica y elimina un favorito", async () => {
     const deck = normalizeDeckJson({ name: "Mi mazo", deck: [{ id: "SOR_001", count: 2 }] });
     const result = compareDeckWithCollection(deck, []);

@@ -101,6 +101,7 @@ function Probe() {
       <p data-testid="mounted">
         {data.favorites?.filter((deck) => deck.isMounted).length ?? "cargando"}
       </p>
+      <p data-testid="favorite-name">{data.favorites?.[0]?.name ?? "sin mazos"}</p>
       <button
         type="button"
         onClick={() => void data.replaceCollection([cloudCard], importResult([cloudCard]))}
@@ -135,6 +136,23 @@ function Probe() {
         }
       >
         guardar mazo
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          const favoriteId = data.favorites?.[0]?.id;
+          if (!favoriteId) return;
+          void data.updateFavoriteDeck(
+            favoriteId,
+            normalizeDeckJson({
+              name: "Mazo de cuenta modificado",
+              deck: [{ id: "LAW_039", count: 3 }],
+              sideboard: [{ id: "LAW_040", count: 1 }]
+            })
+          );
+        }}
+      >
+        modificar mazo
       </button>
       <button
         type="button"
@@ -405,6 +423,65 @@ describe("origen de datos según la sesión", () => {
     fireEvent.click(screen.getByRole("button", { name: "desmontar mazo" }));
     await waitFor(() => expect(mocks.unmountCloudFavoriteDeck).toHaveBeenCalledWith(favorite.id));
     await waitFor(() => expect(screen.getByTestId("mounted")).toHaveTextContent("0"));
+    expect(await db.favoriteDecks.count()).toBe(0);
+  });
+
+  it("modifica en Supabase la composición de un mazo montado sin desmontarlo", async () => {
+    mocks.auth.session = { user: { id: "user-1" } };
+    const deck = normalizeDeckJson({
+      name: "Mazo montado de cuenta",
+      deck: [{ id: "LAW_038", count: 2 }]
+    });
+    const mounted = {
+      id: "11111111-1111-4111-8111-111111111111",
+      name: deck.name,
+      originalJson: deck.originalJson,
+      normalizedDeck: deck,
+      createdAt: "2026-08-11T10:02:00.000Z",
+      updatedAt: "2026-08-11T10:03:00.000Z",
+      isMounted: true,
+      mountedAt: "2026-08-11T10:03:00.000Z",
+      allocationPriority: 1
+    };
+    const modifiedDeck = normalizeDeckJson({
+      name: "Mazo de cuenta modificado",
+      deck: [{ id: "LAW_039", count: 3 }],
+      sideboard: [{ id: "LAW_040", count: 1 }]
+    });
+    const modified = {
+      ...mounted,
+      name: modifiedDeck.name,
+      originalJson: modifiedDeck.originalJson,
+      normalizedDeck: modifiedDeck,
+      updatedAt: "2026-08-11T10:05:00.000Z"
+    };
+
+    mocks.loadCloudDataSnapshot
+      .mockResolvedValueOnce(snapshot([cloudCard], [mounted]))
+      .mockResolvedValueOnce(snapshot([cloudCard], [modified]));
+
+    render(
+      <DataSourceProvider>
+        <Probe />
+      </DataSourceProvider>
+    );
+
+    await waitFor(() => expect(screen.getByTestId("mounted")).toHaveTextContent("1"));
+    fireEvent.click(screen.getByRole("button", { name: "modificar mazo" }));
+
+    await waitFor(() => expect(mocks.upsertCloudFavoriteDeck).toHaveBeenCalledTimes(1));
+    expect(mocks.upsertCloudFavoriteDeck).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: mounted.id,
+        isMounted: true,
+        mountedAt: mounted.mountedAt,
+        allocationPriority: 1,
+        normalizedDeck: expect.objectContaining({ name: "Mazo de cuenta modificado" })
+      })
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("favorite-name")).toHaveTextContent("Mazo de cuenta modificado")
+    );
     expect(await db.favoriteDecks.count()).toBe(0);
   });
 });

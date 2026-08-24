@@ -171,9 +171,7 @@ export function FavoritesPage({ onOpenResult }: FavoritesPageProps) {
         <ul className="space-y-3">
           {favoriteDecks.map((favorite) => {
             const legality = deckLegality.byDeckId.get(favorite.id);
-            const draftIncomplete = legality
-              ? isDeckDraftIncomplete(legality)
-              : false;
+            const draftIncomplete = legality ? isDeckDraftIncomplete(legality) : false;
             const outdated = collection
               ? isFavoriteOutdated(favorite, collection.fingerprint)
               : false;
@@ -258,7 +256,7 @@ export function FavoritesPage({ onOpenResult }: FavoritesPageProps) {
                     onClick={() => navigate(`/mazos/editar/${favorite.id}`)}
                   >
                     <Pencil size={14} />
-                    Continuar editando
+                    {draftIncomplete ? "Continuar editando" : "Modificar mazo"}
                   </button>
                   <button
                     type="button"

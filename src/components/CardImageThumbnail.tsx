@@ -5,6 +5,7 @@ interface CardImageThumbnailProps {
   fallbackSrc?: string;
   alt?: string;
   className?: string;
+  zoomOnClick?: boolean;
 }
 
 /**
@@ -12,13 +13,15 @@ interface CardImageThumbnailProps {
  *
  * La URL oficial se intenta primero. Si el CDN la rechaza o el dispositivo
  * conserva una ruta antigua, se prueba el espejo antes de ocultar la imagen.
- * Al pulsarla (clic o toque) se amplía durante 2 segundos.
+ * Por compatibilidad, puede ampliarse durante 2 segundos. Las pantallas con
+ * modal de detalles desactivan este comportamiento con `zoomOnClick={false}`.
  */
 export function CardImageThumbnail({
   src,
   fallbackSrc,
   alt = "",
-  className
+  className,
+  zoomOnClick = true
 }: CardImageThumbnailProps) {
   const [zoomed, setZoomed] = useState(false);
   const [broken, setBroken] = useState(false);
@@ -58,8 +61,8 @@ export function CardImageThumbnail({
         alt={alt}
         loading="lazy"
         referrerPolicy="no-referrer"
-        className={`${className ?? ""} cursor-zoom-in`}
-        onClick={() => setZoomed(true)}
+        className={`${className ?? ""} ${zoomOnClick ? "cursor-zoom-in" : ""}`}
+        onClick={zoomOnClick ? () => setZoomed(true) : undefined}
         onError={handleError}
       />
       {zoomed && (
