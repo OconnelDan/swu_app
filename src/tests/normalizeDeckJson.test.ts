@@ -100,6 +100,91 @@ describe("normalizeDeckJson", () => {
     ]);
   });
 
+  it("detecta Twin Suns con secondleader, 80 cartas y sin banquillo", () => {
+    const deck = normalizeDeckJson({
+      metadata: { name: "Azure Iron Man - Copy", author: "Oconnel" },
+      leader: { id: "TWI_017", count: 1 },
+      secondleader: { id: "SEC_009", count: 1 },
+      base: { id: "SEC_020", count: 1 },
+      deck: Array.from({ length: 80 }, (_, index) => ({
+        id: `SEC_${String(index + 1).padStart(3, "0")}`,
+        count: 1
+      })),
+      sideboard: []
+    });
+
+    expect(deck.format).toBe("twin-suns");
+    expect(deck.leaders?.map((leader) => leader.cardId)).toEqual(["TWI_017", "SEC_009"]);
+    expect(deck.mainDeck.reduce((total, card) => total + card.requiredCount, 0)).toBe(80);
+    expect(deck.sideboard).toEqual([]);
+  });
+
+  it.each([
+    ["secondLeader", { id: "SEC_009", count: 1 }],
+    ["second_leader", { id: "SEC_009", count: 1 }],
+    ["secondleader_id", "SEC_009"],
+    ["secondLeaderId", "SEC_009"],
+    ["second_leader_id", "SEC_009"],
+    ["leader2", { id: "SEC_009", count: 1 }],
+    ["leader_2", { id: "SEC_009", count: 1 }],
+    ["leader2_id", "SEC_009"],
+    ["leader_2_id", "SEC_009"]
+  ])("acepta la variante %s para el segundo líder", (key, secondLeader) => {
+    const deck = normalizeDeckJson({
+      leader: { id: "TWI_017", count: 1 },
+      [key]: secondLeader,
+      base: { id: "SEC_020", count: 1 },
+      deck: [{ id: "SEC_081", count: 1 }],
+      sideboard: []
+    });
+
+    expect(deck.format).toBe("twin-suns");
+    expect(deck.leaders?.map((leader) => leader.cardId)).toEqual(["TWI_017", "SEC_009"]);
+  });
+
+  it("respeta Eternal cuando el formato está declarado", () => {
+    const deck = normalizeDeckJson({
+      metadata: { name: "Eternal", format: "Eternal" },
+      leader: { id: "SOR_001", count: 1 },
+      base: { id: "SHD_020", count: 1 },
+      deck: [{ id: "TWI_100", count: 3 }],
+      sideboard: [{ id: "SOR_100", count: 2 }]
+    });
+
+    expect(deck.format).toBe("eternal");
+    expect(deck.leaders?.map((leader) => leader.cardId)).toEqual(["SOR_001"]);
+    expect(deck.sideboard[0].cardId).toBe("SOR_100");
+  });
+
+  it.each([
+    ["Eterno", "eternal"],
+    ["Twin Sun", "twin-suns"],
+    ["Twin_Suns", "twin-suns"],
+    ["Soles gemelos", "twin-suns"]
+  ])("reconoce el alias de formato %s", (format, expected) => {
+    const deck = normalizeDeckJson({
+      format,
+      leaders: [
+        { id: "SEC_001", count: 1 },
+        { id: "SEC_002", count: 1 }
+      ],
+      base: { id: "SEC_020", count: 1 },
+      deck: [{ id: "SEC_100", count: 1 }]
+    });
+
+    expect(deck.format).toBe(expected);
+  });
+
+  it("mantiene Premier como valor por defecto para la estructura estándar", () => {
+    const deck = normalizeDeckJson({
+      leader_id: "SEC_001",
+      base_id: "SEC_020",
+      mainboard: [{ id: "SEC_100", count: 3 }]
+    });
+
+    expect(deck.format).toBe("premier");
+  });
+
   it("normaliza Trilogy y agrega las copias de sus tres mazos", () => {
     const deck = normalizeDeckJson({
       metadata: { name: "Equipo", format: "Trilogy", cardPool: "Eternal" },
@@ -130,5 +215,20 @@ describe("normalizeDeckJson", () => {
     expect(deck.trilogyDecks).toHaveLength(3);
     expect(deck.allRequiredCards.find((card) => card.cardId === "SOR_100")?.requiredCount).toBe(3);
     expect(deck.sideboard).toEqual([]);
+  });
+
+  it("detecta Trilogy por tres submazos aunque no declare format", () => {
+    const decks = ["SOR", "SHD", "TWI"].map((setCode, index) => ({
+      name: `Mazo ${index + 1}`,
+      leader: { id: `${setCode}_001`, count: 1 },
+      base: { id: `${setCode}_020`, count: 1 },
+      deck: [{ id: `${setCode}_100`, count: 3 }]
+    }));
+    const deck = normalizeDeckJson({ name: "Equipo inferido", decks });
+
+    expect(deck.format).toBe("trilogy");
+    expect(deck.trilogyCardPool).toBe("premier");
+    expect(deck.trilogyDecks).toHaveLength(3);
+    expect(deck.leaders).toHaveLength(3);
   });
 });
