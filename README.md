@@ -47,16 +47,17 @@ Abre `http://localhost:5173`.
 
 ## Scripts disponibles
 
-| Script               | Descripción                                        |
-| -------------------- | -------------------------------------------------- |
-| `npm run dev`        | Servidor de desarrollo con recarga en caliente     |
-| `npm run build`      | Compila TypeScript y genera el build de producción |
-| `npm run preview`    | Sirve el build de producción localmente            |
-| `npm test`           | Ejecuta la suite de tests con Vitest (una vez)     |
-| `npm run test:watch` | Tests en modo observador                           |
-| `npm run lint`       | ESLint                                             |
-| `npm run typecheck`  | Comprueba tipos sin generar archivos               |
-| `npm run format`     | Formatea el proyecto con Prettier                  |
+| Script                 | Descripción                                        |
+| ---------------------- | -------------------------------------------------- |
+| `npm run dev`          | Servidor de desarrollo con recarga en caliente     |
+| `npm run build`        | Compila TypeScript y genera el build de producción |
+| `npm run preview`      | Sirve el build de producción localmente            |
+| `npm test`             | Ejecuta la suite de tests con Vitest (una vez)     |
+| `npm run test:watch`   | Tests en modo observador                           |
+| `npm run lint`         | ESLint                                             |
+| `npm run typecheck`    | Comprueba tipos sin generar archivos               |
+| `npm run format`       | Formatea el proyecto con Prettier                  |
+| `npm run catalog:sync` | Regenera el catálogo desde la API oficial SWU      |
 
 ## Cómo usar la app
 
@@ -71,29 +72,35 @@ Abre `http://localhost:5173`.
    las faltantes, copiar la lista, descargarla en TXT o CSV y guardar el mazo
    como favorito. Si ya está guardado, también puedes **Montar mazo** sin salir
    del resultado. Se muestran imágenes si el catálogo de cartas está activo.
-4. **Mazos → Favoritos**: guarda ideas o mazos que quieras probar sin reservar
+4. **Mazos → Crear mazo**: construye una lista Premier eligiendo líder, base,
+   mazo principal y banquillo desde todo el catálogo oficial. Puedes filtrar por
+   aspectos, tipo, arena, colección, rareza, coste y copias poseídas o libres.
+   La app valida la estructura, el límite de copias y avisa de penalizaciones de
+   aspecto antes de guardarlo en Favoritos.
+5. **Mazos → Favoritos**: guarda ideas o mazos que quieras probar sin reservar
    ninguna carta. Cuando decidas prepararlo físicamente, pulsa **Montar mazo**.
-5. **Mazos → Montados**: consulta los mazos que sí reservan cartas, su reparto
+6. **Mazos → Montados**: consulta los mazos que sí reservan cartas, su reparto
    físico real y las copias pendientes. Al abrir un mazo incompleto, cada carta
    disponible en otros mazos tiene su propio botón **Mover cartas a este mazo**
    y una confirmación previa con el origen exacto de las copias. **Desmontar
    mazo** libera las cartas y devuelve la lista a Favoritos sin borrar su JSON.
-6. **Buscar**: localiza cualquier carta de tu colección por código o nombre y
-   comprueba al instante si está libre, en qué mazo(s) montado(s) está usada
-   (con cuántas copias en cada uno), o si no la tienes.
-7. **Ajustes**: tema y mostrar/ocultar imágenes. En modo invitado también
+7. **Buscar**: localiza cualquier carta del catálogo por código o nombre,
+   comprueba si está libre o en qué mazos montados está usada y pulsa sobre ella
+   para restar una copia. Si la copia está asignada, se muestra una confirmación
+   indicando qué mazo puede quedar incompleto.
+8. **Ajustes**: tema y mostrar/ocultar imágenes. En modo invitado también
    permite exportar/importar una copia local y borrar los datos del dispositivo.
-8. **Cuenta y amigos** _(opcional, requiere configurar Supabase)_: crea una
+9. **Cuenta y amigos** _(opcional, requiere configurar Supabase)_: crea una
    cuenta verificando primero tu email y asignando después una contraseña. Los
    accesos posteriores utilizan email y contraseña, con recuperación por
    correo si la olvidas. Desde ese momento, las importaciones de colección y
    todos los cambios de mazos se guardan directamente en la cuenta. También
    puedes generar o canjear códigos de amistad y consultar qué amigos tienen
    las cartas que te faltan, incluidas sus copias libres.
-9. **Backup diario por correo** _(opcional)_: desde **Mi cuenta** cada usuario
-   puede activar una copia JSON de su colección. Solo se envía si hubo cambios,
-   después de 15, 30 o 60 minutos de inactividad y con un máximo estricto de un
-   correo por día. El proceso continúa aunque se cierre la PWA.
+10. **Backup diario por correo** _(opcional)_: desde **Mi cuenta** cada usuario
+    puede activar una copia JSON de su colección. Solo se envía si hubo cambios,
+    después de 15, 30 o 60 minutos de inactividad y con un máximo estricto de un
+    correo por día. El proceso continúa aunque se cierre la PWA.
 
 ### Favoritos y reparto entre mazos montados
 
@@ -141,6 +148,8 @@ key` en el frontend.
    [`supabase/migrations/20260821_optimizar_importacion_coleccion.sql`](./supabase/migrations/20260821_optimizar_importacion_coleccion.sql).
    Esta última migración evita timeouts al sustituir colecciones grandes y no
    elimina cartas, mazos, preferencias ni copias ya enviadas.
+   Para poder restar cantidades desde **Buscar**, ejecuta después
+   [`supabase/migrations/20260821_restar_cartas_coleccion.sql`](./supabase/migrations/20260821_restar_cartas_coleccion.sql).
 3. En **Authentication → URL Configuration**, usa como Site URL
    `https://oconneldan.github.io/swu_app/` y añade como Redirect URL
    `https://oconneldan.github.io/swu_app/**` (añade también la URL local que
@@ -297,7 +306,8 @@ diferentes:
 - **API oficial de Star Wars: Unlimited**:
   `https://admin.starwarsunlimited.com/api/card-list` publica el catálogo usado
   por la propia web del juego. Incluye códigos de expansión, números impresos,
-  tipos de variante, `variantOf`, `validationId` y las imágenes del CDN oficial.
+  tipos de variante, `variantOf`, `validationId`, nombres y textos localizados,
+  coste, aspectos, arena, rasgos, estadísticas y las imágenes del CDN oficial.
   La API solo permite peticiones del origen de la web oficial mediante CORS, por
   lo que GitHub Pages no la consulta directamente. El comando
   `npm run catalog:sync` descarga sus páginas durante el desarrollo y genera
@@ -359,6 +369,9 @@ ejemplo `/mi-repo/` para GitHub Pages).
   siguiente mejora prevista; por ahora puedes desmontar uno y montar otro.
 - No hay integración de colección con `sw-unlimited-db.com` (ver más arriba
   por qué, y cómo activarla si en el futuro existe una API oficial).
+- El constructor Premier valida estructura, tamaños, tipos, límites de copias y
+  penalizaciones de aspecto. Todavía no aplica automáticamente las rotaciones,
+  suspensiones ni prohibiciones vigentes de juego organizado.
 - Las cuentas no tienen modo offline para colección y mazos: se evita mantener
   una segunda copia local que pueda quedar desactualizada o sobrescribir la
   base de datos al volver la conexión.

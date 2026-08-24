@@ -38,7 +38,7 @@ describe("catálogo de cartas incluido", () => {
 
   it("se genera desde la API oficial e incluye todas sus nomenclaturas publicadas", () => {
     expect(catalog).toMatchObject({
-      version: 2,
+      version: 3,
       source: "https://admin.starwarsunlimited.com/api/card-list?locale=en"
     });
     expect(catalog.sets).toEqual(
@@ -108,6 +108,25 @@ describe("catálogo de cartas incluido", () => {
     expect(fetchMock).not.toHaveBeenCalledWith(
       expect.stringContaining("admin.starwarsunlimited.com")
     );
+  });
+
+  it("incluye los datos necesarios para buscar y construir mazos sin otra API", async () => {
+    const provider = new SwUnlimitedDbCardProvider();
+    const cards = await provider.getAllCards();
+    const rancorKeeper = cards.find((card) => card.cardId === "ASH_032");
+    const vultureDroid = cards.find((card) => card.cardId === "JTL_256");
+
+    expect(cards).toHaveLength(Object.keys(catalog.cards).length);
+    expect(rancorKeeper).toMatchObject({
+      localizedName: "Cuidador del rancor",
+      type: "Unit",
+      cost: 2,
+      power: 2,
+      hp: 4,
+      aspects: ["Vigilance", "Aggression"],
+      arena: "Ground"
+    });
+    expect(vultureDroid?.deckLimit).toBe(15);
   });
 
   it("convierte una impresión variante en el ID base que utiliza la colección", async () => {

@@ -142,6 +142,23 @@ export async function addCloudCollectionCard(
   return ownedCount;
 }
 
+/** Resta copias de una carta y elimina su fila cuando llega a cero. */
+export async function removeCloudCollectionCard(cardId: string, quantity = 1): Promise<number> {
+  const client = requireClient();
+  await requireUserId();
+  const { data, error } = await client.rpc("remove_my_collection_card", {
+    p_card_id: cardId,
+    p_quantity: quantity
+  });
+  if (error) throw new Error(error.message);
+
+  const ownedCount = typeof data === "number" ? data : Number(data);
+  if (!Number.isInteger(ownedCount) || ownedCount < 0) {
+    throw new Error("Supabase no ha devuelto la nueva cantidad de la carta.");
+  }
+  return ownedCount;
+}
+
 /** Inserta o actualiza un único mazo sin sustituir los demás mazos de la cuenta. */
 export async function upsertCloudFavoriteDeck(favorite: FavoriteDeck): Promise<string> {
   const client = requireClient();

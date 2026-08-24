@@ -33,12 +33,41 @@ function relationAttributes(relation) {
   return relation?.data?.attributes ?? {};
 }
 
+function relationList(relation) {
+  return Array.isArray(relation?.data) ? relation.data : [];
+}
+
 function relationId(relation) {
   return relation?.data?.id;
 }
 
 function variantNames(card) {
   return (card.attributes.variantTypes?.data ?? []).map(({ attributes }) => attributes.name);
+}
+
+function localizedAttributes(card, locale) {
+  return (
+    relationList(card.attributes.localizations).find(
+      ({ attributes }) => attributes.locale === locale
+    )?.attributes ?? {}
+  );
+}
+
+function nullableNumber(value) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function relationNames(relation, preferredKey = "name") {
+  return relationList(relation)
+    .map(({ attributes }) => attributes[preferredKey] ?? attributes.name)
+    .filter((name) => typeof name === "string" && name.length > 0);
+}
+
+function getDeckLimit(text) {
+  const explicitLimit = /deck can have up to (\d+) copies of this card/i.exec(text ?? "");
+  if (explicitLimit) return Number(explicitLimit[1]);
+  if (/include any number of (?:copies of )?this card in your deck/i.test(text ?? "")) return 99;
+  return 3;
 }
 
 function isToken(card) {
@@ -226,11 +255,34 @@ for (const canonicalCard of new Map(
 
   canonicalCardByPrintedId.set(canonicalId, canonicalCard);
   const attributes = canonicalCard.attributes;
+  const spanish = localizedAttributes(canonicalCard, "es");
+  const aspects = [
+    ...relationNames(attributes.aspects, "englishName"),
+    ...relationNames(attributes.aspectDuplicates, "englishName")
+  ];
   cards[canonicalId] = [
     attributes.title,
     attributes.subtitle ?? "",
-    relationAttributes(attributes.type).name ?? "",
-    relationAttributes(attributes.rarity).name ?? ""
+    spanish.title ?? "",
+    spanish.subtitle ?? "",
+    relationAttributes(attributes.type).value ?? relationAttributes(attributes.type).name ?? "",
+    relationAttributes(attributes.rarity).englishName ??
+      relationAttributes(attributes.rarity).name ??
+      "",
+    nullableNumber(attributes.cost),
+    aspects,
+    relationNames(attributes.traits),
+    relationNames(attributes.arenas).at(0) ?? "",
+    attributes.text ?? "",
+    spanish.text ?? "",
+    nullableNumber(attributes.power),
+    nullableNumber(attributes.hp),
+    nullableNumber(attributes.upgradePower),
+    nullableNumber(attributes.upgradeHp),
+    attributes.unique === true,
+    relationNames(attributes.keywords),
+    attributes.validationId ?? attributes.cardUid ?? canonicalId,
+    getDeckLimit(attributes.text)
   ];
 }
 
@@ -278,10 +330,12 @@ const sets = [...new Set(scannableCards.map(getPrintedSetCode))].sort();
 const printedBaseTotals = {};
 const standaloneNumberRanges = {};
 const legacyPromoBySet = {};
+const setNames = {};
 
 for (const setCode of sets) {
   const setCards = scannableCards.filter((card) => getPrintedSetCode(card) === setCode);
   const printedNumbers = setCards.map(getPrintedNumber);
+  setNames[setCode] = relationAttributes(setCards[0]?.attributes.expansion).name ?? setCode;
   const standardTotals = setCards
     .filter((card) => variantNames(card).includes("Standard"))
     .map((card) => Number(card.attributes.cardCount))
@@ -315,9 +369,10 @@ for (const card of scannableCards) {
 }
 
 const catalog = {
-  version: 2,
+  version: 3,
   source: `${API_BASE}/${CATALOG_ENDPOINT}?locale=${CATALOG_LOCALE}`,
   sets,
+  setNames: sortRecord(setNames),
   cards: sortRecord(cards),
   aliases: sortRecord(aliases),
   images: sortRecord(images),

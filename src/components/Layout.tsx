@@ -180,7 +180,9 @@ export function Layout() {
                 to={to}
                 end={to === "/"}
                 className={({ isActive }) => {
-                  const isDecksSection = to === "/favoritos" && location.pathname === "/montados";
+                  const isDecksSection =
+                    to === "/favoritos" &&
+                    (location.pathname === "/montados" || location.pathname.startsWith("/mazos/"));
                   const isCollectionSection =
                     to === "/importar" && location.pathname === "/escanear";
                   return `flex min-h-[56px] flex-col items-center justify-center gap-1 text-xs font-medium ${

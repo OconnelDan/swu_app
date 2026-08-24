@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   loadCloudDataSnapshot: vi.fn(),
   replaceCloudCollection: vi.fn(),
   addCloudCollectionCard: vi.fn(),
+  removeCloudCollectionCard: vi.fn(),
   upsertCloudFavoriteDeck: vi.fn(),
   deleteCloudFavoriteDeck: vi.fn(),
   mountCloudFavoriteDeck: vi.fn(),
@@ -31,6 +32,7 @@ vi.mock("@/lib/cloudSyncRepository", async (importOriginal) => {
     loadCloudDataSnapshot: mocks.loadCloudDataSnapshot,
     replaceCloudCollection: mocks.replaceCloudCollection,
     addCloudCollectionCard: mocks.addCloudCollectionCard,
+    removeCloudCollectionCard: mocks.removeCloudCollectionCard,
     upsertCloudFavoriteDeck: mocks.upsertCloudFavoriteDeck,
     deleteCloudFavoriteDeck: mocks.deleteCloudFavoriteDeck,
     mountCloudFavoriteDeck: mocks.mountCloudFavoriteDeck,
@@ -121,6 +123,9 @@ function Probe() {
       >
         añadir carta
       </button>
+      <button type="button" onClick={() => void data.removeCollectionCard(cloudCard.cardId, 1)}>
+        restar carta
+      </button>
       <button
         type="button"
         onClick={() =>
@@ -169,6 +174,7 @@ describe("origen de datos según la sesión", () => {
     mocks.loadCloudDataSnapshot.mockReset();
     mocks.replaceCloudCollection.mockReset().mockResolvedValue("2026-08-11T10:01:00.000Z");
     mocks.addCloudCollectionCard.mockReset().mockResolvedValue(6);
+    mocks.removeCloudCollectionCard.mockReset().mockResolvedValue(3);
     mocks.upsertCloudFavoriteDeck.mockReset().mockResolvedValue("2026-08-11T10:02:00.000Z");
     mocks.deleteCloudFavoriteDeck.mockReset();
     mocks.mountCloudFavoriteDeck.mockReset().mockResolvedValue("2026-08-11T10:03:00.000Z");
@@ -263,6 +269,48 @@ describe("origen de datos según la sesión", () => {
         2
       )
     );
+    expect(await db.collectionEntries.count()).toBe(0);
+  });
+
+  it("resta copias localmente a un invitado y elimina la última", async () => {
+    await db.collectionEntries.put({ ...cloudCard, ownedCount: 2 });
+
+    render(
+      <DataSourceProvider>
+        <Probe />
+      </DataSourceProvider>
+    );
+
+    await waitFor(() => expect(screen.getByTestId("cards")).toHaveTextContent("LAW_038"));
+    fireEvent.click(screen.getByRole("button", { name: "restar carta" }));
+    await waitFor(() =>
+      expect(db.collectionEntries.get("LAW_038")).resolves.toMatchObject({
+        ownedCount: 1
+      })
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "restar carta" }));
+    await waitFor(() => expect(db.collectionEntries.get("LAW_038")).resolves.toBeUndefined());
+    expect(mocks.removeCloudCollectionCard).not.toHaveBeenCalled();
+  });
+
+  it("resta copias de una cuenta exclusivamente mediante Supabase", async () => {
+    mocks.auth.session = { user: { id: "user-1" } };
+    const updatedCard = { ...cloudCard, ownedCount: 3 };
+    mocks.loadCloudDataSnapshot
+      .mockResolvedValueOnce(snapshot([cloudCard]))
+      .mockResolvedValueOnce(snapshot([updatedCard]));
+
+    render(
+      <DataSourceProvider>
+        <Probe />
+      </DataSourceProvider>
+    );
+
+    await waitFor(() => expect(screen.getByTestId("cards")).toHaveTextContent("LAW_038"));
+    fireEvent.click(screen.getByRole("button", { name: "restar carta" }));
+
+    await waitFor(() => expect(mocks.removeCloudCollectionCard).toHaveBeenCalledWith("LAW_038", 1));
     expect(await db.collectionEntries.count()).toBe(0);
   });
 
