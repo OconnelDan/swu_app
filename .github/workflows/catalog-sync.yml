@@ -78,11 +78,15 @@ jobs:
             - `npm test`
             - `npm run build`
 
-            Si aparecen nuevas colecciones, promociones o variantes oficiales,
-            quedarán incluidas en los archivos generados.
+            Si aparecen nuevas colecciones, promociones, variantes, cambios de
+            rotación, excepciones de construcción o cartas suspendidas, quedarán
+            reflejados en los archivos generados. Los productos especiales cuya
+            legalidad no publique la API se marcarán para revisión y permanecerán
+            bloqueados en Premier hasta confirmarlos.
 
             Revisa los archivos modificados y fusiona este Pull Request para
             publicar el catálogo actualizado.
           add-paths: |
             public/data/swu-card-catalog.json
             src/generated/officialCardCatalogMeta.ts
+            src/generated/officialFormatRules.ts
