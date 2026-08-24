@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -21,6 +21,7 @@ import { computeCardAllocations } from "@/lib/cardAllocation";
 import { compareDeckWithCollection } from "@/lib/compareDeckWithCollection";
 import {
   buildDeckJson,
+  compositionFromNormalizedDeck,
   validateDeck,
   type DeckBuilderComposition,
   type DeckBuilderSubdeckComposition
@@ -247,9 +248,11 @@ function FormatChoice({
 
 export function DeckBuilderPage() {
   const navigate = useNavigate();
+  const { favoriteId } = useParams<{ favoriteId: string }>();
   const collection = useCollection();
   const favorites = useFavorites();
-  const { saveFavoriteDeck } = useDataSource();
+  const { saveFavoriteDeck, updateFavoriteDeck } = useDataSource();
+  const initializedFavoriteId = useRef<string | null>(null);
   const [allCards, setAllCards] = useState<CardInfo[] | null>(null);
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const [format, setFormat] = useState<DeckFormat | null>(null);
@@ -270,6 +273,9 @@ export function DeckBuilderPage() {
   const [cardPage, setCardPage] = useState(1);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const editingFavorite = favoriteId
+    ? favorites?.find((favorite) => favorite.id === favoriteId)
+    : undefined;
 
   const resetFilters = () => {
     setManualAspects(null);
@@ -300,6 +306,39 @@ export function DeckBuilderPage() {
       active = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (!favoriteId || !editingFavorite || initializedFavoriteId.current === favoriteId) return;
+    if (editingFavorite.isMounted) {
+      setError("Desmonta el mazo antes de modificar su composición.");
+      return;
+    }
+
+    const saved = compositionFromNormalizedDeck(editingFavorite.normalizedDeck);
+    const savedFormat = saved.format ?? "premier";
+    setFormat(savedFormat);
+    setTrilogyCardPool(saved.trilogyCardPool ?? "premier");
+    setName(saved.name);
+    setDecks(
+      savedFormat === "trilogy"
+        ? (saved.trilogyDecks ?? [emptyDeck("Mazo 1"), emptyDeck("Mazo 2"), emptyDeck("Mazo 3")])
+        : [
+            {
+              name: saved.name,
+              leaderIds: saved.leaderIds ?? [],
+              baseId: saved.baseId,
+              mainCounts: saved.mainCounts,
+              sideboardCounts: saved.sideboardCounts
+            }
+          ]
+    );
+    setActiveDeckIndex(0);
+    setActiveTab("cards");
+    setQuery("");
+    resetFilters();
+    setError(null);
+    initializedFavoriteId.current = favoriteId;
+  }, [editingFavorite, favoriteId]);
 
   const initializeFormat = (nextFormat: DeckFormat, pool: TrilogyCardPool = "premier") => {
     setFormat(nextFormat);
@@ -599,7 +638,7 @@ export function DeckBuilderPage() {
   };
 
   const handleSave = async () => {
-    if (!validation.valid || !collection || !favorites) return;
+    if (!name.trim() || !collection || !favorites) return;
     setBusy(true);
     setError(null);
     try {
@@ -610,7 +649,8 @@ export function DeckBuilderPage() {
         cardsById,
         allocations
       );
-      await saveFavoriteDeck(normalizedDeck, result);
+      if (favoriteId) await updateFavoriteDeck(favoriteId, normalizedDeck, result);
+      else await saveFavoriteDeck(normalizedDeck, result);
       navigate("/favoritos");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "No se ha podido guardar el mazo.");
@@ -619,6 +659,24 @@ export function DeckBuilderPage() {
     }
   };
 
+  if (favoriteId && favorites === undefined) return <SkeletonLines count={7} />;
+  if (favoriteId && favorites !== undefined && !editingFavorite) {
+    return (
+      <p className="card border-saber-red/50 text-sm text-saber-red">
+        El mazo que quieres editar ya no existe en Favoritos.
+      </p>
+    );
+  }
+  if (favoriteId && editingFavorite?.isMounted) {
+    return (
+      <p className="card border-saber-yellow/50 text-sm text-saber-yellow">
+        Desmonta el mazo antes de modificar su composición.
+      </p>
+    );
+  }
+  if (favoriteId && initializedFavoriteId.current !== favoriteId) {
+    return <SkeletonLines count={7} />;
+  }
   if (!format) {
     return (
       <FormatChoice
@@ -657,9 +715,11 @@ export function DeckBuilderPage() {
           >
             <ArrowLeft size={14} /> Volver a Mazos
           </Link>
-          <h1 className="font-display text-lg">Crear mazo · {formatLabel}</h1>
+          <h1 className="font-display text-lg">
+            {favoriteId ? "Editar mazo" : "Crear mazo"} · {formatLabel}
+          </h1>
           <p className="text-xs text-slate-400">
-            Se guardará en Favoritos y no reservará cartas hasta que lo montes.
+            Puedes guardarlo aunque esté inacabado. No reservará cartas hasta que lo montes.
           </p>
         </div>
         <button type="button" className="btn-secondary shrink-0" onClick={resetFormat}>
@@ -1177,6 +1237,12 @@ export function DeckBuilderPage() {
           Se comprueban tamaño modificado por la base, líderes, base, copias, aspectos, rotación y
           cartas inhabilitadas. La penalización de aspecto solo genera un aviso.
         </p>
+        {!validation.valid && (
+          <p className="text-xs text-saber-yellow">
+            Puedes guardar este trabajo como borrador y continuar editándolo más adelante. Solo los
+            mazos válidos pueden montarse.
+          </p>
+        )}
       </section>
 
       {error && (
@@ -1188,10 +1254,17 @@ export function DeckBuilderPage() {
       <button
         type="button"
         className="btn-primary w-full"
-        disabled={busy || !validation.valid}
+        disabled={busy || !name.trim()}
         onClick={() => void handleSave()}
       >
-        <Save size={16} /> {busy ? "Guardando..." : "Guardar en Favoritos"}
+        <Save size={16} />{" "}
+        {busy
+          ? "Guardando..."
+          : favoriteId
+            ? "Guardar cambios"
+            : validation.valid
+              ? "Guardar mazo en Favoritos"
+              : "Guardar borrador en Favoritos"}
       </button>
     </div>
   );

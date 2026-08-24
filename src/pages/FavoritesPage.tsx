@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Copy, Hammer, RefreshCw, Trash2 } from "lucide-react";
+import { Copy, Hammer, Pencil, RefreshCw, Trash2 } from "lucide-react";
 import {
   DeckFormatBadge,
   DeckFormatFilter,
@@ -14,6 +14,7 @@ import { useDeckLegality } from "@/hooks/useDeckLegality";
 import { SkeletonLines } from "@/components/Skeleton";
 import { isFavoriteOutdated } from "@/lib/favoritesRepository";
 import { compareDeckWithCollection } from "@/lib/compareDeckWithCollection";
+import { isDeckDraftIncomplete } from "@/lib/deckBuilder";
 import { computeCardAllocations, summarizeMountAvailability } from "@/lib/cardAllocation";
 import { buildMountDeckConfirmationMessage } from "@/lib/mountDeckConfirmation";
 import { SwUnlimitedDbCardProvider } from "@/providers/cardProvider/SwUnlimitedDbCardProvider";
@@ -170,6 +171,9 @@ export function FavoritesPage({ onOpenResult }: FavoritesPageProps) {
         <ul className="space-y-3">
           {favoriteDecks.map((favorite) => {
             const legality = deckLegality.byDeckId.get(favorite.id);
+            const draftIncomplete = legality
+              ? isDeckDraftIncomplete(legality)
+              : false;
             const outdated = collection
               ? isFavoriteOutdated(favorite, collection.fingerprint)
               : false;
@@ -213,8 +217,16 @@ export function FavoritesPage({ onOpenResult }: FavoritesPageProps) {
                       {status}
                     </span>
                     {!deckLegality.loading && legality && (
-                      <span className={legality.valid ? "badge-complete" : "badge-missing"}>
-                        {legality.valid ? "Legal" : "No legal"}
+                      <span
+                        className={
+                          draftIncomplete
+                            ? "badge-warning"
+                            : legality.valid
+                              ? "badge-complete"
+                              : "badge-missing"
+                        }
+                      >
+                        {draftIncomplete ? "Mazo inacabado" : legality.valid ? "Legal" : "No legal"}
                       </span>
                     )}
                   </div>
@@ -239,6 +251,15 @@ export function FavoritesPage({ onOpenResult }: FavoritesPageProps) {
                 )}
 
                 <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    disabled={busyId !== null}
+                    onClick={() => navigate(`/mazos/editar/${favorite.id}`)}
+                  >
+                    <Pencil size={14} />
+                    Continuar editando
+                  </button>
                   <button
                     type="button"
                     className="btn-primary"
