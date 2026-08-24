@@ -909,18 +909,14 @@ export function DeckBuilderPage() {
               >
                 <div className="flex gap-3">
                   {card.imageUrl && (
-                    <button
-                      type="button"
-                      className="shrink-0"
-                      disabled={Boolean(blockedReason)}
-                      onClick={() => selectCard(card)}
-                    >
+                    <div className="shrink-0">
                       <CardImageThumbnail
                         src={card.imageUrl}
                         fallbackSrc={tryGetCardImageUrl(card.cardId)}
+                        alt={displayName(card)}
                         className="h-28 w-auto rounded"
                       />
-                    </button>
+                    </div>
                   )}
                   <div className="min-w-0 flex-1">
                     <p className="font-mono text-[11px] text-slate-400">{card.cardId}</p>
