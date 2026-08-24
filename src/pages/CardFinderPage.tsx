@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
-import { Search } from "lucide-react";
+import { Minus, Search, X } from "lucide-react";
+import { CardImageThumbnail } from "@/components/CardImageThumbnail";
+import { SkeletonLines } from "@/components/Skeleton";
+import { useDataSource } from "@/contexts/DataSourceContext";
 import { useCollection } from "@/hooks/useCollection";
 import { useFavorites } from "@/hooks/useFavorites";
 import { useSettings } from "@/hooks/useSettings";
 import { computeCardAllocations, getCardLocationStatus } from "@/lib/cardAllocation";
 import { tryGetCardImageUrl } from "@/lib/cardImageUrl";
 import { searchCards } from "@/lib/cardSearch";
-import { CardImageThumbnail } from "@/components/CardImageThumbnail";
-import { SkeletonLines } from "@/components/Skeleton";
 import { SwUnlimitedDbCardProvider } from "@/providers/cardProvider/SwUnlimitedDbCardProvider";
 import type { CardInfo } from "@/types/card";
 
@@ -16,46 +17,59 @@ interface CardCandidate {
   name?: string;
 }
 
-/** Reúne todos los cardId conocidos: los de tu colección y los mazos guardados. */
+function displayName(info: CardInfo | undefined, fallback?: string): string {
+  return info?.localizedName ?? info?.name ?? fallback ?? "Carta sin nombre en el catálogo";
+}
+
+/** Incluye el catálogo completo y conserva cualquier ID antiguo de colección o mazo. */
 function buildCandidates(
+  catalogCards: CardInfo[],
   collectionCards: { cardId: string; name?: string }[],
-  favorites: {
-    normalizedDeck: {
-      allRequiredCards: { cardId: string }[];
-    };
-  }[],
+  favorites: { normalizedDeck: { allRequiredCards: { cardId: string }[] } }[],
   cardInfos: Map<string, CardInfo>
 ): CardCandidate[] {
   const candidates = new Map<string, CardCandidate>();
 
-  for (const card of collectionCards) {
-    candidates.set(card.cardId, {
-      cardId: card.cardId,
-      name: card.name ?? cardInfos.get(card.cardId)?.name
+  for (const info of catalogCards) {
+    candidates.set(info.cardId, {
+      cardId: info.cardId,
+      name: [info.localizedName, info.name].filter(Boolean).join(" ")
     });
   }
-
+  for (const card of collectionCards) {
+    if (!candidates.has(card.cardId)) {
+      candidates.set(card.cardId, {
+        cardId: card.cardId,
+        name: card.name ?? displayName(cardInfos.get(card.cardId))
+      });
+    }
+  }
   for (const favorite of favorites) {
     for (const card of favorite.normalizedDeck.allRequiredCards) {
       if (!candidates.has(card.cardId)) {
         candidates.set(card.cardId, {
           cardId: card.cardId,
-          name: cardInfos.get(card.cardId)?.name
+          name: displayName(cardInfos.get(card.cardId))
         });
       }
     }
   }
-
   return [...candidates.values()];
 }
 
 export function CardFinderPage() {
   const [query, setQuery] = useState("");
-  const [cardInfos, setCardInfos] = useState<Map<string, CardInfo>>(new Map());
+  const [catalogCards, setCatalogCards] = useState<CardInfo[] | null>(null);
+  const [catalogError, setCatalogError] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
 
   const collection = useCollection();
   const favorites = useFavorites();
   const { settings } = useSettings();
+  const { removeCollectionCard } = useDataSource();
 
   const allocations = useMemo(
     () => computeCardAllocations(collection?.cards ?? [], favorites ?? []),
@@ -64,58 +78,83 @@ export function CardFinderPage() {
 
   useEffect(() => {
     let active = true;
-    const cardIds = new Set<string>();
-
-    for (const card of collection?.cards ?? []) {
-      cardIds.add(card.cardId);
-    }
-
-    for (const favorite of favorites ?? []) {
-      for (const card of favorite.normalizedDeck.allRequiredCards) {
-        cardIds.add(card.cardId);
-      }
-    }
-
-    if (cardIds.size === 0) {
-      setCardInfos(new Map());
-      return;
-    }
-
-    const cardProvider = new SwUnlimitedDbCardProvider();
-
-    void cardProvider
-      .getCards([...cardIds])
-      .then((infos) => {
-        if (active) {
-          setCardInfos(infos);
-        }
+    const provider = new SwUnlimitedDbCardProvider();
+    void provider
+      .getAllCards()
+      .then((cards) => {
+        if (active) setCatalogCards(cards);
       })
-      .catch(() => {
-        // La búsqueda local por código y nombre debe seguir disponible aunque
-        // un proveedor remoto rechace un identificador o no haya conexión.
+      .catch((cause) => {
         if (active) {
-          setCardInfos(new Map());
+          setCatalogError(
+            cause instanceof Error ? cause.message : "No se ha podido abrir el catálogo oficial."
+          );
         }
       });
-
     return () => {
       active = false;
     };
-  }, [collection?.cards, favorites]);
+  }, []);
 
-  const candidates = useMemo(
-    () => buildCandidates(collection?.cards ?? [], favorites ?? [], cardInfos),
-    [collection?.cards, favorites, cardInfos]
+  useEffect(() => {
+    if (!selectedId) return;
+    const closeWithEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setSelectedId(null);
+    };
+    window.addEventListener("keydown", closeWithEscape);
+    return () => window.removeEventListener("keydown", closeWithEscape);
+  }, [selectedId]);
+
+  const cardInfos = useMemo(
+    () => new Map((catalogCards ?? []).map((card) => [card.cardId, card])),
+    [catalogCards]
   );
-
+  const candidates = useMemo(
+    () => buildCandidates(catalogCards ?? [], collection?.cards ?? [], favorites ?? [], cardInfos),
+    [cardInfos, catalogCards, collection?.cards, favorites]
+  );
   const hasQuery = query.trim().length > 0;
-
   const results = useMemo(
     () => (hasQuery ? searchCards(candidates, query) : []),
     [candidates, hasQuery, query]
   );
+  const selectedInfo = selectedId ? cardInfos.get(selectedId) : undefined;
+  const selectedAllocation = selectedId ? allocations.get(selectedId) : undefined;
 
-  if (collection === undefined || favorites === undefined) {
+  const handleRemove = async () => {
+    if (!selectedId || !selectedAllocation || selectedAllocation.ownedCount <= 0) return;
+
+    if (selectedAllocation.freeCount <= 0 && selectedAllocation.allocations.length > 0) {
+      const affected = selectedAllocation.allocations.at(-1)!;
+      const confirmed = confirm(
+        `No hay copias libres de «${displayName(selectedInfo, selectedId)}».\n\n` +
+          `Si restas una copia, el mazo montado «${affected.favoriteName}» perderá una copia asignada y puede quedar incompleto.\n\n¿Quieres continuar?`
+      );
+      if (!confirmed) return;
+    }
+
+    setBusy(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const ownedCount = await removeCollectionCard(selectedId, 1);
+      setMessage(
+        ownedCount > 0
+          ? `Se ha restado una copia. Ahora tienes ${ownedCount}.`
+          : "Se ha restado la última copia de tu colección."
+      );
+      setSelectedId(null);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "No se ha podido restar la carta.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (collection === undefined || favorites === undefined || catalogCards === null) {
+    if (catalogError) {
+      return <p className="card border-saber-red/50 text-sm text-saber-red">{catalogError}</p>;
+    }
     return <SkeletonLines count={5} />;
   }
 
@@ -123,23 +162,18 @@ export function CardFinderPage() {
     <div className="space-y-4">
       <section className="card space-y-2">
         <h2 className="font-display text-base">Buscar una carta</h2>
-
         <p className="text-xs text-slate-400">
-          Busca por nombre, colección o código (p. ej. ASH_001, ASH 1 o ASH_256) para saber si
-          tienes la carta libre, en qué mazo montado está usada, o si no la tienes en tu colección.
+          Busca en todo el catálogo oficial. Pulsa una carta para ver dónde está usada y, si la
+          posees, restar una copia de tu colección.
         </p>
-
         <label htmlFor="card-search" className="sr-only">
           Buscar carta
         </label>
-
         <div className="relative">
           <Search
             size={16}
             className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-            aria-hidden="true"
           />
-
           <input
             id="card-search"
             type="text"
@@ -150,6 +184,17 @@ export function CardFinderPage() {
           />
         </div>
       </section>
+
+      {message && (
+        <p role="status" className="card border-saber-green/50 text-sm text-saber-green">
+          {message}
+        </p>
+      )}
+      {error && (
+        <p role="alert" className="card border-saber-red/50 text-sm text-saber-red">
+          {error}
+        </p>
+      )}
 
       {hasQuery && results.length === 0 && (
         <p className="card text-center text-sm text-slate-300">
@@ -162,57 +207,137 @@ export function CardFinderPage() {
           const allocation = allocations.get(candidate.cardId);
           const status = getCardLocationStatus(allocation);
           const info = cardInfos.get(candidate.cardId);
-
           const imageUrl = info?.imageUrl ?? tryGetCardImageUrl(candidate.cardId);
-
           return (
-            <li key={candidate.cardId} className="card">
-              <div className="flex items-start gap-3">
-                {settings.showImages && imageUrl && (
-                  <CardImageThumbnail
-                    src={imageUrl}
-                    fallbackSrc={tryGetCardImageUrl(candidate.cardId)}
-                    className="h-20 w-auto rounded"
-                  />
-                )}
-
-                <div className="flex-1">
-                  <p className="font-mono text-xs text-slate-400">{candidate.cardId}</p>
-
-                  <p className="font-semibold">{candidate.name ?? "Carta sin nombre en caché"}</p>
-
-                  {status === "not_owned" ? (
-                    <span className="badge-missing mt-1 inline-block">No está en tu colección</span>
-                  ) : (
-                    <p className="mt-1 text-sm">
-                      Tienes <strong>{allocation!.ownedCount}</strong> copia(s), de las cuales{" "}
-                      <strong
-                        className={
-                          allocation!.freeCount > 0 ? "text-saber-green" : "text-saber-red"
-                        }
-                      >
-                        {allocation!.freeCount}
-                      </strong>{" "}
-                      libre(s).
-                    </p>
+            <li key={candidate.cardId}>
+              <button
+                type="button"
+                className="card w-full text-left transition-colors hover:border-saber-blue/70 hover:bg-space-800"
+                onClick={() => {
+                  setError(null);
+                  setSelectedId(candidate.cardId);
+                }}
+              >
+                <div className="flex items-start gap-3">
+                  {settings.showImages && imageUrl && (
+                    <CardImageThumbnail
+                      src={imageUrl}
+                      fallbackSrc={tryGetCardImageUrl(candidate.cardId)}
+                      className="h-20 w-auto rounded"
+                    />
                   )}
-
-                  {allocation && allocation.allocations.length > 0 && (
-                    <ul className="mt-1 space-y-0.5 text-xs text-slate-400">
-                      {allocation.allocations.map((allocationItem) => (
-                        <li key={allocationItem.favoriteId}>
-                          {allocationItem.usedCount}x usada en el mazo montado «
-                          {allocationItem.favoriteName}»
-                        </li>
-                      ))}
-                    </ul>
-                  )}
+                  <div className="flex-1">
+                    <p className="font-mono text-xs text-slate-400">{candidate.cardId}</p>
+                    <p className="font-semibold">{displayName(info)}</p>
+                    {status === "not_owned" ? (
+                      <span className="badge-missing mt-1 inline-block">
+                        No está en tu colección
+                      </span>
+                    ) : (
+                      <p className="mt-1 text-sm">
+                        Tienes <strong>{allocation!.ownedCount}</strong> copia(s), de las cuales{" "}
+                        <strong
+                          className={
+                            allocation!.freeCount > 0 ? "text-saber-green" : "text-saber-red"
+                          }
+                        >
+                          {allocation!.freeCount}
+                        </strong>{" "}
+                        libre(s).
+                      </p>
+                    )}
+                    {allocation && allocation.allocations.length > 0 && (
+                      <ul className="mt-1 space-y-0.5 text-xs text-slate-400">
+                        {allocation.allocations.map((item) => (
+                          <li key={item.favoriteId}>
+                            {item.usedCount}x usada en «{item.favoriteName}»
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
                 </div>
-              </div>
+              </button>
             </li>
           );
         })}
       </ul>
+
+      {selectedId && (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-3 sm:items-center"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="card-quantity-title"
+        >
+          <section className="card max-h-[90dvh] w-full max-w-md overflow-y-auto border-space-600 bg-space-900">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="font-mono text-xs text-slate-400">{selectedId}</p>
+                <h2 id="card-quantity-title" className="font-display text-base">
+                  {displayName(selectedInfo, selectedId)}
+                </h2>
+              </div>
+              <button
+                type="button"
+                className="btn-secondary px-3"
+                aria-label="Cerrar"
+                disabled={busy}
+                onClick={() => setSelectedId(null)}
+              >
+                <X size={17} />
+              </button>
+            </div>
+
+            {settings.showImages && selectedInfo?.imageUrl && (
+              <CardImageThumbnail
+                src={selectedInfo.imageUrl}
+                fallbackSrc={tryGetCardImageUrl(selectedId)}
+                className="mx-auto mt-3 max-h-72 w-auto rounded-lg"
+              />
+            )}
+
+            <dl className="mt-3 grid grid-cols-3 gap-2 text-center text-xs">
+              <div className="rounded-lg bg-space-950 p-2">
+                <dt className="text-slate-400">Tienes</dt>
+                <dd className="text-lg font-semibold">{selectedAllocation?.ownedCount ?? 0}</dd>
+              </div>
+              <div className="rounded-lg bg-space-950 p-2">
+                <dt className="text-slate-400">Libres</dt>
+                <dd className="text-lg font-semibold">{selectedAllocation?.freeCount ?? 0}</dd>
+              </div>
+              <div className="rounded-lg bg-space-950 p-2">
+                <dt className="text-slate-400">En mazos</dt>
+                <dd className="text-lg font-semibold">{selectedAllocation?.allocatedCount ?? 0}</dd>
+              </div>
+            </dl>
+
+            {selectedAllocation && selectedAllocation.allocations.length > 0 && (
+              <ul className="mt-3 space-y-1 text-xs text-slate-300">
+                {selectedAllocation.allocations.map((item) => (
+                  <li key={item.favoriteId} className="rounded-lg bg-space-950 px-3 py-2">
+                    {item.usedCount}x en el mazo montado «{item.favoriteName}»
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            <button
+              type="button"
+              className="btn-danger mt-4 w-full"
+              disabled={busy || !selectedAllocation?.ownedCount}
+              onClick={() => void handleRemove()}
+            >
+              <Minus size={16} /> {busy ? "Restando..." : "Restar una copia"}
+            </button>
+            {!selectedAllocation?.ownedCount && (
+              <p className="mt-2 text-center text-xs text-slate-400">
+                No puedes restarla porque no está en tu colección.
+              </p>
+            )}
+          </section>
+        </div>
+      )}
     </div>
   );
 }
