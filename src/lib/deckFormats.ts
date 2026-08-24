@@ -62,14 +62,23 @@ function foldFormat(value: string): string {
 export function parseDeckFormat(value: unknown): DeckFormat {
   if (typeof value !== "string") return "premier";
   const folded = foldFormat(value);
-  if (folded === "eternal") return "eternal";
-  if (folded === "twin-suns" || folded === "twinsuns") return "twin-suns";
-  if (folded === "trilogy") return "trilogy";
+  if (folded === "eternal" || folded === "eterno") return "eternal";
+  if (
+    folded === "twin-suns" ||
+    folded === "twin-sun" ||
+    folded === "twinsuns" ||
+    folded === "twinsun" ||
+    folded === "soles-gemelos"
+  )
+    return "twin-suns";
+  if (folded === "trilogy" || folded === "trilogia") return "trilogy";
   return "premier";
 }
 
 export function parseTrilogyCardPool(value: unknown): TrilogyCardPool {
-  return typeof value === "string" && foldFormat(value) === "eternal" ? "eternal" : "premier";
+  if (typeof value !== "string") return "premier";
+  const folded = foldFormat(value);
+  return folded === "eternal" || folded === "eterno" ? "eternal" : "premier";
 }
 
 export function getDeckFormat(deck: Pick<NormalizedDeck, "format">): DeckFormat {

@@ -112,6 +112,15 @@ function normalizeDeckPart(raw: RawDeckPart, fallbackName: string): NormalizedDe
     const leader = resolveRef(raw.leader, raw.leader_id);
     if (leader) leaderRefs.push(leader);
   }
+  const secondLeader = resolveRef(
+    raw.secondleader ?? raw.secondLeader ?? raw.second_leader ?? raw.leader2 ?? raw.leader_2,
+    raw.secondleader_id ??
+      raw.secondLeaderId ??
+      raw.second_leader_id ??
+      raw.leader2_id ??
+      raw.leader_2_id
+  );
+  if (secondLeader) leaderRefs.push(secondLeader);
   const baseRef = resolveRef(raw.base, raw.base_id);
 
   const accumulator = new Map<string, Accumulator>();
@@ -136,10 +145,29 @@ function normalizeDeckPart(raw: RawDeckPart, fallbackName: string): NormalizedDe
   };
 }
 
+function inferDeckFormat(part: NormalizedDeckPart): "premier" | "twin-suns" {
+  const mainCount = part.mainDeck.reduce(
+    (total, card) => total + (card.zoneCounts.main ?? 0),
+    0
+  );
+  const sideboardCount = part.sideboard.reduce(
+    (total, card) => total + (card.zoneCounts.sideboard ?? 0),
+    0
+  );
+
+  // Twin Suns se reconoce por sus dos líderes. El tamaño esperado y la
+  // ausencia de banquillo refuerzan la detección; si el mazo está incompleto,
+  // se mantiene Twin Suns para que la validación explique el error correcto.
+  if ((part.leaders?.length ?? 0) === 2 && (mainCount >= 80 || sideboardCount === 0)) {
+    return "twin-suns";
+  }
+  return "premier";
+}
+
 /**
  * Transforma JSON de SWUDB, del importador histórico o del constructor propio
- * al modelo común. Los JSON antiguos no declaraban formato y se migran de
- * forma lógica a Premier sin modificar sus datos guardados.
+ * al modelo común. Si el JSON no declara formato, dos líderes se reconocen
+ * como Twin Suns; el resto de formatos antiguos se interpretan como Premier.
  */
 export function normalizeDeckJson(input: unknown): NormalizedDeck {
   const parsed = rawDeckJsonSchema.safeParse(input);
@@ -152,17 +180,22 @@ export function normalizeDeckJson(input: unknown): NormalizedDeck {
   const raw = parsed.data;
   const name = raw.metadata?.name ?? raw.name ?? "Mazo sin nombre";
   const author = raw.metadata?.author ?? raw.author;
-  const format = parseDeckFormat(raw.metadata?.format ?? raw.format);
+  const declaredFormat = raw.metadata?.format ?? raw.format;
+  const rawTrilogyDecks = raw.trilogyDecks ?? raw.decks ?? [];
+  const format = declaredFormat
+    ? parseDeckFormat(declaredFormat)
+    : rawTrilogyDecks.length === 3
+      ? "trilogy"
+      : undefined;
   const trilogyCardPool = parseTrilogyCardPool(
     raw.metadata?.cardPool ?? raw.metadata?.trilogyCardPool ?? raw.trilogyCardPool
   );
 
   if (format === "trilogy") {
-    const rawDecks = raw.trilogyDecks ?? raw.decks ?? [];
-    if (rawDecks.length === 0) {
+    if (rawTrilogyDecks.length === 0) {
       throw new Error("El JSON de Trilogy no contiene sus tres mazos.");
     }
-    const trilogyDecks = rawDecks.map((deck, index) =>
+    const trilogyDecks = rawTrilogyDecks.map((deck, index) =>
       normalizeDeckPart(deck, `Mazo ${index + 1}`)
     );
     const allRequiredCards = mergeRequiredCards(
@@ -198,7 +231,7 @@ export function normalizeDeckJson(input: unknown): NormalizedDeck {
     ...part,
     name,
     author,
-    format,
+    format: format ?? inferDeckFormat(part),
     originalJson: input
   };
 }
