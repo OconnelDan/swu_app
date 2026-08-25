@@ -81,7 +81,12 @@ Abre `http://localhost:5173`.
    representa el coste exacto. Los resultados se paginan sin ocultar las cartas
    posteriores a la primera página. Al pulsar la miniatura de una carta se abre
    una ficha persistente con su imagen grande, texto traducido y datos de juego;
-   se cierra manualmente y no modifica la composición del mazo.
+   se cierra manualmente y no modifica la composición del mazo. Cada cambio se
+   conserva además en un borrador automático del dispositivo: si recargas la
+   PWA o navegas accidentalmente a otra sección, al volver se restauran formato,
+   nombre, líderes, base, mazos, banquillos, pestaña, búsqueda, filtros y página.
+   El aviso de recuperación permite descartar expresamente esa memoria y empezar
+   de nuevo. El borrador temporal desaparece después de guardar correctamente.
 5. **Mazos → Favoritos**: puedes guardar el trabajo en cualquier momento aunque
    todavía falten líderes, base o cartas. Los borradores muestran el aviso
    **Mazo inacabado** y se recuperan con **Continuar editando**. Guardar cambios
@@ -205,7 +210,9 @@ actualizar o borrar un favorito modifica únicamente ese mazo. De esta forma un
 navegador con una vista antigua no reemplaza por accidente el resto de los
 datos. El modo invitado y sus copias de seguridad JSON siguen disponibles sin
 crear una cuenta, pero no permiten utilizar Amigos ni añadir cartas con la
-cámara.
+cámara. El borrador automático del creador es únicamente memoria temporal de la
+interfaz en el dispositivo, separada por cuenta y por mazo; no sustituye a
+Supabase ni modifica un Favorito o Mazo montado hasta pulsar su botón de guardado.
 
 El escáner analiza fotogramas temporales del vídeo localmente: comprueba luz,
 contraste, enfoque y movimiento, y ejecuta OCR cuando la carta está preparada.
