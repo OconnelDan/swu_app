@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Minus, Search } from "lucide-react";
+import { Filter, Minus, RotateCcw, Search } from "lucide-react";
 import { CardDetailsModal } from "@/components/CardDetailsModal";
 import { CardImageThumbnail } from "@/components/CardImageThumbnail";
 import { PaginationControls } from "@/components/PaginationControls";
@@ -10,6 +10,7 @@ import { useFavorites } from "@/hooks/useFavorites";
 import { useSettings } from "@/hooks/useSettings";
 import { computeCardAllocations, getCardLocationStatus } from "@/lib/cardAllocation";
 import { tryGetCardImageUrl } from "@/lib/cardImageUrl";
+import { matchesCardSearchQuery } from "@/lib/cardRulesSearch";
 import { searchCards } from "@/lib/cardSearch";
 import { SwUnlimitedDbCardProvider } from "@/providers/cardProvider/SwUnlimitedDbCardProvider";
 import type { CardInfo } from "@/types/card";
@@ -19,10 +20,96 @@ interface CardCandidate {
   name?: string;
 }
 
+type OwnedFilter = "all" | "owned" | "free";
+type CardTypeFilter = "ground-unit" | "space-unit" | "event" | "upgrade";
+
 const SEARCH_PAGE_SIZE = 30;
+
+const ASPECT_LABELS: Record<string, string> = {
+  Aggression: "Agresividad",
+  Command: "Mando",
+  Cunning: "Astucia",
+  Heroism: "Heroísmo",
+  Vigilance: "Vigilancia",
+  Villainy: "Villanía"
+};
+
+const CARD_TYPE_FILTERS: { value: CardTypeFilter; label: string }[] = [
+  { value: "ground-unit", label: "Unidades terrestres" },
+  { value: "space-unit", label: "Unidades espaciales" },
+  { value: "event", label: "Eventos" },
+  { value: "upgrade", label: "Mejoras" }
+];
+
+const RARITY_LABELS: Record<string, string> = {
+  Common: "Común",
+  Uncommon: "Infrecuente",
+  Rare: "Rara",
+  Legendary: "Legendaria",
+  Special: "Especial"
+};
 
 function displayName(info: CardInfo | undefined, fallback?: string): string {
   return info?.localizedName ?? info?.name ?? fallback ?? "Carta sin nombre en el catálogo";
+}
+
+function toggleSelection<T extends string>(values: T[], value: T): T[] {
+  return values.includes(value) ? values.filter((item) => item !== value) : [...values, value];
+}
+
+function getCardTypeFilter(card: CardInfo): CardTypeFilter | undefined {
+  if (card.type === "Event") return "event";
+  if (card.type === "Upgrade") return "upgrade";
+  if (card.type !== "Unit") return undefined;
+  if (card.arena === "Ground") return "ground-unit";
+  if (card.arena === "Space") return "space-unit";
+  return undefined;
+}
+
+function FilterChip({
+  label,
+  pressed,
+  onClick,
+  title
+}: {
+  label: string;
+  pressed: boolean;
+  onClick: () => void;
+  title?: string;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={pressed}
+      className={`min-h-9 rounded-full border px-3 py-1.5 text-xs transition ${
+        pressed
+          ? "border-saber-blue bg-saber-blue/20 text-saber-blue"
+          : "border-space-600 bg-space-900 text-slate-300"
+      }`}
+      title={title}
+      onClick={onClick}
+    >
+      {label}
+    </button>
+  );
+}
+
+/** Conserva los alias históricos de código y añade la búsqueda avanzada del creador. */
+function matchesFinderSearchQuery(
+  candidate: CardCandidate,
+  card: CardInfo | undefined,
+  query: string
+): boolean {
+  const conditions = query
+    .split("/")
+    .map((condition) => condition.trim())
+    .filter(Boolean);
+
+  return conditions.every((condition) => {
+    if (/^\d+$/.test(condition)) return card?.cost === Number(condition);
+    if (card && matchesCardSearchQuery(card, condition)) return true;
+    return searchCards([candidate], condition).length > 0;
+  });
 }
 
 /** Incluye el catálogo completo y conserva cualquier ID antiguo de colección o mazo. */
@@ -69,6 +156,13 @@ export function CardFinderPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [selectedAspects, setSelectedAspects] = useState<string[]>([]);
+  const [includeColorless, setIncludeColorless] = useState(true);
+  const [selectedTypes, setSelectedTypes] = useState<CardTypeFilter[]>([]);
+  const [selectedSetCodes, setSelectedSetCodes] = useState<string[]>([]);
+  const [selectedRarities, setSelectedRarities] = useState<string[]>([]);
+  const [maximumCost, setMaximumCost] = useState("all");
+  const [ownedFilter, setOwnedFilter] = useState<OwnedFilter>("all");
   const [resultPage, setResultPage] = useState(1);
 
   const collection = useCollection();
@@ -109,12 +203,99 @@ export function CardFinderPage() {
     () => buildCandidates(catalogCards ?? [], collection?.cards ?? [], favorites ?? [], cardInfos),
     [cardInfos, catalogCards, collection?.cards, favorites]
   );
-  const hasQuery = query.trim().length > 0;
-  const results = useMemo(
-    () => (hasQuery ? searchCards(candidates, query) : []),
-    [candidates, hasQuery, query]
+  const setOptions = useMemo(
+    () =>
+      [...new Map((catalogCards ?? []).map((card) => [card.setCode, card.setName])).entries()].sort(
+        ([left], [right]) => left.localeCompare(right)
+      ),
+    [catalogCards]
   );
-  useEffect(() => setResultPage(1), [query]);
+  const rarityOptions = useMemo(
+    () =>
+      [
+        ...new Set((catalogCards ?? []).map((card) => card.rarity).filter(Boolean) as string[])
+      ].sort(
+        (left, right) =>
+          (Object.keys(RARITY_LABELS).indexOf(left) === -1
+            ? Number.MAX_SAFE_INTEGER
+            : Object.keys(RARITY_LABELS).indexOf(left)) -
+            (Object.keys(RARITY_LABELS).indexOf(right) === -1
+              ? Number.MAX_SAFE_INTEGER
+              : Object.keys(RARITY_LABELS).indexOf(right)) || left.localeCompare(right, "es")
+      ),
+    [catalogCards]
+  );
+  const results = useMemo(
+    () =>
+      candidates
+        .filter((candidate) => {
+          const card = cardInfos.get(candidate.cardId);
+          const cardAspects = card?.aspects ?? [];
+
+          if (!includeColorless && cardAspects.length === 0) return false;
+          if (selectedAspects.length > 0) {
+            if (cardAspects.length === 0) {
+              if (!includeColorless) return false;
+            } else if (!cardAspects.some((aspect) => selectedAspects.includes(aspect))) {
+              return false;
+            }
+          }
+          if (
+            selectedTypes.length > 0 &&
+            (!card || !selectedTypes.includes(getCardTypeFilter(card) as CardTypeFilter))
+          ) {
+            return false;
+          }
+          const setCode = card?.setCode ?? candidate.cardId.split("_")[0];
+          if (selectedSetCodes.length > 0 && !selectedSetCodes.includes(setCode)) return false;
+          if (
+            selectedRarities.length > 0 &&
+            (!card?.rarity || !selectedRarities.includes(card.rarity))
+          ) {
+            return false;
+          }
+          if (maximumCost !== "all" && (card?.cost ?? Infinity) > Number(maximumCost)) return false;
+          const allocation = allocations.get(candidate.cardId);
+          if (ownedFilter === "owned" && !allocation?.ownedCount) return false;
+          if (ownedFilter === "free" && !allocation?.freeCount) return false;
+          if (!query.trim()) return true;
+          return matchesFinderSearchQuery(candidate, card, query);
+        })
+        .sort((left, right) => {
+          const leftCard = cardInfos.get(left.cardId);
+          const rightCard = cardInfos.get(right.cardId);
+          return (
+            (leftCard?.cost ?? -1) - (rightCard?.cost ?? -1) ||
+            displayName(leftCard, left.name).localeCompare(displayName(rightCard, right.name), "es")
+          );
+        }),
+    [
+      allocations,
+      candidates,
+      cardInfos,
+      includeColorless,
+      maximumCost,
+      ownedFilter,
+      query,
+      selectedAspects,
+      selectedRarities,
+      selectedSetCodes,
+      selectedTypes
+    ]
+  );
+  useEffect(
+    () => setResultPage(1),
+    [
+      includeColorless,
+      maximumCost,
+      ownedFilter,
+      query,
+      selectedAspects,
+      selectedRarities,
+      selectedSetCodes,
+      selectedTypes
+    ]
+  );
   const resultPageCount = Math.max(1, Math.ceil(results.length / SEARCH_PAGE_SIZE));
   useEffect(() => {
     setResultPage((page) => Math.min(page, resultPageCount));
@@ -123,6 +304,25 @@ export function CardFinderPage() {
   const visibleResults = results.slice(firstResult, firstResult + SEARCH_PAGE_SIZE);
   const selectedInfo = selectedId ? cardInfos.get(selectedId) : undefined;
   const selectedAllocation = selectedId ? allocations.get(selectedId) : undefined;
+
+  const activeFilterCount =
+    (selectedAspects.length > 0 ? 1 : 0) +
+    (!includeColorless ? 1 : 0) +
+    (selectedTypes.length > 0 ? 1 : 0) +
+    (selectedSetCodes.length > 0 ? 1 : 0) +
+    (selectedRarities.length > 0 ? 1 : 0) +
+    (maximumCost !== "all" ? 1 : 0) +
+    (ownedFilter !== "all" ? 1 : 0);
+
+  const resetFilters = () => {
+    setSelectedAspects([]);
+    setIncludeColorless(true);
+    setSelectedTypes([]);
+    setSelectedSetCodes([]);
+    setSelectedRarities([]);
+    setMaximumCost("all");
+    setOwnedFilter("all");
+  };
 
   const handleRemove = async () => {
     if (!selectedId || !selectedAllocation || selectedAllocation.ownedCount <= 0) return;
@@ -166,8 +366,9 @@ export function CardFinderPage() {
       <section className="card space-y-2">
         <h2 className="font-display text-base">Buscar una carta</h2>
         <p className="text-xs text-slate-400">
-          Busca en todo el catálogo oficial. Pulsa una carta para ver dónde está usada y, si la
-          posees, restar una copia de tu colección.
+          Busca en todo el catálogo oficial por nombre, código, texto, rasgo o palabra clave.
+          Combina varias condiciones con <strong>/</strong>; un número aislado representa el coste
+          exacto. Pulsa una carta para consultar su información y gestionar tu copia.
         </p>
         <label htmlFor="card-search" className="sr-only">
           Buscar carta
@@ -181,11 +382,142 @@ export function CardFinderPage() {
             id="card-search"
             type="text"
             className="w-full rounded-lg border border-space-600 bg-space-950 py-2 pl-9 pr-3 text-sm"
-            placeholder="Nombre o código, por ejemplo ASH_001..."
+            placeholder="Busca y combina con / · un número indica el coste"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
           />
         </div>
+
+        <details className="rounded-lg border border-space-700 bg-space-950/50 p-3">
+          <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-semibold">
+            <Filter size={15} /> Filtros
+            {activeFilterCount > 0 && (
+              <span className="rounded-full bg-saber-blue/20 px-2 py-0.5 text-[11px] text-saber-blue">
+                {activeFilterCount} activo(s)
+              </span>
+            )}
+          </summary>
+
+          <div className="mt-4 space-y-5">
+            <fieldset className="space-y-2">
+              <legend className="text-xs font-semibold text-slate-200">Aspectos</legend>
+              <p className="text-[11px] text-slate-400">
+                No hay aspectos automáticos: selecciona los que quieras combinar. Las incoloras se
+                incluyen mientras su filtro esté activo.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <FilterChip
+                  label="Todos los aspectos"
+                  pressed={selectedAspects.length === 0}
+                  onClick={() => setSelectedAspects([])}
+                />
+                {Object.entries(ASPECT_LABELS).map(([value, label]) => (
+                  <FilterChip
+                    key={value}
+                    label={label}
+                    pressed={selectedAspects.includes(value)}
+                    onClick={() => setSelectedAspects((current) => toggleSelection(current, value))}
+                  />
+                ))}
+                <FilterChip
+                  label="Incoloras"
+                  pressed={includeColorless}
+                  onClick={() => setIncludeColorless((current) => !current)}
+                />
+              </div>
+            </fieldset>
+
+            <fieldset className="space-y-2">
+              <legend className="text-xs font-semibold text-slate-200">Tipos</legend>
+              <div className="flex flex-wrap gap-2">
+                <FilterChip
+                  label="Todos los tipos"
+                  pressed={selectedTypes.length === 0}
+                  onClick={() => setSelectedTypes([])}
+                />
+                {CARD_TYPE_FILTERS.map((option) => (
+                  <FilterChip
+                    key={option.value}
+                    label={option.label}
+                    pressed={selectedTypes.includes(option.value)}
+                    onClick={() =>
+                      setSelectedTypes((current) => toggleSelection(current, option.value))
+                    }
+                  />
+                ))}
+              </div>
+            </fieldset>
+
+            <fieldset className="space-y-2">
+              <legend className="text-xs font-semibold text-slate-200">Colecciones</legend>
+              <div className="flex max-h-36 flex-wrap gap-2 overflow-y-auto pr-1">
+                <FilterChip
+                  label="Todas"
+                  pressed={selectedSetCodes.length === 0}
+                  onClick={() => setSelectedSetCodes([])}
+                />
+                {setOptions.map(([code, setName]) => (
+                  <FilterChip
+                    key={code}
+                    label={code}
+                    title={setName ?? code}
+                    pressed={selectedSetCodes.includes(code)}
+                    onClick={() => setSelectedSetCodes((current) => toggleSelection(current, code))}
+                  />
+                ))}
+              </div>
+            </fieldset>
+
+            <fieldset className="space-y-2">
+              <legend className="text-xs font-semibold text-slate-200">Rarezas</legend>
+              <div className="flex flex-wrap gap-2">
+                <FilterChip
+                  label="Todas"
+                  pressed={selectedRarities.length === 0}
+                  onClick={() => setSelectedRarities([])}
+                />
+                {rarityOptions.map((value) => (
+                  <FilterChip
+                    key={value}
+                    label={RARITY_LABELS[value] ?? value}
+                    pressed={selectedRarities.includes(value)}
+                    onClick={() =>
+                      setSelectedRarities((current) => toggleSelection(current, value))
+                    }
+                  />
+                ))}
+              </div>
+            </fieldset>
+
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <select
+                aria-label="Coste máximo"
+                value={maximumCost}
+                onChange={(event) => setMaximumCost(event.target.value)}
+              >
+                <option value="all">Cualquier coste</option>
+                {[0, 1, 2, 3, 4, 5, 6, 7, 8].map((value) => (
+                  <option key={value} value={value}>
+                    Coste máximo {value}
+                  </option>
+                ))}
+              </select>
+              <select
+                aria-label="Disponibilidad en la colección"
+                value={ownedFilter}
+                onChange={(event) => setOwnedFilter(event.target.value as OwnedFilter)}
+              >
+                <option value="all">Poseídas y no poseídas</option>
+                <option value="owned">Solo las que tengo</option>
+                <option value="free">Solo copias libres</option>
+              </select>
+            </div>
+
+            <button type="button" className="btn-secondary w-full" onClick={resetFilters}>
+              <RotateCcw size={14} /> Restablecer filtros
+            </button>
+          </div>
+        </details>
       </section>
 
       {message && (
@@ -199,13 +531,13 @@ export function CardFinderPage() {
         </p>
       )}
 
-      {hasQuery && results.length === 0 && (
+      {results.length === 0 && (
         <p className="card text-center text-sm text-slate-300">
           No se ha encontrado ninguna carta que coincida con tu búsqueda.
         </p>
       )}
 
-      {hasQuery && results.length > 0 && (
+      {results.length > 0 && (
         <p id="card-finder-results" className="scroll-mt-20 text-xs text-slate-400">
           {results.length} resultado(s) · mostrando {firstResult + 1}–
           {firstResult + visibleResults.length}
