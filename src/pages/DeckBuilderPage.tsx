@@ -18,8 +18,15 @@ import { SkeletonLines } from "@/components/Skeleton";
 import { useDataSource } from "@/contexts/DataSourceContext";
 import { useCollection } from "@/hooks/useCollection";
 import { useFavorites } from "@/hooks/useFavorites";
+import { useAuth } from "@/hooks/useAuth";
 import { computeCardAllocations } from "@/lib/cardAllocation";
 import { compareDeckWithCollection } from "@/lib/compareDeckWithCollection";
+import {
+  clearDeckBuilderDraft,
+  loadDeckBuilderDraft,
+  saveDeckBuilderDraft,
+  type DeckBuilderDraft
+} from "@/lib/deckBuilderDraft";
 import {
   buildDeckJson,
   compositionFromNormalizedDeck,
@@ -252,8 +259,14 @@ export function DeckBuilderPage() {
   const { favoriteId } = useParams<{ favoriteId: string }>();
   const collection = useCollection();
   const favorites = useFavorites();
+  const { session, loading: authLoading } = useAuth();
   const { saveFavoriteDeck, updateFavoriteDeck } = useDataSource();
-  const initializedFavoriteId = useRef<string | null>(null);
+  const draftScope = session?.user.id ?? "guest";
+  const draftTargetKey = `${draftScope}:${favoriteId ?? "new"}`;
+  const latestDraftRef = useRef<DeckBuilderDraft | null>(null);
+  const skipNextAutosaveRef = useRef(false);
+  const skipNextPageResetRef = useRef(false);
+  const ignoreDraftWritesRef = useRef(false);
   const [allCards, setAllCards] = useState<CardInfo[] | null>(null);
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const [format, setFormat] = useState<DeckFormat | null>(null);
@@ -275,6 +288,10 @@ export function DeckBuilderPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [detailsCard, setDetailsCard] = useState<CardInfo | null>(null);
+  const [initializedDraftKey, setInitializedDraftKey] = useState<string | null>(null);
+  const [recoveredDraft, setRecoveredDraft] = useState(false);
+  const [autoSavedAt, setAutoSavedAt] = useState<string | null>(null);
+  const [autoSaveError, setAutoSaveError] = useState(false);
   const editingFavorite = favoriteId
     ? favorites?.find((favorite) => favorite.id === favoriteId)
     : undefined;
@@ -310,35 +327,177 @@ export function DeckBuilderPage() {
   }, []);
 
   useEffect(() => {
-    if (!favoriteId || !editingFavorite || initializedFavoriteId.current === favoriteId) return;
+    if (authLoading || favorites === undefined || initializedDraftKey === draftTargetKey) return;
+    if (favoriteId && !editingFavorite) return;
 
-    const saved = compositionFromNormalizedDeck(editingFavorite.normalizedDeck);
-    const savedFormat = saved.format ?? "premier";
-    setFormat(savedFormat);
-    setTrilogyCardPool(saved.trilogyCardPool ?? "premier");
-    setName(saved.name);
-    setDecks(
-      savedFormat === "trilogy"
-        ? (saved.trilogyDecks ?? [emptyDeck("Mazo 1"), emptyDeck("Mazo 2"), emptyDeck("Mazo 3")])
-        : [
-            {
-              name: saved.name,
-              leaderIds: saved.leaderIds ?? [],
-              baseId: saved.baseId,
-              mainCounts: saved.mainCounts,
-              sideboardCounts: saved.sideboardCounts
-            }
-          ]
-    );
-    setActiveDeckIndex(0);
-    setActiveTab("cards");
-    setQuery("");
-    resetFilters();
+    ignoreDraftWritesRef.current = false;
+    const draft = loadDeckBuilderDraft(draftScope, favoriteId);
+    if (draft) {
+      setFormat(draft.format);
+      setTrilogyCardPool(draft.trilogyCardPool);
+      setName(draft.name);
+      setDecks(draft.decks);
+      setActiveDeckIndex(Math.min(draft.activeDeckIndex, draft.decks.length - 1));
+      setActiveTab(draft.activeTab);
+      setQuery(draft.query);
+      setManualAspects(draft.manualAspects);
+      setIncludeColorless(draft.includeColorless);
+      setSelectedTypes(draft.selectedTypes);
+      setSelectedSetCodes(draft.selectedSetCodes);
+      setSelectedRarities(draft.selectedRarities);
+      setMaximumCost(draft.maximumCost);
+      setOwnedFilter(draft.ownedFilter);
+      setCardPage(draft.cardPage);
+      setRecoveredDraft(true);
+      setAutoSavedAt(draft.savedAt);
+      setAutoSaveError(false);
+      latestDraftRef.current = draft;
+      skipNextAutosaveRef.current = true;
+      skipNextPageResetRef.current = true;
+    } else if (editingFavorite) {
+      const saved = compositionFromNormalizedDeck(editingFavorite.normalizedDeck);
+      const savedFormat = saved.format ?? "premier";
+      setFormat(savedFormat);
+      setTrilogyCardPool(saved.trilogyCardPool ?? "premier");
+      setName(saved.name);
+      setDecks(
+        savedFormat === "trilogy"
+          ? (saved.trilogyDecks ?? [emptyDeck("Mazo 1"), emptyDeck("Mazo 2"), emptyDeck("Mazo 3")])
+          : [
+              {
+                name: saved.name,
+                leaderIds: saved.leaderIds ?? [],
+                baseId: saved.baseId,
+                mainCounts: saved.mainCounts,
+                sideboardCounts: saved.sideboardCounts
+              }
+            ]
+      );
+      setActiveDeckIndex(0);
+      setActiveTab("cards");
+      setQuery("");
+      setManualAspects(null);
+      setIncludeColorless(true);
+      setSelectedTypes([]);
+      setSelectedSetCodes([]);
+      setSelectedRarities([]);
+      setMaximumCost("all");
+      setOwnedFilter("all");
+      setCardPage(1);
+      setRecoveredDraft(false);
+      setAutoSavedAt(null);
+      setAutoSaveError(false);
+      latestDraftRef.current = null;
+      skipNextAutosaveRef.current = true;
+      skipNextPageResetRef.current = true;
+    } else {
+      setFormat(null);
+      setChoosingTrilogy(false);
+      setTrilogyCardPool("premier");
+      setName("");
+      setDecks([]);
+      setActiveDeckIndex(0);
+      setActiveTab("leader");
+      setQuery("");
+      setManualAspects(null);
+      setIncludeColorless(true);
+      setSelectedTypes([]);
+      setSelectedSetCodes([]);
+      setSelectedRarities([]);
+      setMaximumCost("all");
+      setOwnedFilter("all");
+      setCardPage(1);
+      setRecoveredDraft(false);
+      setAutoSavedAt(null);
+      setAutoSaveError(false);
+      latestDraftRef.current = null;
+      skipNextAutosaveRef.current = false;
+      skipNextPageResetRef.current = false;
+    }
     setError(null);
-    initializedFavoriteId.current = favoriteId;
-  }, [editingFavorite, favoriteId]);
+    setInitializedDraftKey(draftTargetKey);
+  }, [
+    authLoading,
+    draftScope,
+    draftTargetKey,
+    editingFavorite,
+    favoriteId,
+    favorites,
+    initializedDraftKey
+  ]);
+
+  useEffect(() => {
+    if (initializedDraftKey !== draftTargetKey) return;
+    if (skipNextAutosaveRef.current) {
+      skipNextAutosaveRef.current = false;
+      return;
+    }
+    if (!format || ignoreDraftWritesRef.current) {
+      latestDraftRef.current = null;
+      return;
+    }
+
+    const draft: DeckBuilderDraft = {
+      version: 1,
+      savedAt: new Date().toISOString(),
+      sourceFavoriteUpdatedAt: editingFavorite?.updatedAt,
+      format,
+      trilogyCardPool,
+      name,
+      decks,
+      activeDeckIndex,
+      activeTab,
+      query,
+      manualAspects,
+      includeColorless,
+      selectedTypes,
+      selectedSetCodes,
+      selectedRarities,
+      maximumCost,
+      ownedFilter,
+      cardPage
+    };
+    latestDraftRef.current = draft;
+    if (saveDeckBuilderDraft(draftScope, favoriteId, draft)) {
+      setAutoSavedAt(draft.savedAt);
+      setAutoSaveError(false);
+    } else {
+      setAutoSaveError(true);
+    }
+  }, [
+    activeDeckIndex,
+    activeTab,
+    cardPage,
+    decks,
+    draftScope,
+    draftTargetKey,
+    editingFavorite?.updatedAt,
+    favoriteId,
+    format,
+    includeColorless,
+    initializedDraftKey,
+    manualAspects,
+    maximumCost,
+    name,
+    ownedFilter,
+    query,
+    selectedRarities,
+    selectedSetCodes,
+    selectedTypes,
+    trilogyCardPool
+  ]);
+
+  useEffect(() => {
+    const saveBeforeLeaving = () => {
+      if (!latestDraftRef.current || ignoreDraftWritesRef.current) return;
+      saveDeckBuilderDraft(draftScope, favoriteId, latestDraftRef.current);
+    };
+    window.addEventListener("pagehide", saveBeforeLeaving);
+    return () => window.removeEventListener("pagehide", saveBeforeLeaving);
+  }, [draftScope, favoriteId]);
 
   const initializeFormat = (nextFormat: DeckFormat, pool: TrilogyCardPool = "premier") => {
+    ignoreDraftWritesRef.current = false;
     setFormat(nextFormat);
     setTrilogyCardPool(pool);
     setName(
@@ -370,12 +529,86 @@ export function DeckBuilderPage() {
     if (hasCards && !confirm("Cambiar de formato descartará la composición actual. ¿Continuar?")) {
       return;
     }
+    ignoreDraftWritesRef.current = true;
+    latestDraftRef.current = null;
+    clearDeckBuilderDraft(draftScope, favoriteId);
     setFormat(null);
     setDecks([]);
     setName("");
     setQuery("");
     resetFilters();
     setChoosingTrilogy(false);
+    setRecoveredDraft(false);
+    setAutoSavedAt(null);
+    setAutoSaveError(false);
+    ignoreDraftWritesRef.current = false;
+  };
+
+  const discardRecoveredDraft = () => {
+    if (!confirm("Se descartarán los cambios recuperados y no se podrán deshacer. ¿Continuar?")) {
+      return;
+    }
+
+    ignoreDraftWritesRef.current = true;
+    latestDraftRef.current = null;
+    clearDeckBuilderDraft(draftScope, favoriteId);
+    setRecoveredDraft(false);
+    setAutoSavedAt(null);
+    setAutoSaveError(false);
+    setError(null);
+
+    if (editingFavorite) {
+      const saved = compositionFromNormalizedDeck(editingFavorite.normalizedDeck);
+      const savedFormat = saved.format ?? "premier";
+      setFormat(savedFormat);
+      setTrilogyCardPool(saved.trilogyCardPool ?? "premier");
+      setName(saved.name);
+      setDecks(
+        savedFormat === "trilogy"
+          ? (saved.trilogyDecks ?? [emptyDeck("Mazo 1"), emptyDeck("Mazo 2"), emptyDeck("Mazo 3")])
+          : [
+              {
+                name: saved.name,
+                leaderIds: saved.leaderIds ?? [],
+                baseId: saved.baseId,
+                mainCounts: saved.mainCounts,
+                sideboardCounts: saved.sideboardCounts
+              }
+            ]
+      );
+      setActiveDeckIndex(0);
+      setActiveTab("cards");
+      setQuery("");
+      setManualAspects(null);
+      setIncludeColorless(true);
+      setSelectedTypes([]);
+      setSelectedSetCodes([]);
+      setSelectedRarities([]);
+      setMaximumCost("all");
+      setOwnedFilter("all");
+      setCardPage(1);
+      skipNextAutosaveRef.current = true;
+      skipNextPageResetRef.current = true;
+    } else {
+      setFormat(null);
+      setChoosingTrilogy(false);
+      setTrilogyCardPool("premier");
+      setName("");
+      setDecks([]);
+      setActiveDeckIndex(0);
+      setActiveTab("leader");
+      setQuery("");
+      setManualAspects(null);
+      setIncludeColorless(true);
+      setSelectedTypes([]);
+      setSelectedSetCodes([]);
+      setSelectedRarities([]);
+      setMaximumCost("all");
+      setOwnedFilter("all");
+      setCardPage(1);
+    }
+
+    ignoreDraftWritesRef.current = false;
   };
 
   const cardsById = useMemo(
@@ -552,11 +785,18 @@ export function DeckBuilderPage() {
   ]);
 
   useEffect(() => {
+    if (initializedDraftKey !== draftTargetKey) return;
+    if (skipNextPageResetRef.current) {
+      skipNextPageResetRef.current = false;
+      return;
+    }
     setCardPage(1);
   }, [
     activeDeckIndex,
     activeTab,
+    draftTargetKey,
     includeColorless,
+    initializedDraftKey,
     manualAspects,
     maximumCost,
     ownedFilter,
@@ -652,6 +892,9 @@ export function DeckBuilderPage() {
       );
       if (favoriteId) await updateFavoriteDeck(favoriteId, normalizedDeck, result);
       else await saveFavoriteDeck(normalizedDeck, result);
+      ignoreDraftWritesRef.current = true;
+      latestDraftRef.current = null;
+      clearDeckBuilderDraft(draftScope, favoriteId);
       navigate(editingFavorite?.isMounted ? "/montados" : "/favoritos");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "No se ha podido guardar el mazo.");
@@ -668,7 +911,7 @@ export function DeckBuilderPage() {
       </p>
     );
   }
-  if (favoriteId && initializedFavoriteId.current !== favoriteId) {
+  if (authLoading || initializedDraftKey !== draftTargetKey) {
     return <SkeletonLines count={7} />;
   }
   if (!format) {
@@ -722,6 +965,42 @@ export function DeckBuilderPage() {
           <RotateCcw size={14} /> Cambiar
         </button>
       </header>
+
+      {recoveredDraft && (
+        <section
+          role="status"
+          className="card flex flex-col gap-3 border-saber-green/50 text-sm sm:flex-row sm:items-center sm:justify-between"
+        >
+          <div>
+            <p className="font-semibold text-saber-green">Borrador automático recuperado</p>
+            <p className="mt-1 text-xs text-slate-400">
+              Hemos restaurado los cambios que estaban sin guardar en este dispositivo.
+            </p>
+          </div>
+          <button type="button" className="btn-secondary shrink-0" onClick={discardRecoveredDraft}>
+            Descartar cambios recuperados
+          </button>
+        </section>
+      )}
+
+      {autoSavedAt && (
+        <p className="text-right text-[11px] text-slate-500" aria-live="polite">
+          Borrador automático guardado en este dispositivo a las{" "}
+          {new Date(autoSavedAt).toLocaleTimeString("es-ES", {
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit"
+          })}
+          .
+        </p>
+      )}
+
+      {autoSaveError && (
+        <p role="alert" className="card border-saber-yellow/50 text-xs text-saber-yellow">
+          El navegador no ha permitido actualizar el borrador automático. Guarda el mazo en
+          Favoritos antes de salir de esta pantalla.
+        </p>
+      )}
 
       <section className="card space-y-2">
         <label htmlFor="deck-name" className="text-sm font-semibold">
