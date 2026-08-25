@@ -3,10 +3,15 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DataSourceContext, type DataSourceValue } from "@/contexts/DataSourceContext";
 import { DeckBuilderPage } from "@/pages/DeckBuilderPage";
+import { loadDeckBuilderDraft } from "@/lib/deckBuilderDraft";
 import { normalizeDeckJson } from "@/lib/normalizeDeckJson";
 import { SwUnlimitedDbCardProvider } from "@/providers/cardProvider/SwUnlimitedDbCardProvider";
 import type { CardInfo } from "@/types/card";
 import type { NormalizedDeck } from "@/types/deck";
+
+vi.mock("@/hooks/useAuth", () => ({
+  useAuth: () => ({ session: null, loading: false })
+}));
 
 const catalogCards: CardInfo[] = [
   {
@@ -194,7 +199,7 @@ function dataSource(overrides: Partial<DataSourceValue> = {}): DataSourceValue {
 }
 
 function renderBuilder(overrides: Partial<DataSourceValue> = {}) {
-  render(
+  return render(
     <DataSourceContext.Provider value={dataSource(overrides)}>
       <MemoryRouter>
         <DeckBuilderPage />
@@ -217,6 +222,7 @@ async function choosePremierLeaderAndBase() {
 }
 
 beforeEach(() => {
+  localStorage.clear();
   vi.spyOn(SwUnlimitedDbCardProvider.prototype, "getAllCards").mockResolvedValue(catalogCards);
 });
 
@@ -225,6 +231,121 @@ afterEach(() => {
 });
 
 describe("constructor por formatos", () => {
+  it("recupera automáticamente todos los cambios tras abandonar el creador", async () => {
+    const firstRender = renderBuilder();
+    await choosePremierLeaderAndBase();
+
+    fireEvent.change(screen.getByLabelText("Nombre del mazo"), {
+      target: { value: "Mazo protegido automáticamente" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Añadir Unidad de vigilancia al mazo" }));
+    fireEvent.click(screen.getByRole("button", { name: "Añadir Unidad incolora al banquillo" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Buscar en el catálogo" }), {
+      target: { value: "centinela / 2" }
+    });
+    fireEvent.click(screen.getByText("Filtros"));
+    fireEvent.click(screen.getByRole("button", { name: "Vigilancia" }));
+    fireEvent.click(screen.getByRole("button", { name: "Incoloras" }));
+
+    expect(
+      await screen.findByText(/Borrador automático guardado en este dispositivo/i)
+    ).toBeInTheDocument();
+    firstRender.unmount();
+
+    renderBuilder();
+
+    expect(await screen.findByText("Crear mazo · Premier")).toBeInTheDocument();
+    expect(screen.getByText("Borrador automático recuperado")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("Mazo protegido automáticamente")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "3. Cartas 1/50" })).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Buscar en el catálogo" })).toHaveValue(
+      "centinela / 2"
+    );
+    fireEvent.click(screen.getByText("Filtros"));
+    expect(screen.getByRole("button", { name: "Vigilancia" })).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    );
+    expect(screen.getByRole("button", { name: "Incoloras" })).toHaveAttribute(
+      "aria-pressed",
+      "false"
+    );
+    expect(screen.getByText("1/10")).toBeInTheDocument();
+
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    fireEvent.click(screen.getByRole("button", { name: "Descartar cambios recuperados" }));
+    expect(screen.getByText("Elige el formato del nuevo mazo")).toBeInTheDocument();
+    expect(loadDeckBuilderDraft("guest")).toBeUndefined();
+  });
+
+  it("elimina la memoria temporal cuando el guardado definitivo termina correctamente", async () => {
+    const saveFavoriteDeck = vi.fn().mockResolvedValue(undefined);
+    renderBuilder({ saveFavoriteDeck });
+
+    fireEvent.click(screen.getByRole("button", { name: /Premier/ }));
+    expect(await screen.findByText("Crear mazo · Premier")).toBeInTheDocument();
+    await waitFor(() => expect(loadDeckBuilderDraft("guest")).toBeDefined());
+
+    fireEvent.click(screen.getByRole("button", { name: "Guardar borrador en Favoritos" }));
+    await waitFor(() => expect(saveFavoriteDeck).toHaveBeenCalledTimes(1));
+    expect(loadDeckBuilderDraft("guest")).toBeUndefined();
+  });
+
+  it("mantiene aparte los cambios sin guardar al editar un favorito existente", async () => {
+    const normalizedDeck = normalizeDeckJson({
+      metadata: { name: "Favorito original", format: "Premier" },
+      leader: { id: "SEC_001", count: 1 },
+      base: { id: "SEC_020", count: 1 },
+      deck: [{ id: "SEC_101", count: 1 }]
+    });
+    const favorite = {
+      id: "favorite-autosave",
+      name: normalizedDeck.name,
+      originalJson: normalizedDeck.originalJson,
+      normalizedDeck,
+      createdAt: "2026-08-25T07:00:00.000Z",
+      updatedAt: "2026-08-25T07:00:00.000Z",
+      isMounted: false
+    };
+
+    const firstRender = render(
+      <DataSourceContext.Provider value={dataSource({ favorites: [favorite] })}>
+        <MemoryRouter initialEntries={["/mazos/editar/favorite-autosave"]}>
+          <Routes>
+            <Route path="/mazos/editar/:favoriteId" element={<DeckBuilderPage />} />
+          </Routes>
+        </MemoryRouter>
+      </DataSourceContext.Provider>
+    );
+
+    expect(await screen.findByText("Editar mazo · Premier")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Restar Unidad de vigilancia del mazo" }));
+    fireEvent.change(screen.getByLabelText("Nombre del mazo"), {
+      target: { value: "Favorito todavía sin guardar" }
+    });
+    await waitFor(() =>
+      expect(loadDeckBuilderDraft("guest", "favorite-autosave")?.name).toBe(
+        "Favorito todavía sin guardar"
+      )
+    );
+    firstRender.unmount();
+
+    render(
+      <DataSourceContext.Provider value={dataSource({ favorites: [favorite] })}>
+        <MemoryRouter initialEntries={["/mazos/editar/favorite-autosave"]}>
+          <Routes>
+            <Route path="/mazos/editar/:favoriteId" element={<DeckBuilderPage />} />
+          </Routes>
+        </MemoryRouter>
+      </DataSourceContext.Provider>
+    );
+
+    expect(await screen.findByText("Borrador automático recuperado")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("Favorito todavía sin guardar")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "3. Cartas 0/50" })).toBeInTheDocument();
+    expect(favorite.normalizedDeck.mainDeck).toHaveLength(1);
+  });
+
   it("guarda un borrador aunque todavía no alcance el mínimo del formato", async () => {
     const saveFavoriteDeck = vi.fn().mockResolvedValue(undefined);
     renderBuilder({ saveFavoriteDeck });
