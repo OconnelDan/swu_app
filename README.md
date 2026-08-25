@@ -84,9 +84,13 @@ Abre `http://localhost:5173`.
    se cierra manualmente y no modifica la composición del mazo. Cada cambio se
    conserva además en un borrador automático del dispositivo: si recargas la
    PWA o navegas accidentalmente a otra sección, al volver se restauran formato,
-   nombre, líderes, base, mazos, banquillos, pestaña, búsqueda, filtros y página.
-   El aviso de recuperación permite descartar expresamente esa memoria y empezar
-   de nuevo. El borrador temporal desaparece después de guardar correctamente.
+   nombre, líderes, base, mazos, banquillos, pestaña, búsqueda, filtros, página y
+   posición de desplazamiento. Mientras exista un trabajo en curso, el acceso
+   inferior **Mazos** vuelve directamente al editor y los listados muestran
+   **Continuar mazo en curso**. **Salir al listado de mazos** permite consultar
+   Favoritos o Montados sin eliminarlo. El aviso de recuperación permite descartar
+   expresamente esa memoria y empezar de nuevo. El borrador temporal desaparece
+   después de guardar correctamente.
 5. **Mazos → Favoritos**: puedes guardar el trabajo en cualquier momento aunque
    todavía falten líderes, base o cartas. Los borradores muestran el aviso
    **Mazo inacabado** y se recuperan con **Continuar editando**. Guardar cambios
@@ -213,6 +217,8 @@ crear una cuenta, pero no permiten utilizar Amigos ni añadir cartas con la
 cámara. El borrador automático del creador es únicamente memoria temporal de la
 interfaz en el dispositivo, separada por cuenta y por mazo; no sustituye a
 Supabase ni modifica un Favorito o Mazo montado hasta pulsar su botón de guardado.
+La aplicación conserva además cuál fue el último editor activo para que la
+navegación principal pueda regresar a él sin confundirlo con un mazo ya guardado.
 
 El escáner analiza fotogramas temporales del vídeo localmente: comprueba luz,
 contraste, enfoque y movimiento, y ejecuta OCR cuando la carta está preparada.

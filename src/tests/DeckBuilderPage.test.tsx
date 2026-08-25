@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { Link, MemoryRouter, Route, Routes, useNavigate } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DataSourceContext, type DataSourceValue } from "@/contexts/DataSourceContext";
 import { DeckBuilderPage } from "@/pages/DeckBuilderPage";
@@ -208,6 +208,18 @@ function renderBuilder(overrides: Partial<DataSourceValue> = {}) {
   );
 }
 
+function SearchDuringDeckTest() {
+  const navigate = useNavigate();
+  return (
+    <div>
+      <p>Buscar durante la edición</p>
+      <button type="button" onClick={() => navigate(-1)}>
+        Volver al creador
+      </button>
+    </div>
+  );
+}
+
 async function choosePremierLeaderAndBase() {
   fireEvent.click(screen.getByRole("button", { name: /Premier/ }));
   expect(await screen.findByText("Crear mazo · Premier")).toBeInTheDocument();
@@ -223,6 +235,8 @@ async function choosePremierLeaderAndBase() {
 
 beforeEach(() => {
   localStorage.clear();
+  Object.defineProperty(window, "scrollY", { configurable: true, value: 0, writable: true });
+  vi.spyOn(window, "scrollTo").mockImplementation(() => undefined);
   vi.spyOn(SwUnlimitedDbCardProvider.prototype, "getAllCards").mockResolvedValue(catalogCards);
 });
 
@@ -231,6 +245,52 @@ afterEach(() => {
 });
 
 describe("constructor por formatos", () => {
+  it("continúa exactamente el mazo al ir a Buscar y volver", async () => {
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+      callback(0);
+      return 1;
+    });
+    vi.spyOn(window, "cancelAnimationFrame").mockImplementation(() => undefined);
+
+    render(
+      <DataSourceContext.Provider value={dataSource()}>
+        <MemoryRouter initialEntries={["/mazos/crear"]}>
+          <Routes>
+            <Route
+              path="/mazos/crear"
+              element={
+                <>
+                  <Link to="/buscar">Abrir Buscar durante la edición</Link>
+                  <DeckBuilderPage />
+                </>
+              }
+            />
+            <Route path="/buscar" element={<SearchDuringDeckTest />} />
+          </Routes>
+        </MemoryRouter>
+      </DataSourceContext.Provider>
+    );
+
+    await choosePremierLeaderAndBase();
+    fireEvent.change(screen.getByLabelText("Nombre del mazo"), {
+      target: { value: "Mazo que vuelve desde Buscar" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Añadir Unidad de vigilancia al mazo" }));
+    Object.defineProperty(window, "scrollY", { configurable: true, value: 640, writable: true });
+
+    fireEvent.click(screen.getByRole("link", { name: "Abrir Buscar durante la edición" }));
+    expect(await screen.findByText("Buscar durante la edición")).toBeInTheDocument();
+    expect(loadDeckBuilderDraft("guest")?.scrollY).toBe(640);
+
+    Object.defineProperty(window, "scrollY", { configurable: true, value: 0, writable: true });
+    fireEvent.click(screen.getByRole("button", { name: "Volver al creador" }));
+
+    expect(await screen.findByText("Borrador automático recuperado")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("Mazo que vuelve desde Buscar")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "3. Cartas 1/50" })).toBeInTheDocument();
+    await waitFor(() => expect(window.scrollTo).toHaveBeenCalledWith({ top: 640 }));
+  });
+
   it("recupera automáticamente todos los cambios tras abandonar el creador", async () => {
     const firstRender = renderBuilder();
     await choosePremierLeaderAndBase();

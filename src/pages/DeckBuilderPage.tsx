@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   AlertTriangle,
@@ -227,7 +227,7 @@ function FormatChoice({
   return (
     <div className="space-y-4">
       <Link to="/favoritos" className="inline-flex items-center gap-1 text-xs text-slate-400">
-        <ArrowLeft size={14} /> Volver a Mazos
+        <ArrowLeft size={14} /> Salir al listado de mazos
       </Link>
       <section className="card space-y-2">
         <h1 className="font-display text-xl">Elige el formato del nuevo mazo</h1>
@@ -264,6 +264,8 @@ export function DeckBuilderPage() {
   const draftScope = session?.user.id ?? "guest";
   const draftTargetKey = `${draftScope}:${favoriteId ?? "new"}`;
   const latestDraftRef = useRef<DeckBuilderDraft | null>(null);
+  const currentDraftStateRef = useRef<DeckBuilderDraft | null>(null);
+  const pendingScrollRestoreRef = useRef<number | null>(null);
   const skipNextAutosaveRef = useRef(false);
   const skipNextPageResetRef = useRef(false);
   const ignoreDraftWritesRef = useRef(false);
@@ -352,6 +354,8 @@ export function DeckBuilderPage() {
       setAutoSavedAt(draft.savedAt);
       setAutoSaveError(false);
       latestDraftRef.current = draft;
+      pendingScrollRestoreRef.current = draft.scrollY;
+      if (!saveDeckBuilderDraft(draftScope, favoriteId, draft)) setAutoSaveError(true);
       skipNextAutosaveRef.current = true;
       skipNextPageResetRef.current = true;
     } else if (editingFavorite) {
@@ -388,6 +392,7 @@ export function DeckBuilderPage() {
       setAutoSavedAt(null);
       setAutoSaveError(false);
       latestDraftRef.current = null;
+      pendingScrollRestoreRef.current = null;
       skipNextAutosaveRef.current = true;
       skipNextPageResetRef.current = true;
     } else {
@@ -411,6 +416,7 @@ export function DeckBuilderPage() {
       setAutoSavedAt(null);
       setAutoSaveError(false);
       latestDraftRef.current = null;
+      pendingScrollRestoreRef.current = null;
       skipNextAutosaveRef.current = false;
       skipNextPageResetRef.current = false;
     }
@@ -424,6 +430,54 @@ export function DeckBuilderPage() {
     favoriteId,
     favorites,
     initializedDraftKey
+  ]);
+
+  useLayoutEffect(() => {
+    if (initializedDraftKey !== draftTargetKey || !format || ignoreDraftWritesRef.current) {
+      currentDraftStateRef.current = null;
+      return;
+    }
+
+    currentDraftStateRef.current = {
+      version: 1,
+      savedAt: latestDraftRef.current?.savedAt ?? new Date().toISOString(),
+      sourceFavoriteUpdatedAt: editingFavorite?.updatedAt,
+      format,
+      trilogyCardPool,
+      name,
+      decks,
+      activeDeckIndex,
+      activeTab,
+      query,
+      manualAspects,
+      includeColorless,
+      selectedTypes,
+      selectedSetCodes,
+      selectedRarities,
+      maximumCost,
+      ownedFilter,
+      cardPage,
+      scrollY: window.scrollY
+    };
+  }, [
+    activeDeckIndex,
+    activeTab,
+    cardPage,
+    decks,
+    draftTargetKey,
+    editingFavorite?.updatedAt,
+    format,
+    includeColorless,
+    initializedDraftKey,
+    manualAspects,
+    maximumCost,
+    name,
+    ownedFilter,
+    query,
+    selectedRarities,
+    selectedSetCodes,
+    selectedTypes,
+    trilogyCardPool
   ]);
 
   useEffect(() => {
@@ -455,7 +509,8 @@ export function DeckBuilderPage() {
       selectedRarities,
       maximumCost,
       ownedFilter,
-      cardPage
+      cardPage,
+      scrollY: window.scrollY
     };
     latestDraftRef.current = draft;
     if (saveDeckBuilderDraft(draftScope, favoriteId, draft)) {
@@ -489,12 +544,45 @@ export function DeckBuilderPage() {
 
   useEffect(() => {
     const saveBeforeLeaving = () => {
-      if (!latestDraftRef.current || ignoreDraftWritesRef.current) return;
-      saveDeckBuilderDraft(draftScope, favoriteId, latestDraftRef.current);
+      if (!currentDraftStateRef.current || ignoreDraftWritesRef.current) return;
+      const draft = {
+        ...currentDraftStateRef.current,
+        savedAt: new Date().toISOString(),
+        scrollY: pendingScrollRestoreRef.current ?? window.scrollY
+      };
+      latestDraftRef.current = draft;
+      saveDeckBuilderDraft(draftScope, favoriteId, draft);
     };
     window.addEventListener("pagehide", saveBeforeLeaving);
-    return () => window.removeEventListener("pagehide", saveBeforeLeaving);
+    return () => {
+      window.removeEventListener("pagehide", saveBeforeLeaving);
+      saveBeforeLeaving();
+    };
   }, [draftScope, favoriteId]);
+
+  useEffect(() => {
+    if (
+      initializedDraftKey !== draftTargetKey ||
+      pendingScrollRestoreRef.current === null ||
+      !format ||
+      allCards === null
+    ) {
+      return;
+    }
+
+    const scrollY = pendingScrollRestoreRef.current;
+    let secondFrame = 0;
+    const firstFrame = window.requestAnimationFrame(() => {
+      secondFrame = window.requestAnimationFrame(() => {
+        window.scrollTo({ top: scrollY });
+        pendingScrollRestoreRef.current = null;
+      });
+    });
+    return () => {
+      window.cancelAnimationFrame(firstFrame);
+      if (secondFrame) window.cancelAnimationFrame(secondFrame);
+    };
+  }, [allCards, draftTargetKey, format, initializedDraftKey]);
 
   const initializeFormat = (nextFormat: DeckFormat, pool: TrilogyCardPool = "premier") => {
     ignoreDraftWritesRef.current = false;
@@ -531,6 +619,8 @@ export function DeckBuilderPage() {
     }
     ignoreDraftWritesRef.current = true;
     latestDraftRef.current = null;
+    currentDraftStateRef.current = null;
+    pendingScrollRestoreRef.current = null;
     clearDeckBuilderDraft(draftScope, favoriteId);
     setFormat(null);
     setDecks([]);
@@ -551,6 +641,8 @@ export function DeckBuilderPage() {
 
     ignoreDraftWritesRef.current = true;
     latestDraftRef.current = null;
+    currentDraftStateRef.current = null;
+    pendingScrollRestoreRef.current = null;
     clearDeckBuilderDraft(draftScope, favoriteId);
     setRecoveredDraft(false);
     setAutoSavedAt(null);
@@ -894,6 +986,7 @@ export function DeckBuilderPage() {
       else await saveFavoriteDeck(normalizedDeck, result);
       ignoreDraftWritesRef.current = true;
       latestDraftRef.current = null;
+      currentDraftStateRef.current = null;
       clearDeckBuilderDraft(draftScope, favoriteId);
       navigate(editingFavorite?.isMounted ? "/montados" : "/favoritos");
     } catch (cause) {
@@ -950,7 +1043,7 @@ export function DeckBuilderPage() {
             to={editingFavorite?.isMounted ? "/montados" : "/favoritos"}
             className="mb-2 inline-flex items-center gap-1 text-xs text-slate-400"
           >
-            <ArrowLeft size={14} /> Volver a Mazos
+            <ArrowLeft size={14} /> Salir al listado de mazos
           </Link>
           <h1 className="font-display text-lg">
             {favoriteId ? "Editar mazo" : "Crear mazo"} · {formatLabel}

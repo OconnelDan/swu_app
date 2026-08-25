@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import type { Session } from "@supabase/supabase-js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -30,6 +30,30 @@ vi.mock("@/lib/auth", async (importOriginal) => {
 vi.mock("@/components/OfflineBanner", () => ({ OfflineBanner: () => null }));
 
 import { Layout } from "@/components/Layout";
+import { saveDeckBuilderDraft, type DeckBuilderDraft } from "@/lib/deckBuilderDraft";
+
+function activeDraft(): DeckBuilderDraft {
+  return {
+    version: 1,
+    savedAt: "2026-08-25T08:00:00.000Z",
+    format: "premier",
+    trilogyCardPool: "premier",
+    name: "Mazo de navegación",
+    decks: [{ mainCounts: {}, sideboardCounts: {} }],
+    activeDeckIndex: 0,
+    activeTab: "cards",
+    query: "",
+    manualAspects: null,
+    includeColorless: true,
+    selectedTypes: [],
+    selectedSetCodes: [],
+    selectedRarities: [],
+    maximumCost: "all",
+    ownedFilter: "all",
+    cardPage: 1,
+    scrollY: 450
+  };
+}
 
 function accountSession(): Session {
   return {
@@ -52,6 +76,7 @@ function renderLayout() {
 
 describe("acceso desde la cabecera", () => {
   beforeEach(() => {
+    localStorage.clear();
     mocks.auth.session = null;
     mocks.signOutCurrentSession.mockReset().mockResolvedValue(undefined);
   });
@@ -81,5 +106,36 @@ describe("acceso desde la cabecera", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Cerrar sesión" }));
     await waitFor(() => expect(mocks.signOutCurrentSession).toHaveBeenCalledTimes(1));
+  });
+
+  it("convierte Mazos en un acceso directo al editor cuando hay un borrador activo", async () => {
+    renderLayout();
+    expect(screen.getByRole("link", { name: "Mazos" })).toHaveAttribute("href", "/favoritos");
+
+    act(() => {
+      saveDeckBuilderDraft("guest", undefined, activeDraft());
+    });
+
+    expect(
+      await screen.findByRole("link", { name: "Mazos, continuar Mazo de navegación" })
+    ).toHaveAttribute("href", "/mazos/crear");
+  });
+
+  it("vuelve desde Buscar al mazo en curso al pulsar la navegación Mazos", async () => {
+    saveDeckBuilderDraft("guest", undefined, activeDraft());
+    render(
+      <MemoryRouter initialEntries={["/buscar"]}>
+        <Routes>
+          <Route element={<Layout />}>
+            <Route path="buscar" element={<p>Página Buscar</p>} />
+            <Route path="mazos/crear" element={<p>Editor del mazo recuperado</p>} />
+          </Route>
+        </Routes>
+      </MemoryRouter>
+    );
+
+    expect(screen.getByText("Página Buscar")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("link", { name: "Mazos, continuar Mazo de navegación" }));
+    expect(await screen.findByText("Editor del mazo recuperado")).toBeInTheDocument();
   });
 });

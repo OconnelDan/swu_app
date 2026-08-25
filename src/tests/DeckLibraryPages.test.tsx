@@ -1,9 +1,10 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DataSourceContext, type DataSourceValue } from "@/contexts/DataSourceContext";
 import { compareDeckWithCollection } from "@/lib/compareDeckWithCollection";
 import { normalizeDeckJson } from "@/lib/normalizeDeckJson";
+import { saveDeckBuilderDraft } from "@/lib/deckBuilderDraft";
 import { FavoritesPage } from "@/pages/FavoritesPage";
 import { MountedDecksPage } from "@/pages/MountedDecksPage";
 import { ResultPage } from "@/pages/ResultPage";
@@ -118,6 +119,10 @@ const collection: CollectionCard[] = [
   }
 ];
 
+beforeEach(() => {
+  localStorage.clear();
+});
+
 afterEach(() => {
   deckLegalityMock.invalidDeckIds.clear();
   deckLegalityMock.incompleteDeckIds.clear();
@@ -125,6 +130,47 @@ afterEach(() => {
 });
 
 describe("Favoritos y mazos montados", () => {
+  it("ofrece continuar el mazo temporal desde el listado", async () => {
+    saveDeckBuilderDraft("guest", undefined, {
+      version: 1,
+      savedAt: "2026-08-25T08:00:00.000Z",
+      format: "twin-suns",
+      trilogyCardPool: "premier",
+      name: "Twin Suns temporal",
+      decks: [{ mainCounts: {}, sideboardCounts: {} }],
+      activeDeckIndex: 0,
+      activeTab: "cards",
+      query: "rebelde",
+      manualAspects: null,
+      includeColorless: true,
+      selectedTypes: [],
+      selectedSetCodes: [],
+      selectedRarities: [],
+      maximumCost: "all",
+      ownedFilter: "all",
+      cardPage: 1,
+      scrollY: 320
+    });
+
+    render(
+      <DataSourceContext.Provider value={dataSource([], collection)}>
+        <MemoryRouter initialEntries={["/favoritos"]}>
+          <Routes>
+            <Route path="/favoritos" element={<FavoritesPage onOpenResult={vi.fn()} />} />
+            <Route path="/mazos/crear" element={<p>Constructor temporal recuperado</p>} />
+          </Routes>
+        </MemoryRouter>
+      </DataSourceContext.Provider>
+    );
+
+    const continueLink = screen.getByRole("link", {
+      name: "Continuar mazo en curso: Twin Suns temporal"
+    });
+    expect(continueLink).toHaveAttribute("href", "/mazos/crear");
+    fireEvent.click(continueLink);
+    expect(await screen.findByText("Constructor temporal recuperado")).toBeInTheDocument();
+  });
+
   it("marca un borrador como inacabado y permite continuar editándolo", async () => {
     const draft = savedDeck("draft", "Twin Suns en proceso", 10, false, undefined, "Twin Suns");
     deckLegalityMock.incompleteDeckIds.add(draft.id);

@@ -20,18 +20,19 @@ import {
 } from "lucide-react";
 import { useDataSource } from "@/contexts/DataSourceContext";
 import { useAuth } from "@/hooks/useAuth";
+import { useActiveDeckBuilderDraft } from "@/hooks/useActiveDeckBuilderDraft";
 import { getAuthErrorMessage, signOutCurrentSession } from "@/lib/auth";
 import { isSupabaseConfigured } from "@/lib/supabaseClient";
 import { OfflineBanner } from "./OfflineBanner";
 
 const NAV_ITEMS = [
-  { to: "/", label: "Inicio", icon: Home },
-  { to: "/importar", label: "Colección", icon: Upload },
-  { to: "/comprobar", label: "Comprobar", icon: ClipboardCheck },
-  { to: "/favoritos", label: "Mazos", icon: Star },
-  { to: "/buscar", label: "Buscar", icon: Search },
-  { to: "/amigos", label: "Amigos", icon: Users },
-  { to: "/ajustes", label: "Ajustes", icon: Settings }
+  { id: "home", to: "/", label: "Inicio", icon: Home },
+  { id: "collection", to: "/importar", label: "Colección", icon: Upload },
+  { id: "check", to: "/comprobar", label: "Comprobar", icon: ClipboardCheck },
+  { id: "decks", to: "/favoritos", label: "Mazos", icon: Star },
+  { id: "search", to: "/buscar", label: "Buscar", icon: Search },
+  { id: "friends", to: "/amigos", label: "Amigos", icon: Users },
+  { id: "settings", to: "/ajustes", label: "Ajustes", icon: Settings }
 ];
 
 export function Layout() {
@@ -41,6 +42,11 @@ export function Layout() {
   const [signingOut, setSigningOut] = useState(false);
   const [signOutError, setSignOutError] = useState<string | null>(null);
   const location = useLocation();
+  const draftScope = session?.user.id ?? "guest";
+  const activeDeckDraft = useActiveDeckBuilderDraft(draftScope);
+  const navigationItems = NAV_ITEMS.map((item) =>
+    item.id === "decks" && activeDeckDraft ? { ...item, to: activeDeckDraft.path } : item
+  );
 
   const closeAccountMenu = () => accountMenu.current?.removeAttribute("open");
 
@@ -174,17 +180,29 @@ export function Layout() {
         className="fixed inset-x-0 bottom-0 z-20 border-t border-space-700 bg-space-900/95 backdrop-blur"
       >
         <ul className="mx-auto flex max-w-3xl justify-between px-2">
-          {NAV_ITEMS.map(({ to, label, icon: Icon }) => (
-            <li key={to} className="flex-1">
+          {navigationItems.map(({ id, to, label, icon: Icon }) => (
+            <li key={id} className="flex-1">
               <NavLink
                 to={to}
                 end={to === "/"}
+                aria-label={
+                  id === "decks" && activeDeckDraft
+                    ? `Mazos, continuar ${activeDeckDraft.name || "mazo en curso"}`
+                    : label
+                }
+                title={
+                  id === "decks" && activeDeckDraft
+                    ? `Continuar ${activeDeckDraft.name || "mazo en curso"}`
+                    : undefined
+                }
                 className={({ isActive }) => {
                   const isDecksSection =
-                    to === "/favoritos" &&
-                    (location.pathname === "/montados" || location.pathname.startsWith("/mazos/"));
+                    id === "decks" &&
+                    (location.pathname === "/favoritos" ||
+                      location.pathname === "/montados" ||
+                      location.pathname.startsWith("/mazos/"));
                   const isCollectionSection =
-                    to === "/importar" && location.pathname === "/escanear";
+                    id === "collection" && location.pathname === "/escanear";
                   return `flex min-h-[56px] flex-col items-center justify-center gap-1 text-xs font-medium ${
                     isActive || isDecksSection || isCollectionSection
                       ? "text-saber-blue"
