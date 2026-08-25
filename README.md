@@ -71,7 +71,8 @@ Abre `http://localhost:5173`.
 3. **Resultado**: verás qué cartas te faltan, con opción de ver todas o solo
    las faltantes, copiar la lista, descargarla en TXT o CSV y guardar el mazo
    como favorito. Si ya está guardado, también puedes **Montar mazo** sin salir
-   del resultado. Se muestran imágenes si el catálogo de cartas está activo.
+   del resultado. Al pulsar una miniatura se abre la misma ficha informativa
+   persistente del resto de la app, sin controles para modificar la colección.
 4. **Mazos → Crear mazo**: construye listas Premier, Eternal, Twin Suns o
    Trilogy eligiendo sus líderes, bases, mazos principales y banquillos cuando
    correspondan. Puedes filtrar por aspectos, tipo, arena, colección, rareza,
@@ -95,12 +96,16 @@ Abre `http://localhost:5173`.
    mazo** permite cambiar su composición sin desmontarlo; al guardar conserva
    su prioridad y recalcula automáticamente las copias reservadas. **Desmontar
    mazo** libera las cartas y devuelve la lista a Favoritos sin borrar su JSON.
-7. **Buscar**: localiza cualquier carta del catálogo por código o nombre,
-   comprueba si está libre o en qué mazos montados está usada y pulsa sobre ella
-   para restar una copia. Si la copia está asignada, se muestra una confirmación
-   indicando qué mazo puede quedar incompleto. Todas las coincidencias son
-   accesibles mediante paginación. Su ficha ampliada conserva el control para
-   restar una copia de la colección.
+7. **Buscar**: recorre todo el catálogo y utiliza la misma búsqueda avanzada y
+   los mismos filtros manuales del creador: aspectos, tipo y arena, colecciones,
+   rarezas, coste máximo y cartas poseídas o libres. Aquí no existen aspectos
+   automáticos de líder/base y todos los filtros comienzan sin restringir. Se
+   pueden combinar texto de reglas, rasgos o palabras clave con `/`, y un número
+   aislado representa el coste exacto. Comprueba si cada carta está libre o en
+   qué mazos montados está usada y pulsa sobre ella para restar una copia. Si la
+   copia está asignada, se confirma qué mazo puede quedar incompleto. Todas las
+   coincidencias son accesibles mediante paginación y la ficha ampliada conserva
+   el control para restar una copia de la colección.
 8. **Ajustes**: tema y mostrar/ocultar imágenes. En modo invitado también
    permite exportar/importar una copia local y borrar los datos del dispositivo.
 9. **Cuenta y amigos** _(opcional, requiere configurar Supabase)_: crea una

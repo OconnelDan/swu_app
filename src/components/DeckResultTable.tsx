@@ -1,9 +1,13 @@
+import { useEffect, useState } from "react";
 import type { CardComparison, DeckZone } from "@/types/deck";
 import type { FriendCardAvailability } from "@/lib/friendsRepository";
 import type { CardTransferPlan } from "@/lib/cardAllocation";
+import type { CardInfo } from "@/types/card";
 import { ArrowRightLeft } from "lucide-react";
 import { useSettings } from "@/hooks/useSettings";
 import { tryGetCardImageUrl } from "@/lib/cardImageUrl";
+import { SwUnlimitedDbCardProvider } from "@/providers/cardProvider/SwUnlimitedDbCardProvider";
+import { CardDetailsModal } from "./CardDetailsModal";
 import { CardImageThumbnail } from "./CardImageThumbnail";
 
 const ZONE_LABELS: Record<DeckZone, string> = {
@@ -31,6 +35,47 @@ function friendsLabel(entries: FriendCardAvailability[] | undefined): string | u
     .join(", ");
 }
 
+function fallbackCardInfo(row: CardComparison): CardInfo {
+  const separatorIndex = row.cardId.lastIndexOf("_");
+  return {
+    cardId: row.cardId,
+    setCode: separatorIndex > 0 ? row.cardId.slice(0, separatorIndex) : "",
+    cardNumber: separatorIndex > 0 ? row.cardId.slice(separatorIndex + 1) : "",
+    name: row.cardName,
+    imageUrl: row.imageUrl
+  };
+}
+
+function ResultCardThumbnail({
+  row,
+  className,
+  onOpen
+}: {
+  row: CardComparison;
+  className: string;
+  onOpen: (row: CardComparison) => void;
+}) {
+  const imageUrl = row.imageUrl ?? tryGetCardImageUrl(row.cardId);
+  if (!imageUrl) return null;
+
+  return (
+    <button
+      type="button"
+      className="shrink-0 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-saber-blue"
+      aria-label={`Ver información de ${row.cardName ?? row.cardId}`}
+      onClick={() => onOpen(row)}
+    >
+      <CardImageThumbnail
+        src={imageUrl}
+        fallbackSrc={tryGetCardImageUrl(row.cardId)}
+        alt={row.cardName ?? row.cardId}
+        className={className}
+        zoomOnClick={false}
+      />
+    </button>
+  );
+}
+
 interface DeckResultTableProps {
   comparisons: CardComparison[];
   showAll: boolean;
@@ -49,8 +94,54 @@ export function DeckResultTable({
   busyCardId
 }: DeckResultTableProps) {
   const { settings } = useSettings();
+  const [detailsRow, setDetailsRow] = useState<CardComparison | null>(null);
+  const [detailsCard, setDetailsCard] = useState<CardInfo | undefined>();
+  const [detailsLoading, setDetailsLoading] = useState(false);
+  const [detailsError, setDetailsError] = useState<string | null>(null);
   const rows = showAll ? comparisons : comparisons.filter((c) => c.status === "missing");
   const mountedDeckView = comparisons.some((comparison) => comparison.assignedCount !== undefined);
+
+  useEffect(() => {
+    if (!detailsRow) return;
+
+    let active = true;
+    setDetailsCard(fallbackCardInfo(detailsRow));
+    setDetailsLoading(true);
+    setDetailsError(null);
+
+    void new SwUnlimitedDbCardProvider()
+      .getCard(detailsRow.cardId)
+      .then((card) => {
+        if (active && card) setDetailsCard(card);
+      })
+      .catch((cause) => {
+        if (active) {
+          setDetailsError(
+            cause instanceof Error
+              ? cause.message
+              : "No se ha podido cargar toda la información de la carta."
+          );
+        }
+      })
+      .finally(() => {
+        if (active) setDetailsLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [detailsRow]);
+
+  const openDetails = (row: CardComparison) => {
+    setDetailsCard(fallbackCardInfo(row));
+    setDetailsRow(row);
+  };
+
+  const closeDetails = () => {
+    setDetailsRow(null);
+    setDetailsCard(undefined);
+    setDetailsError(null);
+  };
 
   if (rows.length === 0) {
     return (
@@ -111,11 +202,11 @@ export function DeckResultTable({
               <td className="py-2 pr-2 font-mono text-slate-300">{row.cardId}</td>
               <td className="py-2 pr-2">
                 <div className="flex items-center gap-2">
-                  {settings.showImages && row.imageUrl && (
-                    <CardImageThumbnail
-                      src={row.imageUrl}
-                      fallbackSrc={tryGetCardImageUrl(row.cardId)}
+                  {settings.showImages && (
+                    <ResultCardThumbnail
+                      row={row}
                       className="h-10 w-auto rounded"
+                      onOpen={openDetails}
                     />
                   )}
                   <span>{row.cardName ?? "—"}</span>
@@ -174,11 +265,11 @@ export function DeckResultTable({
           >
             <div className="flex items-start justify-between gap-2">
               <div className="flex items-start gap-2">
-                {settings.showImages && row.imageUrl && (
-                  <CardImageThumbnail
-                    src={row.imageUrl}
-                    fallbackSrc={tryGetCardImageUrl(row.cardId)}
+                {settings.showImages && (
+                  <ResultCardThumbnail
+                    row={row}
                     className="h-14 w-auto rounded"
+                    onOpen={openDetails}
                   />
                 )}
                 <div>
@@ -242,6 +333,23 @@ export function DeckResultTable({
           </li>
         ))}
       </ul>
+
+      {detailsRow && (
+        <CardDetailsModal
+          cardId={detailsRow.cardId}
+          card={detailsCard}
+          imageUrl={detailsRow.imageUrl ?? tryGetCardImageUrl(detailsRow.cardId)}
+          showImage={settings.showImages}
+          onClose={closeDetails}
+        >
+          {detailsLoading && <p className="text-sm text-slate-400">Cargando información…</p>}
+          {detailsError && (
+            <p role="alert" className="text-sm text-saber-yellow">
+              {detailsError}
+            </p>
+          )}
+        </CardDetailsModal>
+      )}
     </>
   );
 }
