@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   clearDeckBuilderDraft,
+  getDeckBuilderDraftPath,
+  loadActiveDeckBuilderDraft,
   loadDeckBuilderDraft,
   saveDeckBuilderDraft,
   type DeckBuilderDraft
@@ -32,7 +34,8 @@ function draft(name: string): DeckBuilderDraft {
     selectedRarities: ["Common"],
     maximumCost: "3",
     ownedFilter: "owned",
-    cardPage: 2
+    cardPage: 2,
+    scrollY: 640
   };
 }
 
@@ -45,6 +48,12 @@ describe("memoria automática del creador", () => {
     const saved = draft("Mazo protegido");
     expect(saveDeckBuilderDraft("guest", undefined, saved)).toBe(true);
     expect(loadDeckBuilderDraft("guest")).toEqual(saved);
+    expect(loadActiveDeckBuilderDraft("guest")).toEqual({
+      path: "/mazos/crear",
+      name: "Mazo protegido",
+      format: "premier",
+      savedAt: saved.savedAt
+    });
   });
 
   it("separa los borradores por cuenta y por mazo editado", () => {
@@ -58,6 +67,26 @@ describe("memoria automática del creador", () => {
 
     clearDeckBuilderDraft("user-1", "favorite-a");
     expect(loadDeckBuilderDraft("user-1", "favorite-a")).toBeUndefined();
+    expect(loadActiveDeckBuilderDraft("user-1")).toBeUndefined();
     expect(loadDeckBuilderDraft("guest")?.name).toBe("Invitado");
+  });
+
+  it("recuerda la ruta exacta del último mazo editado", () => {
+    saveDeckBuilderDraft("user-1", "favorite-a", draft("Favorito en curso"));
+
+    expect(getDeckBuilderDraftPath("favorite-a")).toBe("/mazos/editar/favorite-a");
+    expect(loadActiveDeckBuilderDraft("user-1")).toMatchObject({
+      favoriteId: "favorite-a",
+      path: "/mazos/editar/favorite-a",
+      name: "Favorito en curso"
+    });
+  });
+
+  it("mantiene los borradores creados antes de guardar la posición de pantalla", () => {
+    const previousDraft = draft("Borrador anterior") as Partial<DeckBuilderDraft>;
+    delete previousDraft.scrollY;
+    localStorage.setItem("swu-deck-builder-draft-v1:guest:new", JSON.stringify(previousDraft));
+
+    expect(loadDeckBuilderDraft("guest")?.scrollY).toBe(0);
   });
 });
