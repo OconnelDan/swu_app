@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
 import { Check, Copy, Download, Hammer, Star, RefreshCw } from "lucide-react";
+import { cardIdParts, compareSetCodesByRelease } from "@/lib/cardCollectionOrder";
 import { downloadTextFile } from "@/lib/downloadTextFile";
-import type { DeckComparisonResult } from "@/types/deck";
+import type { CardComparison, DeckComparisonResult, DeckZone } from "@/types/deck";
 
 interface DeckSummaryProps {
   result: DeckComparisonResult;
@@ -18,6 +19,63 @@ function buildMissingListText(result: DeckComparisonResult): string {
   return result.missingCards
     .map((c) => `${c.missingCount}x ${c.cardId}${c.cardName ? ` – ${c.cardName}` : ""}`)
     .join("\n");
+}
+
+function compareCardsByRelease(left: CardComparison, right: CardComparison): number {
+  const leftParts = cardIdParts(left.cardId);
+  const rightParts = cardIdParts(right.cardId);
+  return (
+    compareSetCodesByRelease(leftParts.setCode, rightParts.setCode) ||
+    leftParts.cardNumber.localeCompare(rightParts.cardNumber, "es", {
+      numeric: true,
+      sensitivity: "base"
+    }) ||
+    left.cardId.localeCompare(right.cardId, "es", { numeric: true })
+  );
+}
+
+function cardNames(card: CardComparison): string {
+  const localized = card.localizedCardName?.trim();
+  const english = card.cardName?.trim();
+  if (localized && english && localized.localeCompare(english, "es", { sensitivity: "base" })) {
+    return `${localized} / ${english}`;
+  }
+  return localized || english || "Carta sin nombre";
+}
+
+function cardLine(card: CardComparison, count: number): string {
+  return `${card.cardId} — ${count}x — ${cardNames(card)}`;
+}
+
+function zoneSection(title: string, zone: DeckZone, comparisons: CardComparison[]): string[] {
+  const lines = comparisons
+    .filter((card) => (card.zoneCounts[zone] ?? 0) > 0)
+    .slice()
+    .sort(compareCardsByRelease)
+    .map((card) => cardLine(card, card.zoneCounts[zone] ?? 0));
+  return [title, ...(lines.length > 0 ? lines : ["Sin cartas."])];
+}
+
+function buildDeckListText(result: DeckComparisonResult): string {
+  const missingLines = result.missingCards
+    .slice()
+    .sort(compareCardsByRelease)
+    .map((card) => cardLine(card, card.missingCount));
+
+  return [
+    `MAZO: ${result.deckName}`,
+    "",
+    ...zoneSection("LÍDER O LÍDERES", "leader", result.comparisons),
+    "",
+    ...zoneSection("BASE", "base", result.comparisons),
+    "",
+    ...zoneSection("MAZO PRINCIPAL", "main", result.comparisons),
+    "",
+    ...zoneSection("BANQUILLO", "sideboard", result.comparisons),
+    "",
+    "CARTAS FALTANTES",
+    ...(missingLines.length > 0 ? missingLines : ["No falta ninguna carta."])
+  ].join("\n");
 }
 
 function buildCsv(result: DeckComparisonResult): string {
@@ -63,6 +121,7 @@ export function DeckSummary({
 }: DeckSummaryProps) {
   const [copied, setCopied] = useState(false);
   const missingListText = useMemo(() => buildMissingListText(result), [result]);
+  const deckListText = useMemo(() => buildDeckListText(result), [result]);
   const mountedDeckView = result.comparisons.some((card) => card.assignedCount !== undefined);
   const copiesInOtherMountedDecks = result.comparisons.reduce(
     (total, card) => total + (card.copiesInOtherMountedDecks ?? 0),
@@ -166,13 +225,7 @@ export function DeckSummary({
         <button
           type="button"
           className="btn-secondary"
-          onClick={() =>
-            downloadTextFile(
-              missingListText || "No te falta ninguna carta.",
-              "cartas-faltantes.txt",
-              "text/plain"
-            )
-          }
+          onClick={() => downloadTextFile(deckListText, "mazo-completo.txt", "text/plain")}
         >
           <Download size={16} />
           Descargar TXT

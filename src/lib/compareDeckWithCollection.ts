@@ -37,10 +37,12 @@ function compareCard(
   const missingCount = Math.max(card.requiredCount - ownedCount, 0);
   const surplusCount = Math.max(ownedCount - card.requiredCount, 0);
   const allocation = allocations?.get(card.cardId);
+  const cardInfo = cardInfos?.get(card.cardId);
   return {
     cardId: card.cardId,
-    cardName: cardInfos?.get(card.cardId)?.name ?? collectionNames?.get(card.cardId),
-    imageUrl: cardInfos?.get(card.cardId)?.imageUrl ?? tryGetCardImageUrl(card.cardId),
+    cardName: cardInfo?.name ?? collectionNames?.get(card.cardId),
+    localizedCardName: cardInfo?.localizedName ?? collectionNames?.get(card.cardId),
+    imageUrl: cardInfo?.imageUrl ?? tryGetCardImageUrl(card.cardId),
     requiredCount: card.requiredCount,
     ownedCount,
     missingCount,

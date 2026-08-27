@@ -30,10 +30,22 @@ const deckBuilderDraftSchema = z.object({
   maximumCost: z.string(),
   ownedFilter: z.enum(["all", "owned", "free"]),
   cardPage: z.number().int().min(1),
+  selectedCardPage: z.number().int().min(1).optional().default(1),
+  cardSorts: z
+    .array(z.enum(["cost", "collection"]))
+    .min(1)
+    .optional()
+    .default(["cost"]),
+  selectedCardsExpanded: z.boolean().optional().default(true),
+  availableCardsExpanded: z.boolean().optional().default(true),
   scrollY: z.number().finite().min(0).optional().default(0)
 });
 
-export type DeckBuilderDraft = z.infer<typeof deckBuilderDraftSchema>;
+/**
+ * El tipo de entrada conserva compatibilidad con los borradores v1 escritos
+ * antes de añadir estado visual. Al leerlos, Zod completa esos valores.
+ */
+export type DeckBuilderDraft = z.input<typeof deckBuilderDraftSchema>;
 
 const STORAGE_PREFIX = "swu-deck-builder-draft-v1";
 const ACTIVE_STORAGE_PREFIX = "swu-deck-builder-active-v1";
