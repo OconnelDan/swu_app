@@ -33,6 +33,15 @@ const catalogCards: CardInfo[] = [
     cardKey: "filter-base"
   },
   {
+    cardId: "JTL_020",
+    setCode: "JTL",
+    cardNumber: "020",
+    name: "Segunda base de filtros",
+    type: "Base",
+    aspects: ["Aggression"],
+    cardKey: "second-filter-base"
+  },
+  {
     cardId: "JTL_002",
     setCode: "JTL",
     cardNumber: "002",
@@ -69,7 +78,7 @@ const catalogCards: CardInfo[] = [
     rarity: "Common",
     aspects: ["Vigilance"],
     traits: ["Rebel"],
-    keywords: ["Sentinel"],
+    keywords: ["Sentinel", "Restore"],
     localizedText: "Centinela. Cuando se juegue: cura 1 de daño de una unidad.",
     cost: 2,
     power: 2,
@@ -163,6 +172,51 @@ const catalogCards: CardInfo[] = [
     rarity: "Legendary",
     aspects: ["Cunning"],
     cardKey: "cunning-upgrade"
+  },
+  {
+    cardId: "SOR_111",
+    setCode: "SOR",
+    cardNumber: "111",
+    name: "Zeta antigua seleccionable",
+    type: "Unit",
+    arena: "Ground",
+    cost: 1,
+    aspects: [],
+    cardKey: "old-sort-selected"
+  },
+  {
+    cardId: "ASH_116",
+    setCode: "ASH",
+    cardNumber: "116",
+    name: "Alfa nueva seleccionable",
+    localizedName: "Alfa nueva seleccionable",
+    type: "Unit",
+    arena: "Ground",
+    cost: 1,
+    aspects: [],
+    cardKey: "new-sort-selected"
+  },
+  {
+    cardId: "SOR_112",
+    setCode: "SOR",
+    cardNumber: "112",
+    name: "Omega antigua disponible",
+    type: "Unit",
+    arena: "Ground",
+    cost: 2,
+    aspects: [],
+    cardKey: "old-sort-available"
+  },
+  {
+    cardId: "ASH_117",
+    setCode: "ASH",
+    cardNumber: "117",
+    name: "Beta nueva disponible",
+    type: "Unit",
+    arena: "Ground",
+    cost: 2,
+    aspects: [],
+    cardKey: "new-sort-available"
   }
 ];
 
@@ -230,7 +284,24 @@ async function choosePremierLeaderAndBase() {
     })
   );
   expect(screen.getByText("Base de filtros")).toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: "Elegir" }));
+  fireEvent.click(
+    within(screen.getByText("Base de filtros").closest("li")!).getByRole("button", {
+      name: "Elegir"
+    })
+  );
+}
+
+function expectElementBefore(left: Element, right: Element) {
+  expect(left.compareDocumentPosition(right) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+}
+
+function cardListItem(name: string): HTMLLIElement {
+  const item = screen
+    .getAllByText(name)
+    .map((element) => element.closest("li"))
+    .find((element): element is HTMLLIElement => element instanceof HTMLLIElement);
+  if (!item) throw new Error(`No se ha encontrado la tarjeta de ${name}.`);
+  return item;
 }
 
 beforeEach(() => {
@@ -299,13 +370,16 @@ describe("constructor por formatos", () => {
       target: { value: "Mazo protegido automáticamente" }
     });
     fireEvent.click(screen.getByRole("button", { name: "Añadir Unidad de vigilancia al mazo" }));
-    fireEvent.click(screen.getByRole("button", { name: "Añadir Unidad incolora al banquillo" }));
+    fireEvent.click(screen.getByRole("button", { name: "Añadir Unidad incolora al mazo" }));
+    fireEvent.click(screen.getByRole("button", { name: "Llevar Unidad incolora al banquillo" }));
     fireEvent.change(screen.getByRole("textbox", { name: "Buscar en el catálogo" }), {
       target: { value: "centinela / 2" }
     });
     fireEvent.click(screen.getByText("Filtros"));
     fireEvent.click(screen.getByRole("button", { name: "Vigilancia" }));
     fireEvent.click(screen.getByRole("button", { name: "Incoloras" }));
+    fireEvent.click(screen.getByRole("button", { name: "Ordenar por colección" }));
+    fireEvent.click(screen.getByRole("button", { name: /Cartas seleccionadas/ }));
 
     expect(
       await screen.findByText(/Borrador automático guardado en este dispositivo/i)
@@ -328,6 +402,14 @@ describe("constructor por formatos", () => {
     );
     expect(screen.getByRole("button", { name: "Incoloras" })).toHaveAttribute(
       "aria-pressed",
+      "false"
+    );
+    expect(screen.getByRole("button", { name: "Ordenar por colección" })).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    );
+    expect(screen.getByRole("button", { name: /Cartas seleccionadas/ })).toHaveAttribute(
+      "aria-expanded",
       "false"
     );
     expect(screen.getByText("1/10")).toBeInTheDocument();
@@ -500,11 +582,10 @@ describe("constructor por formatos", () => {
     expect(await screen.findByText("Editar mazo · Premier")).toBeInTheDocument();
     expect(screen.getByText(/Seguirá montado al guardar/i)).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Restar Unidad de vigilancia del mazo" }));
-    fireEvent.click(screen.getByRole("button", { name: "Añadir Unidad incolora al mazo" }));
     fireEvent.click(
-      screen.getByRole("button", { name: "Añadir Unidad de vigilancia al banquillo" })
+      screen.getByRole("button", { name: "Llevar Unidad de vigilancia al banquillo" })
     );
+    fireEvent.click(screen.getByRole("button", { name: "Añadir Unidad incolora al mazo" }));
     fireEvent.click(screen.getByRole("button", { name: "Guardar cambios" }));
 
     await waitFor(() => expect(updateFavoriteDeck).toHaveBeenCalledTimes(1));
@@ -553,7 +634,11 @@ describe("constructor por formatos", () => {
     fireEvent.click(screen.getByRole("button", { name: "3. Cartas 0/50" }));
 
     expect(screen.getByText("Carta antigua")).toBeInTheDocument();
-    expect(screen.getByText(/SOR ha rotado de Premier/i)).toBeInTheDocument();
+    expect(
+      within(screen.getByText("Carta antigua").closest("li")!).getByText(
+        /SOR ha rotado de Premier/i
+      )
+    ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Añadir Carta antigua al mazo" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Añadir Carta vigente al mazo" })).toBeEnabled();
   });
@@ -582,7 +667,7 @@ describe("constructor por formatos", () => {
 
     const dialog = screen.getByRole("dialog", { name: "Unidad de vigilancia" });
     expect(within(dialog).getByText(/Cuando se juegue: cura 1 de daño/i)).toBeInTheDocument();
-    expect(within(dialog).getByText("Centinela")).toBeInTheDocument();
+    expect(within(dialog).getByText("Centinela, Recuperación")).toBeInTheDocument();
     expect(within(dialog).getByText("Secretos del poder")).toBeInTheDocument();
     expect(within(dialog).queryByRole("button", { name: /Añadir/i })).not.toBeInTheDocument();
     expect(
@@ -653,7 +738,11 @@ describe("constructor por formatos", () => {
         name: "Elegir"
       })
     );
-    fireEvent.click(screen.getByRole("button", { name: "Elegir" }));
+    fireEvent.click(
+      within(screen.getByText("Base de filtros").closest("li")!).getByRole("button", {
+        name: "Elegir"
+      })
+    );
 
     expect(screen.getByText("Unidad de vigilancia")).toBeInTheDocument();
     expect(screen.getByText("Unidad agresiva espacial")).toBeInTheDocument();
@@ -696,6 +785,200 @@ describe("constructor por formatos", () => {
     expect(screen.getByText("Evento de mando")).toBeInTheDocument();
   });
 
+  it("fija al principio los líderes y la base seleccionados y permite quitarlos", async () => {
+    renderBuilder();
+    fireEvent.click(screen.getByRole("button", { name: /Premier/ }));
+    expect(await screen.findByText("Crear mazo · Premier")).toBeInTheDocument();
+
+    fireEvent.click(
+      within(screen.getByText("Líder de filtros").closest("li")!).getByRole("button", {
+        name: "Elegir"
+      })
+    );
+    fireEvent.click(screen.getByRole("button", { name: "1. Líder 1/1" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Buscar en el catálogo" }), {
+      target: { value: "Segundo líder" }
+    });
+
+    expectElementBefore(cardListItem("Líder de filtros"), cardListItem("Segundo líder de filtros"));
+    fireEvent.click(
+      within(cardListItem("Líder de filtros")).getByRole("button", {
+        name: "Quitar selección"
+      })
+    );
+    expect(screen.getByRole("button", { name: "1. Líder 0/1" })).toBeInTheDocument();
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Buscar en el catálogo" }), {
+      target: { value: "" }
+    });
+    fireEvent.click(
+      within(screen.getByText("Líder de filtros").closest("li")!).getByRole("button", {
+        name: "Elegir"
+      })
+    );
+    fireEvent.click(
+      within(screen.getByText("Base de filtros").closest("li")!).getByRole("button", {
+        name: "Elegir"
+      })
+    );
+    fireEvent.click(screen.getByRole("button", { name: "2. Base ✓" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Buscar en el catálogo" }), {
+      target: { value: "Segunda base" }
+    });
+
+    expectElementBefore(cardListItem("Base de filtros"), cardListItem("Segunda base de filtros"));
+    fireEvent.click(
+      within(cardListItem("Base de filtros")).getByRole("button", {
+        name: "Quitar selección"
+      })
+    );
+    expect(screen.getByRole("button", { name: "2. Base" })).toBeInTheDocument();
+  });
+
+  it("separa seleccionadas y disponibles en cajas minimizables colocadas bajo los filtros", async () => {
+    renderBuilder();
+    await choosePremierLeaderAndBase();
+
+    const availableToggle = screen.getByRole("button", { name: /Cartas disponibles/ });
+    expect(availableToggle).toHaveAttribute("aria-expanded", "true");
+    expect(screen.queryByRole("button", { name: /Cartas seleccionadas/ })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Añadir Unidad de vigilancia al mazo" }));
+
+    const selectedToggle = screen.getByRole("button", { name: /Cartas seleccionadas/ });
+    expect(selectedToggle).toHaveAttribute("aria-expanded", "true");
+    expectElementBefore(selectedToggle.closest("section")!, availableToggle.closest("section")!);
+    expect(
+      screen.queryByRole("button", { name: "Añadir Unidad de vigilancia al mazo" })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Restar Unidad de vigilancia del mazo" })
+    ).toBeInTheDocument();
+
+    fireEvent.click(selectedToggle);
+    expect(selectedToggle).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByText("Unidad de vigilancia")).not.toBeInTheDocument();
+
+    fireEvent.click(selectedToggle);
+    expect(screen.getByText("Unidad de vigilancia")).toBeInTheDocument();
+    fireEvent.click(availableToggle);
+    expect(availableToggle).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByText("Unidad de vigilancia")).toBeInTheDocument();
+  });
+
+  it("gestiona cantidades arriba y mueve al banquillo la cantidad escrita", async () => {
+    renderBuilder();
+    await choosePremierLeaderAndBase();
+
+    fireEvent.click(screen.getByRole("button", { name: "Añadir Unidad de vigilancia al mazo" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Añadir otra copia de Unidad de vigilancia al mazo" })
+    );
+    const quantity = screen.getByRole("spinbutton", {
+      name: "Cantidad de Unidad de vigilancia para llevar al banquillo"
+    });
+    fireEvent.change(quantity, { target: { value: "2" } });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Llevar Unidad de vigilancia al banquillo" })
+    );
+
+    expect(screen.getByRole("button", { name: "3. Cartas 0/50" })).toBeInTheDocument();
+    expect(screen.getByText("2/10")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Restar Unidad de vigilancia del banquillo" })
+    ).toBeEnabled();
+  });
+
+  it("aplica la búsqueda también al mazo principal y al banquillo", async () => {
+    renderBuilder();
+    await choosePremierLeaderAndBase();
+
+    fireEvent.click(screen.getByRole("button", { name: "Añadir Unidad de vigilancia al mazo" }));
+    fireEvent.click(screen.getByRole("button", { name: "Añadir Unidad incolora al mazo" }));
+    fireEvent.click(screen.getByRole("button", { name: "Llevar Unidad incolora al banquillo" }));
+
+    const search = screen.getByRole("textbox", { name: "Buscar en el catálogo" });
+    const selectedSection = screen
+      .getByRole("button", { name: /Cartas seleccionadas/ })
+      .closest("section")!;
+    fireEvent.change(search, { target: { value: "restore" } });
+    expect(within(selectedSection).getByText("Unidad de vigilancia")).toBeInTheDocument();
+    expect(within(selectedSection).queryByText("Unidad incolora")).not.toBeInTheDocument();
+
+    fireEvent.change(search, { target: { value: "Unidad incolora" } });
+    expect(within(selectedSection).getByText("Unidad incolora")).toBeInTheDocument();
+    expect(within(selectedSection).queryByText("Unidad de vigilancia")).not.toBeInTheDocument();
+    expect(
+      within(selectedSection).getByRole("button", {
+        name: "Restar Unidad incolora del banquillo"
+      })
+    ).toBeEnabled();
+  });
+
+  it("ordena las cartas seleccionadas por su curva de coste", async () => {
+    renderBuilder();
+    await choosePremierLeaderAndBase();
+
+    fireEvent.click(screen.getByRole("button", { name: "Añadir Unidad con Centinela al mazo" }));
+    fireEvent.click(screen.getByRole("button", { name: "Añadir Unidad de vigilancia al mazo" }));
+
+    const selectedSection = screen
+      .getByRole("button", { name: /Cartas seleccionadas/ })
+      .closest("section")!;
+    expectElementBefore(
+      within(selectedSection).getByText("Unidad de vigilancia").closest("li")!,
+      within(selectedSection).getByText("Unidad con Centinela").closest("li")!
+    );
+  });
+
+  it("combina coste y colección y ordena también las cartas no seleccionadas", async () => {
+    renderBuilder();
+    fireEvent.click(screen.getByRole("button", { name: /Eternal/ }));
+    expect(await screen.findByText("Crear mazo · Eternal")).toBeInTheDocument();
+    fireEvent.click(
+      within(screen.getByText("Líder de filtros").closest("li")!).getByRole("button", {
+        name: "Elegir"
+      })
+    );
+    fireEvent.click(
+      within(screen.getByText("Base de filtros").closest("li")!).getByRole("button", {
+        name: "Elegir"
+      })
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Añadir Alfa nueva seleccionable al mazo" })
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Añadir Zeta antigua seleccionable al mazo" })
+    );
+    fireEvent.click(screen.getByText("Filtros"));
+    fireEvent.click(screen.getByRole("button", { name: "Ordenar por colección" }));
+
+    const selectedSection = screen
+      .getByRole("button", { name: /Cartas seleccionadas/ })
+      .closest("section")!;
+    const availableSection = screen
+      .getByRole("button", { name: /Cartas disponibles/ })
+      .closest("section")!;
+    expectElementBefore(
+      within(selectedSection).getByText("Zeta antigua seleccionable").closest("li")!,
+      within(selectedSection).getByText("Alfa nueva seleccionable").closest("li")!
+    );
+    expectElementBefore(
+      within(availableSection).getByText("Omega antigua disponible").closest("li")!,
+      within(availableSection).getByText("Beta nueva disponible").closest("li")!
+    );
+    expect(screen.getByRole("button", { name: "Ordenar por coste" })).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    );
+    expect(screen.getByRole("button", { name: "Ordenar por colección" })).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    );
+  });
+
   it("permite acceder a todas las cartas cuando hay más de 80 resultados", async () => {
     const paginatedCards: CardInfo[] = Array.from({ length: 81 }, (_, index) => ({
       cardId: `SEC_${String(200 + index).padStart(3, "0")}`,
@@ -722,12 +1005,12 @@ describe("constructor por formatos", () => {
       target: { value: "Carta paginada" }
     });
 
-    expect(screen.getByText("81 resultado(s) · mostrando 1–80")).toBeInTheDocument();
+    expect(screen.getByText("81 disponible(s) · mostrando 1–80")).toBeInTheDocument();
     expect(screen.getByText("Carta paginada 001")).toBeInTheDocument();
     expect(screen.queryByText("Carta paginada 081")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Ir a la página 2" }));
-    expect(await screen.findByText("81 resultado(s) · mostrando 81–81")).toBeInTheDocument();
+    expect(await screen.findByText("81 disponible(s) · mostrando 81–81")).toBeInTheDocument();
     expect(screen.getByText("Carta paginada 081")).toBeInTheDocument();
     expect(screen.queryByText("Carta paginada 001")).not.toBeInTheDocument();
   });

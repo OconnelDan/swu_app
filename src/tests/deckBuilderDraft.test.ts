@@ -35,6 +35,10 @@ function draft(name: string): DeckBuilderDraft {
     maximumCost: "3",
     ownedFilter: "owned",
     cardPage: 2,
+    selectedCardPage: 1,
+    cardSorts: ["cost", "collection"],
+    selectedCardsExpanded: false,
+    availableCardsExpanded: true,
     scrollY: 640
   };
 }
@@ -82,11 +86,21 @@ describe("memoria automática del creador", () => {
     });
   });
 
-  it("mantiene los borradores creados antes de guardar la posición de pantalla", () => {
+  it("mantiene los borradores creados antes del desplazamiento y las nuevas cajas", () => {
     const previousDraft = draft("Borrador anterior") as Partial<DeckBuilderDraft>;
     delete previousDraft.scrollY;
+    delete previousDraft.selectedCardPage;
+    delete previousDraft.cardSorts;
+    delete previousDraft.selectedCardsExpanded;
+    delete previousDraft.availableCardsExpanded;
     localStorage.setItem("swu-deck-builder-draft-v1:guest:new", JSON.stringify(previousDraft));
 
-    expect(loadDeckBuilderDraft("guest")?.scrollY).toBe(0);
+    expect(loadDeckBuilderDraft("guest")).toMatchObject({
+      scrollY: 0,
+      selectedCardPage: 1,
+      cardSorts: ["cost"],
+      selectedCardsExpanded: true,
+      availableCardsExpanded: true
+    });
   });
 });
