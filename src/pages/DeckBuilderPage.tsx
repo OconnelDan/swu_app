@@ -1,11 +1,22 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode
+} from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   AlertTriangle,
   ArrowLeft,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   Filter,
   Minus,
+  MoveRight,
   Plus,
   RotateCcw,
   Save,
@@ -20,6 +31,7 @@ import { useCollection } from "@/hooks/useCollection";
 import { useFavorites } from "@/hooks/useFavorites";
 import { useAuth } from "@/hooks/useAuth";
 import { computeCardAllocations } from "@/lib/cardAllocation";
+import { compareCardsByCollection, compareSetCodesByRelease } from "@/lib/cardCollectionOrder";
 import { compareDeckWithCollection } from "@/lib/compareDeckWithCollection";
 import {
   clearDeckBuilderDraft,
@@ -54,6 +66,7 @@ import type { DeckFormat, TrilogyCardPool } from "@/types/deck";
 type BuilderTab = "leader" | "base" | "cards";
 type OwnedFilter = "all" | "owned" | "free";
 type CardTypeFilter = "ground-unit" | "space-unit" | "event" | "upgrade";
+type CardSort = "cost" | "collection";
 
 const ASPECT_LABELS: Record<string, string> = {
   Aggression: "Agresividad",
@@ -179,6 +192,83 @@ function QuantityButton({
   );
 }
 
+function BuilderCardItem({
+  card,
+  ownedCount,
+  freeCount,
+  blockedReason,
+  selected = false,
+  onOpenDetails,
+  children
+}: {
+  card: CardInfo;
+  ownedCount: number;
+  freeCount: number;
+  blockedReason?: string;
+  selected?: boolean;
+  onOpenDetails: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <li
+      className={`rounded-xl border p-3 ${
+        blockedReason
+          ? "border-saber-red/40 bg-space-950"
+          : selected
+            ? "border-saber-blue bg-space-800"
+            : "border-space-700 bg-space-900"
+      }`}
+    >
+      <div className="flex gap-3">
+        {(card.imageUrl ?? tryGetCardImageUrl(card.cardId)) && (
+          <button
+            type="button"
+            className="shrink-0 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-saber-blue"
+            aria-label={`Ver detalles de ${displayName(card)}`}
+            onClick={onOpenDetails}
+          >
+            <CardImageThumbnail
+              src={card.imageUrl ?? tryGetCardImageUrl(card.cardId)!}
+              fallbackSrc={tryGetCardImageUrl(card.cardId)}
+              alt={displayName(card)}
+              className="h-28 w-auto rounded"
+              zoomOnClick={false}
+            />
+          </button>
+        )}
+        <div className="min-w-0 flex-1">
+          <p className="font-mono text-[11px] text-slate-400">{card.cardId}</p>
+          <p className="text-sm font-semibold leading-tight">{displayName(card)}</p>
+          <p className="mt-1 text-xs text-slate-400">
+            {TYPE_LABELS[card.type ?? ""] ?? card.type ?? "Carta"}
+            {card.cost !== undefined ? ` · Coste ${card.cost}` : ""}
+            {card.arena ? ` · ${card.arena === "Ground" ? "Terrestre" : "Espacial"}` : ""}
+          </p>
+          <p className="mt-1 text-xs">
+            Tienes <strong>{ownedCount}</strong> · libres{" "}
+            <strong className={freeCount > 0 ? "text-saber-green" : "text-saber-red"}>
+              {freeCount}
+            </strong>
+          </p>
+          {(card.aspects?.length ?? 0) > 0 && (
+            <p className="mt-1 text-[11px] text-slate-400">
+              {card.aspects!.map((item) => ASPECT_LABELS[item] ?? item).join(" · ")}
+            </p>
+          )}
+        </div>
+      </div>
+
+      {blockedReason && (
+        <p className="mt-2 flex items-start gap-1 text-xs text-saber-red">
+          <AlertTriangle size={14} className="mt-0.5 shrink-0" /> {blockedReason}
+        </p>
+      )}
+
+      {children}
+    </li>
+  );
+}
+
 function FormatChoice({
   choosingTrilogy,
   onChoose,
@@ -287,6 +377,13 @@ export function DeckBuilderPage() {
   const [maximumCost, setMaximumCost] = useState("all");
   const [ownedFilter, setOwnedFilter] = useState<OwnedFilter>("all");
   const [cardPage, setCardPage] = useState(1);
+  const [selectedCardPage, setSelectedCardPage] = useState(1);
+  const [cardSorts, setCardSorts] = useState<CardSort[]>(["cost"]);
+  const [selectedCardsExpanded, setSelectedCardsExpanded] = useState(true);
+  const [availableCardsExpanded, setAvailableCardsExpanded] = useState(true);
+  const [sideboardMoveQuantities, setSideboardMoveQuantities] = useState<Record<string, string>>(
+    {}
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [detailsCard, setDetailsCard] = useState<CardInfo | null>(null);
@@ -350,11 +447,16 @@ export function DeckBuilderPage() {
       setMaximumCost(draft.maximumCost);
       setOwnedFilter(draft.ownedFilter);
       setCardPage(draft.cardPage);
+      setSelectedCardPage(draft.selectedCardPage ?? 1);
+      setCardSorts(draft.cardSorts ?? ["cost"]);
+      setSelectedCardsExpanded(draft.selectedCardsExpanded ?? true);
+      setAvailableCardsExpanded(draft.availableCardsExpanded ?? true);
+      setSideboardMoveQuantities({});
       setRecoveredDraft(true);
       setAutoSavedAt(draft.savedAt);
       setAutoSaveError(false);
       latestDraftRef.current = draft;
-      pendingScrollRestoreRef.current = draft.scrollY;
+      pendingScrollRestoreRef.current = draft.scrollY ?? 0;
       if (!saveDeckBuilderDraft(draftScope, favoriteId, draft)) setAutoSaveError(true);
       skipNextAutosaveRef.current = true;
       skipNextPageResetRef.current = true;
@@ -388,6 +490,11 @@ export function DeckBuilderPage() {
       setMaximumCost("all");
       setOwnedFilter("all");
       setCardPage(1);
+      setSelectedCardPage(1);
+      setCardSorts(["cost"]);
+      setSelectedCardsExpanded(true);
+      setAvailableCardsExpanded(true);
+      setSideboardMoveQuantities({});
       setRecoveredDraft(false);
       setAutoSavedAt(null);
       setAutoSaveError(false);
@@ -412,6 +519,11 @@ export function DeckBuilderPage() {
       setMaximumCost("all");
       setOwnedFilter("all");
       setCardPage(1);
+      setSelectedCardPage(1);
+      setCardSorts(["cost"]);
+      setSelectedCardsExpanded(true);
+      setAvailableCardsExpanded(true);
+      setSideboardMoveQuantities({});
       setRecoveredDraft(false);
       setAutoSavedAt(null);
       setAutoSaveError(false);
@@ -457,12 +569,18 @@ export function DeckBuilderPage() {
       maximumCost,
       ownedFilter,
       cardPage,
+      selectedCardPage,
+      cardSorts,
+      selectedCardsExpanded,
+      availableCardsExpanded,
       scrollY: window.scrollY
     };
   }, [
     activeDeckIndex,
     activeTab,
+    availableCardsExpanded,
     cardPage,
+    cardSorts,
     decks,
     draftTargetKey,
     editingFavorite?.updatedAt,
@@ -474,6 +592,8 @@ export function DeckBuilderPage() {
     name,
     ownedFilter,
     query,
+    selectedCardPage,
+    selectedCardsExpanded,
     selectedRarities,
     selectedSetCodes,
     selectedTypes,
@@ -510,6 +630,10 @@ export function DeckBuilderPage() {
       maximumCost,
       ownedFilter,
       cardPage,
+      selectedCardPage,
+      cardSorts,
+      selectedCardsExpanded,
+      availableCardsExpanded,
       scrollY: window.scrollY
     };
     latestDraftRef.current = draft;
@@ -522,7 +646,9 @@ export function DeckBuilderPage() {
   }, [
     activeDeckIndex,
     activeTab,
+    availableCardsExpanded,
     cardPage,
+    cardSorts,
     decks,
     draftScope,
     draftTargetKey,
@@ -536,6 +662,8 @@ export function DeckBuilderPage() {
     name,
     ownedFilter,
     query,
+    selectedCardPage,
+    selectedCardsExpanded,
     selectedRarities,
     selectedSetCodes,
     selectedTypes,
@@ -602,6 +730,12 @@ export function DeckBuilderPage() {
     setActiveTab("leader");
     setQuery("");
     resetFilters();
+    setCardPage(1);
+    setSelectedCardPage(1);
+    setCardSorts(["cost"]);
+    setSelectedCardsExpanded(true);
+    setAvailableCardsExpanded(true);
+    setSideboardMoveQuantities({});
     setChoosingTrilogy(false);
     setError(null);
   };
@@ -627,6 +761,12 @@ export function DeckBuilderPage() {
     setName("");
     setQuery("");
     resetFilters();
+    setCardPage(1);
+    setSelectedCardPage(1);
+    setCardSorts(["cost"]);
+    setSelectedCardsExpanded(true);
+    setAvailableCardsExpanded(true);
+    setSideboardMoveQuantities({});
     setChoosingTrilogy(false);
     setRecoveredDraft(false);
     setAutoSavedAt(null);
@@ -679,6 +819,11 @@ export function DeckBuilderPage() {
       setMaximumCost("all");
       setOwnedFilter("all");
       setCardPage(1);
+      setSelectedCardPage(1);
+      setCardSorts(["cost"]);
+      setSelectedCardsExpanded(true);
+      setAvailableCardsExpanded(true);
+      setSideboardMoveQuantities({});
       skipNextAutosaveRef.current = true;
       skipNextPageResetRef.current = true;
     } else {
@@ -698,6 +843,11 @@ export function DeckBuilderPage() {
       setMaximumCost("all");
       setOwnedFilter("all");
       setCardPage(1);
+      setSelectedCardPage(1);
+      setCardSorts(["cost"]);
+      setSelectedCardsExpanded(true);
+      setAvailableCardsExpanded(true);
+      setSideboardMoveQuantities({});
     }
 
     ignoreDraftWritesRef.current = false;
@@ -713,7 +863,8 @@ export function DeckBuilderPage() {
     [collection?.cards, favorites]
   );
   const currentDeck = decks[activeDeckIndex] ?? emptyDeck("Mazo");
-  const leaderIds = currentDeck.leaderIds ?? [];
+  const storedLeaderIds = currentDeck.leaderIds;
+  const leaderIds = useMemo(() => storedLeaderIds ?? [], [storedLeaderIds]);
   const leaders = leaderIds
     .map((leaderId) => cardsById.get(leaderId))
     .filter((card): card is CardInfo => Boolean(card));
@@ -776,7 +927,7 @@ export function DeckBuilderPage() {
   const setOptions = useMemo(
     () =>
       [...new Map((allCards ?? []).map((card) => [card.setCode, card.setName])).entries()].sort(
-        ([left], [right]) => left.localeCompare(right)
+        ([left], [right]) => compareSetCodesByRelease(left, right)
       ),
     [allCards]
   );
@@ -814,67 +965,126 @@ export function DeckBuilderPage() {
     return legality.legal ? roleConflictReason(card) : legality.reason;
   };
 
+  const compareCardOrder = useCallback(
+    (left: CardInfo, right: CardInfo) => {
+      if (cardSorts.includes("cost")) {
+        const byCost =
+          (left.cost ?? Number.MAX_SAFE_INTEGER) - (right.cost ?? Number.MAX_SAFE_INTEGER);
+        if (byCost !== 0) return byCost;
+      }
+      if (cardSorts.includes("collection")) {
+        const byCollection = compareCardsByCollection(left, right);
+        if (byCollection !== 0) return byCollection;
+      }
+      return displayName(left).localeCompare(displayName(right), "es", {
+        numeric: true,
+        sensitivity: "base"
+      });
+    },
+    [cardSorts]
+  );
+
+  const cardMatchesFilters = useCallback(
+    (card: CardInfo) => {
+      const hasQuery = query.trim().length > 0;
+      if (activeTab === "leader" && card.type !== "Leader") return false;
+      if (activeTab === "base" && card.type !== "Base") return false;
+      if (activeTab === "cards" && !["Unit", "Event", "Upgrade"].includes(card.type ?? "")) {
+        return false;
+      }
+      if (
+        activeTab === "cards" &&
+        selectedTypes.length > 0 &&
+        !selectedTypes.includes(getCardTypeFilter(card) as CardTypeFilter)
+      ) {
+        return false;
+      }
+      if (activeTab === "cards") {
+        const cardAspects = card.aspects ?? [];
+        if (cardAspects.length === 0) {
+          if (!includeColorless) return false;
+        } else if (manualAspects !== null) {
+          if (!cardAspects.some((item) => manualAspects.includes(item))) return false;
+        } else if (automaticAspectReady && !hasNoAspectPenalty(card, leaders, base)) {
+          return false;
+        }
+      }
+      if (selectedSetCodes.length > 0 && !selectedSetCodes.includes(card.setCode)) return false;
+      if (
+        selectedRarities.length > 0 &&
+        (!card.rarity || !selectedRarities.includes(card.rarity))
+      ) {
+        return false;
+      }
+      if (maximumCost !== "all" && (card.cost ?? Infinity) > Number(maximumCost)) return false;
+      const allocation = allocations.get(card.cardId);
+      if (ownedFilter === "owned" && !allocation?.ownedCount) return false;
+      if (ownedFilter === "free" && !allocation?.freeCount) return false;
+      return !hasQuery || matchesCardSearchQuery(card, query);
+    },
+    [
+      activeTab,
+      allocations,
+      automaticAspectReady,
+      base,
+      includeColorless,
+      leaders,
+      manualAspects,
+      maximumCost,
+      ownedFilter,
+      query,
+      selectedRarities,
+      selectedSetCodes,
+      selectedTypes
+    ]
+  );
+
+  const selectedRegularCardIds = useMemo(
+    () =>
+      new Set([
+        ...Object.entries(currentDeck.mainCounts)
+          .filter(([, count]) => count > 0)
+          .map(([cardId]) => cardId),
+        ...Object.entries(currentDeck.sideboardCounts)
+          .filter(([, count]) => count > 0)
+          .map(([cardId]) => cardId)
+      ]),
+    [currentDeck.mainCounts, currentDeck.sideboardCounts]
+  );
+
   const filteredCards = useMemo(() => {
-    const hasQuery = query.trim().length > 0;
-    return (allCards ?? [])
-      .filter((card) => {
-        if (activeTab === "leader" && card.type !== "Leader") return false;
-        if (activeTab === "base" && card.type !== "Base") return false;
-        if (activeTab === "cards" && !["Unit", "Event", "Upgrade"].includes(card.type ?? "")) {
-          return false;
-        }
-        if (
-          activeTab === "cards" &&
-          selectedTypes.length > 0 &&
-          !selectedTypes.includes(getCardTypeFilter(card) as CardTypeFilter)
-        ) {
-          return false;
-        }
-        if (activeTab === "cards") {
-          const cardAspects = card.aspects ?? [];
-          if (cardAspects.length === 0) {
-            if (!includeColorless) return false;
-          } else if (manualAspects !== null) {
-            if (!cardAspects.some((item) => manualAspects.includes(item))) return false;
-          } else if (automaticAspectReady && !hasNoAspectPenalty(card, leaders, base)) {
-            return false;
-          }
-        }
-        if (selectedSetCodes.length > 0 && !selectedSetCodes.includes(card.setCode)) return false;
-        if (
-          selectedRarities.length > 0 &&
-          (!card.rarity || !selectedRarities.includes(card.rarity))
-        ) {
-          return false;
-        }
-        if (maximumCost !== "all" && (card.cost ?? Infinity) > Number(maximumCost)) return false;
-        const allocation = allocations.get(card.cardId);
-        if (ownedFilter === "owned" && !allocation?.ownedCount) return false;
-        if (ownedFilter === "free" && !allocation?.freeCount) return false;
-        if (!hasQuery) return true;
-        return matchesCardSearchQuery(card, query);
-      })
-      .sort(
-        (left, right) =>
-          (left.cost ?? -1) - (right.cost ?? -1) ||
-          displayName(left).localeCompare(displayName(right), "es")
-      );
+    const matchingCards = (allCards ?? []).filter(cardMatchesFilters).sort(compareCardOrder);
+    if (activeTab === "cards") {
+      return matchingCards.filter((card) => !selectedRegularCardIds.has(card.cardId));
+    }
+
+    const pinnedIds =
+      activeTab === "leader" ? leaderIds : currentDeck.baseId ? [currentDeck.baseId] : [];
+    const pinnedCards = pinnedIds
+      .map((cardId) => cardsById.get(cardId))
+      .filter((card): card is CardInfo => Boolean(card));
+    const pinnedSet = new Set(pinnedCards.map((card) => card.cardId));
+    return [...pinnedCards, ...matchingCards.filter((card) => !pinnedSet.has(card.cardId))];
   }, [
     activeTab,
     allCards,
-    allocations,
-    automaticAspectReady,
-    base,
-    includeColorless,
-    leaders,
-    manualAspects,
-    maximumCost,
-    ownedFilter,
-    query,
-    selectedRarities,
-    selectedSetCodes,
-    selectedTypes
+    cardMatchesFilters,
+    cardsById,
+    compareCardOrder,
+    currentDeck.baseId,
+    leaderIds,
+    selectedRegularCardIds
   ]);
+
+  const filteredSelectedCards = useMemo(
+    () =>
+      [...selectedRegularCardIds]
+        .map((cardId) => cardsById.get(cardId))
+        .filter((card): card is CardInfo => Boolean(card))
+        .filter(cardMatchesFilters)
+        .sort(compareCardOrder),
+    [cardMatchesFilters, cardsById, compareCardOrder, selectedRegularCardIds]
+  );
 
   useEffect(() => {
     if (initializedDraftKey !== draftTargetKey) return;
@@ -883,9 +1093,11 @@ export function DeckBuilderPage() {
       return;
     }
     setCardPage(1);
+    setSelectedCardPage(1);
   }, [
     activeDeckIndex,
     activeTab,
+    cardSorts,
     draftTargetKey,
     includeColorless,
     initializedDraftKey,
@@ -903,6 +1115,14 @@ export function DeckBuilderPage() {
     setCardPage((page) => Math.min(page, cardPageCount));
   }, [cardPageCount]);
 
+  const selectedCardPageCount = Math.max(
+    1,
+    Math.ceil(filteredSelectedCards.length / CARD_PAGE_SIZE)
+  );
+  useEffect(() => {
+    setSelectedCardPage((page) => Math.min(page, selectedCardPageCount));
+  }, [selectedCardPageCount]);
+
   const activeFilterCount =
     (manualAspects !== null ? 1 : 0) +
     (!includeColorless ? 1 : 0) +
@@ -911,6 +1131,13 @@ export function DeckBuilderPage() {
     (selectedRarities.length > 0 ? 1 : 0) +
     (maximumCost !== "all" ? 1 : 0) +
     (ownedFilter !== "all" ? 1 : 0);
+
+  const toggleCardSort = (sort: CardSort) => {
+    setCardSorts((current) => {
+      if (!current.includes(sort)) return [...current, sort];
+      return current.length === 1 ? current : current.filter((item) => item !== sort);
+    });
+  };
 
   const updateCurrentDeck = (
     updater: (current: DeckBuilderSubdeckComposition) => DeckBuilderSubdeckComposition
@@ -923,11 +1150,15 @@ export function DeckBuilderPage() {
   const changeCount = (zone: "main" | "sideboard", cardId: string, delta: number) => {
     if (!format) return;
     const card = cardsById.get(cardId);
-    if (!card || cardSelectionReason(card)) return;
+    if (!card || (delta > 0 && cardSelectionReason(card))) return;
     const copyKey = card.cardKey ?? cardId;
     const limit = getCardCopyLimit(format, card);
     if (delta > 0 && (selectedCopiesByKey.get(copyKey) ?? 0) >= limit) return;
     if (delta > 0 && zone === "sideboard" && currentSideboardCount >= sideboardLimit) return;
+    if (delta > 0 && currentMainCount + currentSideboardCount === 0) {
+      setSelectedCardsExpanded(true);
+      setSelectedCardPage(1);
+    }
 
     updateCurrentDeck((current) => {
       const key = zone === "main" ? "mainCounts" : "sideboardCounts";
@@ -940,8 +1171,40 @@ export function DeckBuilderPage() {
     });
   };
 
+  const moveMainCopiesToSideboard = (cardId: string) => {
+    if (sideboardLimit <= 0) return;
+    const requested = Number.parseInt(sideboardMoveQuantities[cardId] ?? "1", 10);
+    if (!Number.isFinite(requested) || requested < 1) return;
+
+    updateCurrentDeck((current) => {
+      const mainCount = current.mainCounts[cardId] ?? 0;
+      const room = Math.max(0, sideboardLimit - totalCounts(current.sideboardCounts));
+      const amount = Math.min(requested, mainCount, room);
+      if (amount <= 0) return current;
+
+      const mainCounts = { ...current.mainCounts };
+      const nextMain = mainCount - amount;
+      if (nextMain > 0) mainCounts[cardId] = nextMain;
+      else delete mainCounts[cardId];
+
+      return {
+        ...current,
+        mainCounts,
+        sideboardCounts: {
+          ...current.sideboardCounts,
+          [cardId]: (current.sideboardCounts[cardId] ?? 0) + amount
+        }
+      };
+    });
+    setSideboardMoveQuantities((current) => ({ ...current, [cardId]: "1" }));
+  };
+
   const selectCard = (card: CardInfo) => {
-    if (!format || cardSelectionReason(card)) return;
+    if (!format) return;
+    const selectedRole =
+      (activeTab === "leader" && leaderIds.includes(card.cardId)) ||
+      (activeTab === "base" && currentDeck.baseId === card.cardId);
+    if (cardSelectionReason(card) && !selectedRole) return;
     if (activeTab === "leader") {
       updateCurrentDeck((current) => {
         const selected = current.leaderIds ?? [];
@@ -954,14 +1217,18 @@ export function DeckBuilderPage() {
           if (next.length === 2) setActiveTab("base");
           return { ...current, leaderIds: next };
         }
+        if (selected.includes(card.cardId)) return { ...current, leaderIds: [] };
         setActiveTab("base");
         return { ...current, leaderIds: [card.cardId] };
       });
       return;
     }
     if (activeTab === "base") {
-      updateCurrentDeck((current) => ({ ...current, baseId: card.cardId }));
-      setActiveTab("cards");
+      updateCurrentDeck((current) => {
+        if (current.baseId === card.cardId) return { ...current, baseId: undefined };
+        setActiveTab("cards");
+        return { ...current, baseId: card.cardId };
+      });
       return;
     }
     changeCount("main", card.cardId, 1);
@@ -1026,10 +1293,12 @@ export function DeckBuilderPage() {
 
   const firstShownCard = (cardPage - 1) * CARD_PAGE_SIZE;
   const shownCards = filteredCards.slice(firstShownCard, firstShownCard + CARD_PAGE_SIZE);
-  const selectedMain = Object.entries(currentDeck.mainCounts).filter(([, count]) => count > 0);
-  const selectedSideboard = Object.entries(currentDeck.sideboardCounts).filter(
-    ([, count]) => count > 0
+  const firstShownSelectedCard = (selectedCardPage - 1) * CARD_PAGE_SIZE;
+  const shownSelectedCards = filteredSelectedCards.slice(
+    firstShownSelectedCard,
+    firstShownSelectedCard + CARD_PAGE_SIZE
   );
+  const hasSelectedRegularCards = selectedRegularCardIds.size > 0;
   const formatLabel =
     format === "trilogy"
       ? `Trilogy · ${DECK_FORMAT_LABELS[trilogyCardPool]}`
@@ -1317,174 +1586,342 @@ export function DeckBuilderPage() {
               </select>
             </div>
 
+            <fieldset className="space-y-2" disabled={activeTab !== "cards"}>
+              <legend className="text-xs font-semibold text-slate-200">Ordenar cartas</legend>
+              <p className="text-[11px] text-slate-400">
+                Puedes activar los dos. En ese caso se ordenará primero por coste y después por
+                colección.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <FilterChip
+                  label="Ordenar por coste"
+                  pressed={cardSorts.includes("cost")}
+                  onClick={() => toggleCardSort("cost")}
+                />
+                <FilterChip
+                  label="Ordenar por colección"
+                  pressed={cardSorts.includes("collection")}
+                  onClick={() => toggleCardSort("collection")}
+                />
+              </div>
+            </fieldset>
+
             <button type="button" className="btn-secondary w-full" onClick={resetFilters}>
               <RotateCcw size={14} /> Restablecer filtros
             </button>
           </div>
         </details>
 
-        <p id="deck-builder-results" className="scroll-mt-20 text-xs text-slate-400">
-          {filteredCards.length} resultado(s)
-          {shownCards.length > 0
-            ? ` · mostrando ${firstShownCard + 1}–${firstShownCard + shownCards.length}`
-            : ""}
-        </p>
+        {activeTab === "cards" ? (
+          <div className="space-y-3">
+            {hasSelectedRegularCards && (
+              <section className="rounded-xl border border-saber-blue/60 bg-space-900 p-3">
+                <button
+                  type="button"
+                  className="flex w-full items-center justify-between gap-3 text-left"
+                  aria-expanded={selectedCardsExpanded}
+                  aria-controls="deck-builder-selected-cards"
+                  onClick={() => setSelectedCardsExpanded((current) => !current)}
+                >
+                  <span>
+                    <span className="block font-display text-sm text-saber-blue">
+                      Cartas seleccionadas
+                    </span>
+                    <span className="block text-[11px] text-slate-400">
+                      {currentMainCount} en el mazo
+                      {sideboardLimit > 0 ? ` · ${currentSideboardCount} en el banquillo` : ""}
+                    </span>
+                  </span>
+                  <span className="inline-flex items-center gap-1 text-xs text-slate-300">
+                    {selectedCardsExpanded ? "Minimizar" : "Maximizar"}
+                    {selectedCardsExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                  </span>
+                </button>
 
-        <ul className="grid gap-2 sm:grid-cols-2">
-          {shownCards.map((card) => {
-            const allocation = allocations.get(card.cardId);
-            const mainCount = currentDeck.mainCounts[card.cardId] ?? 0;
-            const sideCount = currentDeck.sideboardCounts[card.cardId] ?? 0;
-            const selected = leaderIds.includes(card.cardId) || card.cardId === currentDeck.baseId;
-            const selectedCopies = selectedCopiesByKey.get(card.cardKey ?? card.cardId) ?? 0;
-            const copyLimit = getCardCopyLimit(format, card);
-            const copyLimitReached = selectedCopies >= copyLimit;
-            const blockedReason = cardSelectionReason(card);
-            return (
-              <li
-                key={card.cardId}
-                className={`rounded-xl border p-3 ${blockedReason ? "border-saber-red/40 bg-space-950 opacity-75" : selected ? "border-saber-blue bg-space-800" : "border-space-700 bg-space-900"}`}
-              >
-                <div className="flex gap-3">
-                  {(card.imageUrl ?? tryGetCardImageUrl(card.cardId)) && (
-                    <button
-                      type="button"
-                      className="shrink-0 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-saber-blue"
-                      aria-label={`Ver detalles de ${displayName(card)}`}
-                      onClick={() => setDetailsCard(card)}
+                {selectedCardsExpanded && (
+                  <div id="deck-builder-selected-cards" className="mt-3 space-y-3">
+                    <p
+                      id="deck-builder-selected-results"
+                      className="scroll-mt-20 text-xs text-slate-400"
                     >
-                      <CardImageThumbnail
-                        src={card.imageUrl ?? tryGetCardImageUrl(card.cardId)!}
-                        fallbackSrc={tryGetCardImageUrl(card.cardId)}
-                        alt={displayName(card)}
-                        className="h-28 w-auto rounded"
-                        zoomOnClick={false}
-                      />
-                    </button>
-                  )}
-                  <div className="min-w-0 flex-1">
-                    <p className="font-mono text-[11px] text-slate-400">{card.cardId}</p>
-                    <p className="text-sm font-semibold leading-tight">{displayName(card)}</p>
-                    <p className="mt-1 text-xs text-slate-400">
-                      {TYPE_LABELS[card.type ?? ""] ?? card.type ?? "Carta"}
-                      {card.cost !== undefined ? ` · Coste ${card.cost}` : ""}
-                      {card.arena ? ` · ${card.arena === "Ground" ? "Terrestre" : "Espacial"}` : ""}
+                      {filteredSelectedCards.length} seleccionada(s) coinciden con los filtros
+                      {shownSelectedCards.length > 0
+                        ? ` · mostrando ${firstShownSelectedCard + 1}–${firstShownSelectedCard + shownSelectedCards.length}`
+                        : ""}
                     </p>
-                    <p className="mt-1 text-xs">
-                      Tienes <strong>{allocation?.ownedCount ?? 0}</strong> · libres{" "}
-                      <strong
-                        className={
-                          (allocation?.freeCount ?? 0) > 0 ? "text-saber-green" : "text-saber-red"
-                        }
-                      >
-                        {allocation?.freeCount ?? 0}
-                      </strong>
-                    </p>
-                    {(card.aspects?.length ?? 0) > 0 && (
-                      <p className="mt-1 text-[11px] text-slate-400">
-                        {card.aspects!.map((item) => ASPECT_LABELS[item] ?? item).join(" · ")}
+
+                    {shownSelectedCards.length > 0 ? (
+                      <ul className="grid gap-2 sm:grid-cols-2">
+                        {shownSelectedCards.map((card) => {
+                          const allocation = allocations.get(card.cardId);
+                          const mainCount = currentDeck.mainCounts[card.cardId] ?? 0;
+                          const sideCount = currentDeck.sideboardCounts[card.cardId] ?? 0;
+                          const selectedCopies =
+                            selectedCopiesByKey.get(card.cardKey ?? card.cardId) ?? 0;
+                          const copyLimit = getCardCopyLimit(format, card);
+                          const copyLimitReached = selectedCopies >= copyLimit;
+                          const blockedReason = cardSelectionReason(card);
+                          const sideboardRoom = Math.max(0, sideboardLimit - currentSideboardCount);
+                          const maximumMove = Math.min(mainCount, sideboardRoom);
+                          return (
+                            <BuilderCardItem
+                              key={card.cardId}
+                              card={card}
+                              ownedCount={allocation?.ownedCount ?? 0}
+                              freeCount={allocation?.freeCount ?? 0}
+                              blockedReason={blockedReason}
+                              selected
+                              onOpenDetails={() => setDetailsCard(card)}
+                            >
+                              <div
+                                className={`mt-2 grid ${sideboardLimit > 0 ? "grid-cols-2" : "grid-cols-1"} gap-2 text-xs`}
+                              >
+                                <div className="rounded-lg bg-space-950 p-2 text-center">
+                                  <p className="mb-1 text-slate-400">Mazo · máximo {copyLimit}</p>
+                                  <div className="flex items-center justify-center gap-2">
+                                    <QuantityButton
+                                      label={`Restar ${displayName(card)} del mazo`}
+                                      disabled={mainCount === 0}
+                                      onClick={() => changeCount("main", card.cardId, -1)}
+                                    >
+                                      <Minus size={14} />
+                                    </QuantityButton>
+                                    <strong className="min-w-4">{mainCount}</strong>
+                                    <QuantityButton
+                                      label={`Añadir otra copia de ${displayName(card)} al mazo`}
+                                      disabled={Boolean(blockedReason) || copyLimitReached}
+                                      onClick={() => changeCount("main", card.cardId, 1)}
+                                    >
+                                      <Plus size={14} />
+                                    </QuantityButton>
+                                  </div>
+                                </div>
+
+                                {sideboardLimit > 0 && (
+                                  <div className="rounded-lg bg-space-950 p-2 text-center">
+                                    <p className="mb-1 text-slate-400">Banquillo</p>
+                                    <div className="flex items-center justify-center gap-2">
+                                      <QuantityButton
+                                        label={`Restar ${displayName(card)} del banquillo`}
+                                        disabled={sideCount === 0}
+                                        onClick={() => changeCount("sideboard", card.cardId, -1)}
+                                      >
+                                        <Minus size={14} />
+                                      </QuantityButton>
+                                      <strong className="min-w-4">{sideCount}</strong>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+
+                              {sideboardLimit > 0 && mainCount > 0 && (
+                                <div className="mt-2 flex items-end gap-2 rounded-lg bg-space-950 p-2">
+                                  <label className="min-w-0 flex-1 text-[11px] text-slate-400">
+                                    Copias al banquillo
+                                    <input
+                                      type="number"
+                                      min="1"
+                                      max={Math.max(maximumMove, 1)}
+                                      inputMode="numeric"
+                                      aria-label={`Cantidad de ${displayName(card)} para llevar al banquillo`}
+                                      className="mt-1 w-full rounded-lg border border-space-600 bg-space-900 px-3 py-2 text-sm text-slate-100"
+                                      value={sideboardMoveQuantities[card.cardId] ?? "1"}
+                                      onChange={(event) => {
+                                        const value = event.target.value;
+                                        if (value === "" || /^\d+$/.test(value)) {
+                                          setSideboardMoveQuantities((current) => ({
+                                            ...current,
+                                            [card.cardId]: value
+                                          }));
+                                        }
+                                      }}
+                                    />
+                                  </label>
+                                  <button
+                                    type="button"
+                                    className="btn-secondary min-h-10 shrink-0 px-3 text-xs"
+                                    aria-label={`Llevar ${displayName(card)} al banquillo`}
+                                    disabled={maximumMove === 0}
+                                    onClick={() => moveMainCopiesToSideboard(card.cardId)}
+                                  >
+                                    <MoveRight size={15} /> Llevar al banquillo
+                                  </button>
+                                </div>
+                              )}
+                            </BuilderCardItem>
+                          );
+                        })}
+                      </ul>
+                    ) : (
+                      <p className="rounded-lg bg-space-950 p-3 text-xs text-slate-400">
+                        Ninguna carta seleccionada coincide con la búsqueda y los filtros actuales.
                       </p>
                     )}
-                  </div>
-                </div>
 
-                {blockedReason && (
-                  <p className="mt-2 flex items-start gap-1 text-xs text-saber-red">
-                    <AlertTriangle size={14} className="mt-0.5 shrink-0" /> {blockedReason}
+                    <PaginationControls
+                      currentPage={selectedCardPage}
+                      pageSize={CARD_PAGE_SIZE}
+                      totalItems={filteredSelectedCards.length}
+                      label="cartas seleccionadas"
+                      onPageChange={(page) => {
+                        setSelectedCardPage(page);
+                        requestAnimationFrame(() =>
+                          document.getElementById("deck-builder-selected-results")?.scrollIntoView({
+                            behavior: "smooth",
+                            block: "start"
+                          })
+                        );
+                      }}
+                    />
+                  </div>
+                )}
+              </section>
+            )}
+
+            <section className="rounded-xl border border-space-700 bg-space-900 p-3">
+              <button
+                type="button"
+                className="flex w-full items-center justify-between gap-3 text-left"
+                aria-expanded={availableCardsExpanded}
+                aria-controls="deck-builder-available-cards"
+                onClick={() => setAvailableCardsExpanded((current) => !current)}
+              >
+                <span>
+                  <span className="block font-display text-sm">Cartas disponibles</span>
+                  <span className="block text-[11px] text-slate-400">
+                    {filteredCards.length} carta(s) sin seleccionar coinciden con los filtros
+                  </span>
+                </span>
+                <span className="inline-flex items-center gap-1 text-xs text-slate-300">
+                  {availableCardsExpanded ? "Minimizar" : "Maximizar"}
+                  {availableCardsExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                </span>
+              </button>
+
+              {availableCardsExpanded && (
+                <div id="deck-builder-available-cards" className="mt-3 space-y-3">
+                  <p id="deck-builder-results" className="scroll-mt-20 text-xs text-slate-400">
+                    {filteredCards.length} disponible(s)
+                    {shownCards.length > 0
+                      ? ` · mostrando ${firstShownCard + 1}–${firstShownCard + shownCards.length}`
+                      : ""}
                   </p>
-                )}
 
-                {activeTab === "leader" || activeTab === "base" ? (
-                  <button
-                    type="button"
-                    className="btn-secondary mt-2 w-full"
-                    disabled={Boolean(blockedReason)}
-                    onClick={() => selectCard(card)}
-                  >
-                    {selected ? <CheckCircle2 size={15} /> : <Plus size={15} />}
-                    {format === "twin-suns" && activeTab === "leader" && selected
-                      ? "Quitar selección"
-                      : selected
-                        ? "Seleccionada"
-                        : "Elegir"}
-                  </button>
-                ) : (
-                  <div
-                    className={`mt-2 grid ${sideboardLimit > 0 ? "grid-cols-2" : "grid-cols-1"} gap-2 text-xs`}
-                  >
-                    <div className="rounded-lg bg-space-950 p-2 text-center">
-                      <p className="mb-1 text-slate-400">Mazo · máximo {copyLimit}</p>
-                      <div className="flex items-center justify-center gap-2">
-                        <QuantityButton
-                          label={`Restar ${displayName(card)} del mazo`}
-                          disabled={mainCount === 0}
-                          onClick={() => changeCount("main", card.cardId, -1)}
-                        >
-                          <Minus size={14} />
-                        </QuantityButton>
-                        <strong className="min-w-4">{mainCount}</strong>
-                        <QuantityButton
-                          label={`Añadir ${displayName(card)} al mazo`}
-                          disabled={Boolean(blockedReason) || copyLimitReached}
-                          onClick={() => changeCount("main", card.cardId, 1)}
-                        >
-                          <Plus size={14} />
-                        </QuantityButton>
-                      </div>
-                    </div>
-                    {sideboardLimit > 0 && (
-                      <div className="rounded-lg bg-space-950 p-2 text-center">
-                        <p className="mb-1 text-slate-400">Banquillo</p>
-                        <div className="flex items-center justify-center gap-2">
-                          <QuantityButton
-                            label={`Restar ${displayName(card)} del banquillo`}
-                            disabled={sideCount === 0}
-                            onClick={() => changeCount("sideboard", card.cardId, -1)}
+                  {shownCards.length > 0 ? (
+                    <ul className="grid gap-2 sm:grid-cols-2">
+                      {shownCards.map((card) => {
+                        const allocation = allocations.get(card.cardId);
+                        const selectedCopies =
+                          selectedCopiesByKey.get(card.cardKey ?? card.cardId) ?? 0;
+                        const copyLimit = getCardCopyLimit(format, card);
+                        const copyLimitReached = selectedCopies >= copyLimit;
+                        const blockedReason = cardSelectionReason(card);
+                        return (
+                          <BuilderCardItem
+                            key={card.cardId}
+                            card={card}
+                            ownedCount={allocation?.ownedCount ?? 0}
+                            freeCount={allocation?.freeCount ?? 0}
+                            blockedReason={blockedReason}
+                            onOpenDetails={() => setDetailsCard(card)}
                           >
-                            <Minus size={14} />
-                          </QuantityButton>
-                          <strong className="min-w-4">{sideCount}</strong>
-                          <QuantityButton
-                            label={`Añadir ${displayName(card)} al banquillo`}
-                            disabled={
-                              Boolean(blockedReason) ||
-                              copyLimitReached ||
-                              currentSideboardCount >= sideboardLimit
-                            }
-                            onClick={() => changeCount("sideboard", card.cardId, 1)}
-                          >
-                            <Plus size={14} />
-                          </QuantityButton>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </li>
-            );
-          })}
-        </ul>
+                            <button
+                              type="button"
+                              className="btn-secondary mt-2 w-full"
+                              disabled={Boolean(blockedReason) || copyLimitReached}
+                              aria-label={`Añadir ${displayName(card)} al mazo`}
+                              onClick={() => selectCard(card)}
+                            >
+                              <Plus size={15} /> Añadir al mazo · máximo {copyLimit}
+                            </button>
+                          </BuilderCardItem>
+                        );
+                      })}
+                    </ul>
+                  ) : (
+                    <p className="rounded-lg bg-space-950 p-3 text-xs text-slate-400">
+                      No hay cartas disponibles que coincidan con la búsqueda y los filtros.
+                    </p>
+                  )}
 
-        <PaginationControls
-          currentPage={cardPage}
-          pageSize={CARD_PAGE_SIZE}
-          totalItems={filteredCards.length}
-          label="cartas del constructor"
-          onPageChange={(page) => {
-            setCardPage(page);
-            requestAnimationFrame(() =>
-              document.getElementById("deck-builder-results")?.scrollIntoView({
-                behavior: "smooth",
-                block: "start"
-              })
-            );
-          }}
-        />
+                  <PaginationControls
+                    currentPage={cardPage}
+                    pageSize={CARD_PAGE_SIZE}
+                    totalItems={filteredCards.length}
+                    label="cartas disponibles"
+                    onPageChange={(page) => {
+                      setCardPage(page);
+                      requestAnimationFrame(() =>
+                        document.getElementById("deck-builder-results")?.scrollIntoView({
+                          behavior: "smooth",
+                          block: "start"
+                        })
+                      );
+                    }}
+                  />
+                </div>
+              )}
+            </section>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <p id="deck-builder-results" className="scroll-mt-20 text-xs text-slate-400">
+              {filteredCards.length} resultado(s)
+              {shownCards.length > 0
+                ? ` · mostrando ${firstShownCard + 1}–${firstShownCard + shownCards.length}`
+                : ""}
+            </p>
+            <ul className="grid gap-2 sm:grid-cols-2">
+              {shownCards.map((card) => {
+                const allocation = allocations.get(card.cardId);
+                const selected =
+                  leaderIds.includes(card.cardId) || card.cardId === currentDeck.baseId;
+                const blockedReason = cardSelectionReason(card);
+                return (
+                  <BuilderCardItem
+                    key={card.cardId}
+                    card={card}
+                    ownedCount={allocation?.ownedCount ?? 0}
+                    freeCount={allocation?.freeCount ?? 0}
+                    blockedReason={blockedReason}
+                    selected={selected}
+                    onOpenDetails={() => setDetailsCard(card)}
+                  >
+                    <button
+                      type="button"
+                      className="btn-secondary mt-2 w-full"
+                      disabled={Boolean(blockedReason) && !selected}
+                      onClick={() => selectCard(card)}
+                    >
+                      {selected ? <Minus size={15} /> : <Plus size={15} />}
+                      {selected ? "Quitar selección" : "Elegir"}
+                    </button>
+                  </BuilderCardItem>
+                );
+              })}
+            </ul>
+            <PaginationControls
+              currentPage={cardPage}
+              pageSize={CARD_PAGE_SIZE}
+              totalItems={filteredCards.length}
+              label={activeTab === "leader" ? "líderes" : "bases"}
+              onPageChange={(page) => {
+                setCardPage(page);
+                requestAnimationFrame(() =>
+                  document.getElementById("deck-builder-results")?.scrollIntoView({
+                    behavior: "smooth",
+                    block: "start"
+                  })
+                );
+              }}
+            />
+          </div>
+        )}
       </section>
 
       <section className="card space-y-3">
         <h2 className="font-display text-base">
-          {format === "trilogy" ? `Lista del mazo ${activeDeckIndex + 1}` : "Lista del mazo"}
+          {format === "trilogy" ? `Resumen del mazo ${activeDeckIndex + 1}` : "Resumen del mazo"}
         </h2>
         <dl
           className={`grid ${sideboardLimit > 0 ? "grid-cols-2 sm:grid-cols-4" : "grid-cols-3"} gap-2 text-xs`}
@@ -1530,61 +1967,6 @@ export function DeckBuilderPage() {
               {deckStatistics.costs.map(([cost, count]) => `${cost}: ${count}`).join(" · ") ||
                 "sin costes publicados"}
             </p>
-          </div>
-        )}
-
-        {selectedMain.length > 0 && (
-          <div>
-            <h3 className="mb-1 text-sm font-semibold">Mazo principal</h3>
-            <ul className="space-y-1 text-xs">
-              {selectedMain
-                .sort(([left], [right]) =>
-                  displayName(cardsById.get(left)).localeCompare(
-                    displayName(cardsById.get(right)),
-                    "es"
-                  )
-                )
-                .map(([cardId, count]) => (
-                  <li
-                    key={cardId}
-                    className="flex items-center justify-between gap-2 rounded-lg bg-space-950 px-3 py-2"
-                  >
-                    <span>
-                      <strong>{count}x</strong> {displayName(cardsById.get(cardId), cardId)}
-                    </span>
-                    <QuantityButton
-                      label={`Restar ${displayName(cardsById.get(cardId), cardId)}`}
-                      onClick={() => changeCount("main", cardId, -1)}
-                    >
-                      <Minus size={14} />
-                    </QuantityButton>
-                  </li>
-                ))}
-            </ul>
-          </div>
-        )}
-
-        {sideboardLimit > 0 && selectedSideboard.length > 0 && (
-          <div>
-            <h3 className="mb-1 text-sm font-semibold">Banquillo</h3>
-            <ul className="space-y-1 text-xs">
-              {selectedSideboard.map(([cardId, count]) => (
-                <li
-                  key={cardId}
-                  className="flex items-center justify-between gap-2 rounded-lg bg-space-950 px-3 py-2"
-                >
-                  <span>
-                    <strong>{count}x</strong> {displayName(cardsById.get(cardId), cardId)}
-                  </span>
-                  <QuantityButton
-                    label={`Restar ${displayName(cardsById.get(cardId), cardId)} del banquillo`}
-                    onClick={() => changeCount("sideboard", cardId, -1)}
-                  >
-                    <Minus size={14} />
-                  </QuantityButton>
-                </li>
-              ))}
-            </ul>
           </div>
         )}
       </section>
