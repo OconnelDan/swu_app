@@ -69,8 +69,11 @@ Abre `http://localhost:5173`.
    cada carta que ya tienes, si hay copias libres o si están comprometidas en
    otro mazo montado (y en cuál).
 3. **Resultado**: verás qué cartas te faltan, con opción de ver todas o solo
-   las faltantes, copiar la lista, descargarla en TXT o CSV y guardar el mazo
-   como favorito. Si ya está guardado, también puedes **Montar mazo** sin salir
+   las faltantes, copiar la lista, descargar las faltantes en CSV o un TXT
+   completo con líderes, base, mazo principal, banquillo y faltantes, y guardar
+   el mazo como favorito. El TXT separa cada zona y ordena sus cartas por la
+   cronología de las colecciones; cada línea incluye código, cantidad y nombres
+   en español e inglés. Si ya está guardado, también puedes **Montar mazo** sin salir
    del resultado. Al pulsar una miniatura se abre la misma ficha informativa
    persistente del resto de la app, sin controles para modificar la colección.
 4. **Mazos → Crear mazo**: construye listas Premier, Eternal, Twin Suns o
@@ -81,7 +84,14 @@ Abre `http://localhost:5173`.
    representa el coste exacto. Los resultados se paginan sin ocultar las cartas
    posteriores a la primera página. Al pulsar la miniatura de una carta se abre
    una ficha persistente con su imagen grande, texto traducido y datos de juego;
-   se cierra manualmente y no modifica la composición del mazo. Cada cambio se
+   se cierra manualmente y no modifica la composición del mazo. Los líderes y
+   bases elegidos se mantienen al principio de sus listas. En la pestaña Cartas,
+   las seleccionadas aparecen primero en una caja plegable —visible desde la
+   primera elección— y las disponibles permanecen en otra caja independiente;
+   ambas conservan su propia paginación. Las seleccionadas admiten sumar, restar
+   y trasladar una cantidad concreta al banquillo, y los mismos filtros se aplican
+   al mazo principal, el banquillo y las disponibles. El orden puede ser por coste,
+   por colección o por ambos, usando el coste como criterio principal. Cada cambio se
    conserva además en un borrador automático del dispositivo: si recargas la
    PWA o navegas accidentalmente a otra sección, al volver se restauran formato,
    nombre, líderes, base, mazos, banquillos, pestaña, búsqueda, filtros, página y
