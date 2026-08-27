@@ -52,7 +52,10 @@ export interface CardAllocation {
 
 export interface CardComparison {
   cardId: string;
+  /** Nombre oficial en inglés. */
   cardName?: string;
+  /** Nombre oficial localizado al castellano, cuando está publicado. */
+  localizedCardName?: string;
   imageUrl?: string;
   requiredCount: number;
   ownedCount: number;
