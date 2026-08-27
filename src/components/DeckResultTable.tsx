@@ -42,6 +42,7 @@ function fallbackCardInfo(row: CardComparison): CardInfo {
     setCode: separatorIndex > 0 ? row.cardId.slice(0, separatorIndex) : "",
     cardNumber: separatorIndex > 0 ? row.cardId.slice(separatorIndex + 1) : "",
     name: row.cardName,
+    localizedName: row.localizedCardName,
     imageUrl: row.imageUrl
   };
 }
