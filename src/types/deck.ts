@@ -57,6 +57,8 @@ export interface CardComparison {
   /** Nombre oficial localizado al castellano, cuando está publicado. */
   localizedCardName?: string;
   imageUrl?: string;
+  /** Coste impreso de la carta, usado para mostrar la curva del mazo. */
+  cost?: number;
   requiredCount: number;
   ownedCount: number;
   missingCount: number;
@@ -99,7 +101,9 @@ export interface DeckComparisonResult {
  * Un favorito conserva una idea de mazo, pero solo un mazo con `isMounted`
  * reserva físicamente copias de la colección. `allocationPriority` deja
  * preparado el reparto general. `preferredCardIds` permite dar prioridad a
- * este mazo para cartas concretas sin trasladar también las demás.
+ * este mazo para cartas concretas sin trasladar también las demás. Los
+ * `cardAllocationOverrides` conservan el reparto elegido manualmente por el
+ * usuario para una carta, incluso cuando intervienen varios mazos de origen.
  */
 export interface FavoriteDeck {
   id: string;
@@ -115,4 +119,15 @@ export interface FavoriteDeck {
   mountedAt?: string;
   allocationPriority?: number;
   preferredCardIds?: string[];
+  cardAllocationOverrides?: Record<string, number>;
+}
+
+export interface CardTransferSelection {
+  favoriteId: string;
+  count: number;
+}
+
+export interface CardAllocationOverrideUpdate {
+  favoriteId: string;
+  assignedCount: number;
 }

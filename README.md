@@ -110,11 +110,14 @@ Abre `http://localhost:5173`.
    cambiar líder, base, mazo principal o banquillo.
 6. **Mazos → Montados**: consulta los mazos que sí reservan cartas, su reparto
    físico real y las copias pendientes. Al abrir un mazo incompleto, cada carta
-   disponible en otros mazos tiene su propio botón **Mover cartas a este mazo**
-   y una confirmación previa con el origen exacto de las copias. **Modificar
-   mazo** permite cambiar su composición sin desmontarlo; al guardar conserva
-   su prioridad y recalcula automáticamente las copias reservadas. **Desmontar
-   mazo** libera las cartas y devuelve la lista a Favoritos sin borrar su JSON.
+   disponible en otros mazos tiene su propio botón **Asignar cartas a este
+   mazo**. La ventana de reasignación muestra todos los mazos de origen y deja
+   elegir cuántas copias retirar de cada uno. El detalle se presenta siempre
+   por curva: mazo principal de menor a mayor coste y, al final, banquillo con
+   el mismo orden. **Modificar mazo** permite cambiar su composición sin
+   desmontarlo; al guardar conserva su prioridad y recalcula automáticamente
+   las copias reservadas. **Desmontar mazo** libera las cartas y devuelve la
+   lista a Favoritos sin borrar su JSON.
 7. **Buscar**: recorre todo el catálogo y utiliza la misma búsqueda avanzada y
    los mismos filtros manuales del creador: aspectos, tipo y arena, colecciones,
    rarezas, coste máximo y cartas poseídas o libres. Aquí no existen aspectos
@@ -150,8 +153,10 @@ estaban montados mantienen prioridad y un nuevo mazo utiliza primero las
 copias que continúen libres, sin quitárselas automáticamente a otro. La pantalla
 de montados distingue las copias reservadas, las que están en otro mazo y las
 que realmente no existen en la colección. Desde el detalle se puede dar
-prioridad a una carta concreta: los demás mazos conservan su composición, pero
-quedan marcados como incompletos si ceden alguna de sus copias físicas.
+prioridad a una carta concreta eligiendo de qué mazo o mazos salen sus copias.
+Los demás mazos conservan su composición, pero quedan marcados como incompletos
+si ceden alguna de sus copias físicas. El reparto elegido se conserva tanto en
+la cuenta como en el modo invitado.
 
 En `sample-data/` encontrarás un Excel de colección de ejemplo
 (`coleccion_ejemplo.xlsx`) y dos mazos de ejemplo (`mazo_ejemplo.json` y
@@ -189,6 +194,9 @@ key` en el frontend.
    elimina cartas, mazos, preferencias ni copias ya enviadas.
    Para poder restar cantidades desde **Buscar**, ejecuta después
    [`supabase/migrations/20260821_restar_cartas_coleccion.sql`](./supabase/migrations/20260821_restar_cartas_coleccion.sql).
+   Para elegir de qué mazo se reasignan las copias, ejecuta finalmente
+   [`supabase/migrations/20260911_seleccionar_origen_reasignacion.sql`](./supabase/migrations/20260911_seleccionar_origen_reasignacion.sql)
+   antes de desplegar el frontend de esta versión.
 3. En **Authentication → URL Configuration**, usa como Site URL
    `https://oconneldan.github.io/swu_app/` y añade como Redirect URL
    `https://oconneldan.github.io/swu_app/**` (añade también la URL local que
@@ -408,8 +416,8 @@ ejemplo `/mi-repo/` para GitHub Pages).
 ## Limitaciones conocidas y mejoras futuras
 
 - Un mazo nuevo se monta con prioridad inferior a los que ya estaban montados.
-  Desde el detalle se puede trasladar la prioridad de cartas concretas; no se
-  reasigna automáticamente toda la composición de otros mazos.
+  Desde el detalle se pueden trasladar cartas concretas eligiendo los mazos de
+  origen; no se reasigna automáticamente toda la composición de otros mazos.
 - No hay integración de colección con `sw-unlimited-db.com` (ver más arriba
   por qué, y cómo activarla si en el futuro existe una API oficial).
 - El constructor valida Premier, Eternal, Twin Suns y Trilogy: estructura,

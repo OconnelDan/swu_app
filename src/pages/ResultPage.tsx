@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Users } from "lucide-react";
 import { DeckSummary } from "@/components/DeckSummary";
 import { DeckResultTable } from "@/components/DeckResultTable";
+import { CardTransferDialog } from "@/components/CardTransferDialog";
 import { useDataSource } from "@/contexts/DataSourceContext";
 import { useAuth } from "@/hooks/useAuth";
 import { useDeckLegality } from "@/hooks/useDeckLegality";
@@ -13,11 +14,15 @@ import {
   summarizeMountAvailability,
   type CardTransferPlan
 } from "@/lib/cardAllocation";
-import { buildCardTransferConfirmationMessage } from "@/lib/cardTransfer";
 import { isSupabaseConfigured } from "@/lib/supabaseClient";
 import { buildMountDeckConfirmationMessage } from "@/lib/mountDeckConfirmation";
 import { getFriendsCardAvailability, type FriendCardAvailability } from "@/lib/friendsRepository";
-import type { DeckComparisonResult, FavoriteDeck, NormalizedDeck } from "@/types/deck";
+import type {
+  CardTransferSelection,
+  DeckComparisonResult,
+  FavoriteDeck,
+  NormalizedDeck
+} from "@/types/deck";
 
 interface ResultPageProps {
   deck: NormalizedDeck | null;
@@ -34,6 +39,8 @@ export function ResultPage({ deck, result, favoriteId = null, onFavoriteSaved }:
   const [mountedOnResult, setMountedOnResult] = useState(false);
   const [mounting, setMounting] = useState(false);
   const [busyCardId, setBusyCardId] = useState<string | null>(null);
+  const [transferCardId, setTransferCardId] = useState<string | null>(null);
+  const [transferError, setTransferError] = useState<string | null>(null);
   const [friendAvailability, setFriendAvailability] = useState<
     Map<string, FriendCardAvailability[]>
   >(new Map());
@@ -42,7 +49,7 @@ export function ResultPage({ deck, result, favoriteId = null, onFavoriteSaved }:
   const [favoriteError, setFavoriteError] = useState<string | null>(null);
   const [favoriteMessage, setFavoriteMessage] = useState<string | null>(null);
   const { session } = useAuth();
-  const { collection, favorites, mountFavoriteDeck, prioritizeFavoriteDeckCard, saveFavoriteDeck } =
+  const { collection, favorites, mountFavoriteDeck, transferFavoriteDeckCard, saveFavoriteDeck } =
     useDataSource();
   const navigate = useNavigate();
   const favoriteFromSource = activeFavoriteId
@@ -146,21 +153,29 @@ export function ResultPage({ deck, result, favoriteId = null, onFavoriteSaved }:
     }
   };
 
-  const handleMoveCard = async (cardId: string) => {
-    const plan = transferPlans.get(cardId);
-    if (!activeFavorite || !plan) return;
-    if (!confirm(buildCardTransferConfirmationMessage(plan))) return;
+  const handleOpenCardTransfer = (cardId: string) => {
+    if (!activeFavorite || !transferPlans.has(cardId)) return;
+    setTransferError(null);
+    setTransferCardId(cardId);
+  };
+
+  const handleConfirmCardTransfer = async (sources: CardTransferSelection[]) => {
+    if (!activeFavorite || !transferCardId) return;
+    const plan = transferPlans.get(transferCardId);
+    if (!plan) return;
 
     setFavoriteError(null);
     setFavoriteMessage(null);
-    setBusyCardId(cardId);
+    setTransferError(null);
+    setBusyCardId(transferCardId);
     try {
-      await prioritizeFavoriteDeckCard(activeFavorite.id, cardId);
+      await transferFavoriteDeckCard(activeFavorite.id, transferCardId, sources);
       setFavoriteMessage(
-        `Se han reasignado ${plan.copiesToMove} copia(s) de ${cardId} a «${activeFavorite.name}».`
+        `Se han reasignado ${plan.copiesToMove} copia(s) de ${transferCardId} a «${activeFavorite.name}».`
       );
+      setTransferCardId(null);
     } catch (cause) {
-      setFavoriteError(
+      setTransferError(
         cause instanceof Error ? cause.message : "No se han podido mover las cartas."
       );
     } finally {
@@ -279,9 +294,28 @@ export function ResultPage({ deck, result, favoriteId = null, onFavoriteSaved }:
         showAll={showAll}
         friendAvailability={friendAvailability}
         transferPlans={transferPlans}
-        onMoveCard={activeFavorite?.isMounted ? (cardId) => void handleMoveCard(cardId) : undefined}
+        onMoveCard={activeFavorite?.isMounted ? handleOpenCardTransfer : undefined}
         busyCardId={busyCardId}
       />
+
+      {transferCardId && transferPlans.get(transferCardId) && (
+        <CardTransferDialog
+          plan={transferPlans.get(transferCardId)!}
+          cardName={
+            displayedResult.comparisons.find((card) => card.cardId === transferCardId)
+              ?.localizedCardName ??
+            displayedResult.comparisons.find((card) => card.cardId === transferCardId)?.cardName
+          }
+          busy={busyCardId === transferCardId}
+          error={transferError}
+          onCancel={() => {
+            if (busyCardId) return;
+            setTransferError(null);
+            setTransferCardId(null);
+          }}
+          onConfirm={(sources) => void handleConfirmCardTransfer(sources)}
+        />
+      )}
     </div>
   );
 }

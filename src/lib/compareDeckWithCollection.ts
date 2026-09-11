@@ -43,6 +43,7 @@ function compareCard(
     cardName: cardInfo?.name ?? collectionNames?.get(card.cardId),
     localizedCardName: cardInfo?.localizedName ?? collectionNames?.get(card.cardId),
     imageUrl: cardInfo?.imageUrl ?? tryGetCardImageUrl(card.cardId),
+    cost: cardInfo?.cost,
     requiredCount: card.requiredCount,
     ownedCount,
     missingCount,

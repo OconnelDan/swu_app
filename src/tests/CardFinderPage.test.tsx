@@ -135,7 +135,8 @@ function dataSource(
     duplicateFavoriteDeck: vi.fn(),
     mountFavoriteDeck: vi.fn(),
     unmountFavoriteDeck: vi.fn(),
-    prioritizeFavoriteDeckCard: vi.fn()
+    prioritizeFavoriteDeckCard: vi.fn(),
+    transferFavoriteDeckCard: vi.fn()
   };
 }
 

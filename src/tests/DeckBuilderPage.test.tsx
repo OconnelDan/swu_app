@@ -248,6 +248,7 @@ function dataSource(overrides: Partial<DataSourceValue> = {}): DataSourceValue {
     mountFavoriteDeck: vi.fn(),
     unmountFavoriteDeck: vi.fn(),
     prioritizeFavoriteDeckCard: vi.fn(),
+    transferFavoriteDeckCard: vi.fn(),
     ...overrides
   };
 }

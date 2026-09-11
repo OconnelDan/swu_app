@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildMountedDeckComparisonResult,
+  buildCardTransferAllocationUpdates,
   computeCardAllocations,
   getCardLocationStatus,
   planCardTransfer,
@@ -19,7 +20,8 @@ function makeFavorite(
   cards: { id: string; count: number }[],
   allocationPriority = 1,
   isMounted = true,
-  preferredCardIds: string[] = []
+  preferredCardIds: string[] = [],
+  cardAllocationOverrides: Record<string, number> = {}
 ): FavoriteDeck {
   const normalizedDeck = normalizeDeckJson({ name, deck: cards });
   return {
@@ -32,7 +34,8 @@ function makeFavorite(
     isMounted,
     mountedAt: isMounted ? createdAt : undefined,
     allocationPriority: isMounted ? allocationPriority : undefined,
-    preferredCardIds
+    preferredCardIds,
+    cardAllocationOverrides
   };
 }
 
@@ -257,10 +260,91 @@ describe("computeCardAllocations", () => {
       copiesToMove: 3,
       copiesStillMissingFromCollection: 0,
       sources: [
-        { favoriteId: "a", favoriteName: "Mazo A", movedCount: 2 },
-        { favoriteId: "b", favoriteName: "Mazo B", movedCount: 1 }
+        { favoriteId: "a", favoriteName: "Mazo A", availableCount: 2 },
+        { favoriteId: "b", favoriteName: "Mazo B", availableCount: 1 }
       ]
     });
+  });
+
+  it("respeta la cantidad elegida de cada mazo de origen", () => {
+    const collection: CollectionCard[] = [
+      { cardId: "SEC_041", setCode: "SEC", cardNumber: "041", ownedCount: 6 }
+    ];
+    const first = makeFavorite(
+      "a",
+      "Mazo A",
+      "2024-01-01T00:00:00.000Z",
+      [{ id: "SEC_041", count: 3 }],
+      1
+    );
+    const second = makeFavorite(
+      "b",
+      "Mazo B",
+      "2024-01-02T00:00:00.000Z",
+      [{ id: "SEC_041", count: 3 }],
+      2
+    );
+    const target = makeFavorite(
+      "target",
+      "Mazo objetivo",
+      "2024-01-03T00:00:00.000Z",
+      [{ id: "SEC_041", count: 3 }],
+      3
+    );
+
+    const updates = buildCardTransferAllocationUpdates(
+      collection,
+      [first, second, target],
+      target.id,
+      "SEC_041",
+      [
+        { favoriteId: first.id, count: 1 },
+        { favoriteId: second.id, count: 2 }
+      ]
+    );
+    expect(updates).toEqual([
+      { favoriteId: "a", assignedCount: 2 },
+      { favoriteId: "b", assignedCount: 1 },
+      { favoriteId: "target", assignedCount: 3 }
+    ]);
+
+    const withOverrides = [first, second, target].map((favorite) => ({
+      ...favorite,
+      cardAllocationOverrides: {
+        SEC_041: updates.find((entry) => entry.favoriteId === favorite.id)!.assignedCount
+      }
+    }));
+    expect(computeCardAllocations(collection, withOverrides).get("SEC_041")?.allocations).toEqual([
+      { favoriteId: "a", favoriteName: "Mazo A", usedCount: 2 },
+      { favoriteId: "b", favoriteName: "Mazo B", usedCount: 1 },
+      { favoriteId: "target", favoriteName: "Mazo objetivo", usedCount: 3 }
+    ]);
+  });
+
+  it("rechaza una elección que no cubre todas las copias transferibles", () => {
+    const collection: CollectionCard[] = [
+      { cardId: "SEC_041", setCode: "SEC", cardNumber: "041", ownedCount: 3 }
+    ];
+    const source = makeFavorite(
+      "a",
+      "Mazo A",
+      "2024-01-01T00:00:00.000Z",
+      [{ id: "SEC_041", count: 3 }],
+      1
+    );
+    const target = makeFavorite(
+      "target",
+      "Mazo objetivo",
+      "2024-01-02T00:00:00.000Z",
+      [{ id: "SEC_041", count: 3 }],
+      2
+    );
+
+    expect(() =>
+      buildCardTransferAllocationUpdates(collection, [source, target], target.id, "SEC_041", [
+        { favoriteId: source.id, count: 2 }
+      ])
+    ).toThrow("exactamente 3 copia(s)");
   });
 
   it("distingue en el resultado las copias en otros mazos de las no poseídas", () => {
@@ -300,7 +384,7 @@ describe("computeCardAllocations", () => {
     expect(planCardTransfer(collection, [first, target], target.id, "SEC_041")).toMatchObject({
       copiesToMove: 2,
       copiesStillMissingFromCollection: 1,
-      sources: [{ favoriteId: "a", favoriteName: "Mazo A", movedCount: 2 }]
+      sources: [{ favoriteId: "a", favoriteName: "Mazo A", availableCount: 2 }]
     });
   });
 });

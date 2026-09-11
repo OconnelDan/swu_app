@@ -22,6 +22,7 @@ import {
   prioritizeCloudFavoriteDeckCard,
   removeCloudCollectionCard,
   replaceCloudCollection,
+  setCloudMountedCardAllocations,
   unmountCloudFavoriteDeck,
   upsertCloudFavoriteDeck,
   type CloudDataSnapshot
@@ -34,17 +35,27 @@ import {
   prioritizeFavoriteDeckCard as prioritizeLocalFavoriteDeckCard,
   renameFavoriteDeck as renameLocalFavoriteDeck,
   saveFavoriteDeck as saveLocalFavoriteDeck,
+  transferFavoriteDeckCard as transferLocalFavoriteDeckCard,
   unmountFavoriteDeck as unmountLocalFavoriteDeck,
   updateFavoriteDeck as updateLocalFavoriteDeck,
   updateFavoriteResult as updateLocalFavoriteResult
 } from "@/lib/favoritesRepository";
 import { v4 as uuid } from "@/lib/uuid";
+import {
+  buildCardTransferAllocationUpdates,
+  reconcileCardAllocationOverrides
+} from "@/lib/cardAllocation";
 import type {
   CollectionCard,
   CollectionCardIdentity,
   CollectionImportResult
 } from "@/types/collection";
-import type { DeckComparisonResult, FavoriteDeck, NormalizedDeck } from "@/types/deck";
+import type {
+  CardTransferSelection,
+  DeckComparisonResult,
+  FavoriteDeck,
+  NormalizedDeck
+} from "@/types/deck";
 
 function buildCollectionStats(
   cards: CollectionCard[],
@@ -272,7 +283,8 @@ export function DataSourceProvider({ children }: DataSourceProviderProps) {
         lastResult: result,
         lastResultFingerprint: result?.collectionFingerprint,
         isMounted: false,
-        preferredCardIds: []
+        preferredCardIds: [],
+        cardAllocationOverrides: {}
       };
       await commitAccountMutation(() => upsertCloudFavoriteDeck(favorite));
       return favorite;
@@ -320,7 +332,10 @@ export function DataSourceProvider({ children }: DataSourceProviderProps) {
         normalizedDeck,
         updatedAt: new Date().toISOString(),
         lastResult: result,
-        lastResultFingerprint: result?.collectionFingerprint
+        lastResultFingerprint: result?.collectionFingerprint,
+        cardAllocationOverrides: favorite.isMounted
+          ? reconcileCardAllocationOverrides(favorite.cardAllocationOverrides, normalizedDeck)
+          : {}
       };
       await commitAccountMutation(() => upsertCloudFavoriteDeck(updated));
       return updated;
@@ -379,7 +394,8 @@ export function DataSourceProvider({ children }: DataSourceProviderProps) {
         isMounted: false,
         mountedAt: undefined,
         allocationPriority: undefined,
-        preferredCardIds: []
+        preferredCardIds: [],
+        cardAllocationOverrides: {}
       };
       await commitAccountMutation(() => upsertCloudFavoriteDeck(copy));
       return copy;
@@ -426,6 +442,26 @@ export function DataSourceProvider({ children }: DataSourceProviderProps) {
     [commitAccountMutation, requireAccountSnapshot, userId]
   );
 
+  const transferFavoriteDeckCard = useCallback(
+    async (favoriteId: string, cardId: string, sources: CardTransferSelection[]) => {
+      if (!userId) {
+        await transferLocalFavoriteDeckCard(favoriteId, cardId, sources);
+        return;
+      }
+
+      const snapshot = requireAccountSnapshot();
+      const allocations = buildCardTransferAllocationUpdates(
+        snapshot.collection,
+        snapshot.favoriteDecks,
+        favoriteId,
+        cardId,
+        sources
+      );
+      await commitAccountMutation(() => setCloudMountedCardAllocations(cardId, allocations));
+    },
+    [commitAccountMutation, requireAccountSnapshot, userId]
+  );
+
   const value = useMemo<DataSourceValue>(
     () => ({
       mode,
@@ -447,7 +483,8 @@ export function DataSourceProvider({ children }: DataSourceProviderProps) {
       duplicateFavoriteDeck,
       mountFavoriteDeck,
       unmountFavoriteDeck,
-      prioritizeFavoriteDeckCard
+      prioritizeFavoriteDeckCard,
+      transferFavoriteDeckCard
     }),
     [
       activeCloudSnapshot,
@@ -468,7 +505,8 @@ export function DataSourceProvider({ children }: DataSourceProviderProps) {
       saveFavoriteDeck,
       updateFavoriteDeck,
       unmountFavoriteDeck,
-      updateFavoriteResult
+      updateFavoriteResult,
+      transferFavoriteDeckCard
     ]
   );
 
