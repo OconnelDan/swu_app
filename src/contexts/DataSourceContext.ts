@@ -4,7 +4,12 @@ import type {
   CollectionCardIdentity,
   CollectionImportResult
 } from "@/types/collection";
-import type { DeckComparisonResult, FavoriteDeck, NormalizedDeck } from "@/types/deck";
+import type {
+  CardTransferSelection,
+  DeckComparisonResult,
+  FavoriteDeck,
+  NormalizedDeck
+} from "@/types/deck";
 
 export interface CollectionStats {
   cards: CollectionCard[];
@@ -48,6 +53,11 @@ export interface DataSourceValue {
   mountFavoriteDeck: (favoriteId: string) => Promise<void>;
   unmountFavoriteDeck: (favoriteId: string) => Promise<void>;
   prioritizeFavoriteDeckCard: (favoriteId: string, cardId: string) => Promise<void>;
+  transferFavoriteDeckCard: (
+    favoriteId: string,
+    cardId: string,
+    sources: CardTransferSelection[]
+  ) => Promise<void>;
 }
 
 export const DataSourceContext = createContext<DataSourceValue | null>(null);
