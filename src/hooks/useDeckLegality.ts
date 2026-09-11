@@ -9,6 +9,8 @@ interface DeckLegalityState {
   loading: boolean;
   error: string | null;
   byDeckId: Map<string, DeckValidation>;
+  /** Catálogo ya cargado para que el listado pueda reutilizar los aspectos del marco. */
+  cardsById: ReadonlyMap<string, CardInfo> | null;
 }
 
 export function useDeckLegality(decks: FavoriteDeck[] | undefined): DeckLegalityState {
@@ -75,5 +77,5 @@ export function useDeckLegality(decks: FavoriteDeck[] | undefined): DeckLegality
     return result;
   }, [cardsById, decks]);
 
-  return { loading: !decksReady || (!cardsById && !error), error, byDeckId };
+  return { loading: !decksReady || (!cardsById && !error), error, byDeckId, cardsById };
 }
