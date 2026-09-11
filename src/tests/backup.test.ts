@@ -32,7 +32,8 @@ describe("copia de seguridad", () => {
       isMounted: true,
       mountedAt: "2026-08-14T10:00:00.000Z",
       allocationPriority: 1,
-      preferredCardIds: ["SOR_001"]
+      preferredCardIds: ["SOR_001"],
+      cardAllocationOverrides: { SOR_001: 2 }
     });
 
     const backup = await exportBackup();
@@ -56,7 +57,8 @@ describe("copia de seguridad", () => {
     expect(restoredSetting?.value).toBe("dark");
     expect(await db.favoriteDecks.get("mounted-deck")).toMatchObject({
       isMounted: true,
-      preferredCardIds: ["SOR_001"]
+      preferredCardIds: ["SOR_001"],
+      cardAllocationOverrides: { SOR_001: 2 }
     });
   });
 
@@ -89,7 +91,8 @@ describe("copia de seguridad", () => {
     expect(await db.favoriteDecks.get("old-favorite")).toMatchObject({
       name: "Idea antigua",
       isMounted: false,
-      preferredCardIds: []
+      preferredCardIds: [],
+      cardAllocationOverrides: {}
     });
   });
 });

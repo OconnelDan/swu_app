@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
   deleteCloudFavoriteDeck: vi.fn(),
   mountCloudFavoriteDeck: vi.fn(),
   prioritizeCloudFavoriteDeckCard: vi.fn(),
+  setCloudMountedCardAllocations: vi.fn(),
   unmountCloudFavoriteDeck: vi.fn()
 }));
 
@@ -37,6 +38,7 @@ vi.mock("@/lib/cloudSyncRepository", async (importOriginal) => {
     deleteCloudFavoriteDeck: mocks.deleteCloudFavoriteDeck,
     mountCloudFavoriteDeck: mocks.mountCloudFavoriteDeck,
     prioritizeCloudFavoriteDeckCard: mocks.prioritizeCloudFavoriteDeckCard,
+    setCloudMountedCardAllocations: mocks.setCloudMountedCardAllocations,
     unmountCloudFavoriteDeck: mocks.unmountCloudFavoriteDeck
   };
 });
@@ -197,6 +199,7 @@ describe("origen de datos según la sesión", () => {
     mocks.deleteCloudFavoriteDeck.mockReset();
     mocks.mountCloudFavoriteDeck.mockReset().mockResolvedValue("2026-08-11T10:03:00.000Z");
     mocks.prioritizeCloudFavoriteDeckCard.mockReset().mockResolvedValue("2026-08-11T10:03:30.000Z");
+    mocks.setCloudMountedCardAllocations.mockReset().mockResolvedValue("2026-08-11T10:03:45.000Z");
     mocks.unmountCloudFavoriteDeck.mockReset().mockResolvedValue("2026-08-11T10:04:00.000Z");
     await db.collectionEntries.clear();
     await db.collectionImports.clear();

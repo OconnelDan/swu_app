@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DataSourceContext, type DataSourceValue } from "@/contexts/DataSourceContext";
@@ -106,6 +106,7 @@ function dataSource(
     mountFavoriteDeck: vi.fn(),
     unmountFavoriteDeck: vi.fn(),
     prioritizeFavoriteDeckCard: vi.fn(),
+    transferFavoriteDeckCard: vi.fn(),
     ...overrides
   };
 }
@@ -331,14 +332,13 @@ describe("Favoritos y mazos montados", () => {
     expect(screen.getByRole("status")).toHaveTextContent("ya está en Mazos montados");
   });
 
-  it("muestra un botón en la carta trasladable y confirma sus mazos de origen", async () => {
-    const transferCollection: CollectionCard[] = [{ ...collection[0], ownedCount: 3 }];
-    const first = savedDeck("first", "Mazo A", 2, true, 1);
-    const second = savedDeck("second", "Mazo B", 1, true, 2);
+  it("permite elegir de qué mazos se retiran las copias", async () => {
+    const transferCollection: CollectionCard[] = [{ ...collection[0], ownedCount: 6 }];
+    const first = savedDeck("first", "Mazo A", 3, true, 1);
+    const second = savedDeck("second", "Mazo B", 3, true, 2);
     const target = savedDeck("target", "Mazo objetivo", 3, true, 3);
-    const prioritizeFavoriteDeckCard = vi.fn().mockResolvedValue(undefined);
+    const transferFavoriteDeckCard = vi.fn().mockResolvedValue(undefined);
     const result = compareDeckWithCollection(target.normalizedDeck, transferCollection);
-    vi.spyOn(window, "confirm").mockReturnValue(true);
     Object.defineProperty(window, "matchMedia", {
       configurable: true,
       value: vi.fn((query: string) => ({
@@ -356,7 +356,7 @@ describe("Favoritos y mazos montados", () => {
     render(
       <DataSourceContext.Provider
         value={dataSource([first, second, target], transferCollection, {
-          prioritizeFavoriteDeckCard
+          transferFavoriteDeckCard
         })}
       >
         <MemoryRouter>
@@ -366,16 +366,29 @@ describe("Favoritos y mazos montados", () => {
     );
 
     expect(screen.getAllByText("Faltan 3").length).toBeGreaterThan(0);
-    fireEvent.click(screen.getAllByRole("button", { name: "Mover cartas a este mazo" })[0]);
+    fireEvent.click(screen.getAllByRole("button", { name: "Asignar cartas a este mazo" })[0]);
+
+    const dialog = screen.getByRole("dialog", { name: "Elegir mazos de origen" });
+    fireEvent.change(
+      within(dialog).getByRole("spinbutton", { name: "Copias a retirar de Mazo A" }),
+      {
+        target: { value: "1" }
+      }
+    );
+    fireEvent.change(
+      within(dialog).getByRole("spinbutton", { name: "Copias a retirar de Mazo B" }),
+      {
+        target: { value: "2" }
+      }
+    );
+    expect(within(dialog).getByText("Reparto listo para confirmar.")).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Confirmar reasignación" }));
 
     await waitFor(() =>
-      expect(prioritizeFavoriteDeckCard).toHaveBeenCalledWith("target", "SOR_001")
-    );
-    expect(window.confirm).toHaveBeenCalledWith(
-      expect.stringContaining("2× SOR_001 desde «Mazo A»")
-    );
-    expect(window.confirm).toHaveBeenCalledWith(
-      expect.stringContaining("1× SOR_001 desde «Mazo B»")
+      expect(transferFavoriteDeckCard).toHaveBeenCalledWith("target", "SOR_001", [
+        { favoriteId: "first", count: 1 },
+        { favoriteId: "second", count: 2 }
+      ])
     );
   });
 

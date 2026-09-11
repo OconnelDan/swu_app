@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DeckResultTable } from "@/components/DeckResultTable";
+import { buildDeckDisplayRows } from "@/lib/deckResultOrder";
 import { SwUnlimitedDbCardProvider } from "@/providers/cardProvider/SwUnlimitedDbCardProvider";
 import type { CardInfo } from "@/types/card";
 import type { CardComparison } from "@/types/deck";
@@ -80,5 +81,53 @@ describe("ficha de carta en el resultado de comprobar un mazo", () => {
 
     fireEvent.click(within(dialog).getByRole("button", { name: "Cerrar detalles de la carta" }));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("ordena el mazo principal por coste y deja el banquillo al final", () => {
+    const rows: CardComparison[] = [
+      { ...comparison, cardId: "SOR_004", cardName: "Coste cuatro", cost: 4 },
+      { ...comparison, cardId: "SOR_001", cardName: "Coste uno", cost: 1 },
+      {
+        ...comparison,
+        cardId: "SOR_102",
+        cardName: "Banquillo dos",
+        cost: 2,
+        zones: ["sideboard"],
+        zoneCounts: { sideboard: 3 }
+      },
+      {
+        ...comparison,
+        cardId: "SOR_100",
+        cardName: "Banquillo cero",
+        cost: 0,
+        zones: ["sideboard"],
+        zoneCounts: { sideboard: 3 }
+      }
+    ];
+
+    expect(buildDeckDisplayRows(rows).map((row) => row.rowKey)).toEqual([
+      "SOR_001:main",
+      "SOR_004:main",
+      "SOR_100:sideboard",
+      "SOR_102:sideboard"
+    ]);
+  });
+
+  it("separa una carta compartida entre mazo principal y banquillo", () => {
+    const rows = buildDeckDisplayRows([
+      {
+        ...comparison,
+        requiredCount: 3,
+        ownedCount: 2,
+        assignedCount: 2,
+        zones: ["main", "sideboard"],
+        zoneCounts: { main: 2, sideboard: 1 }
+      }
+    ]);
+
+    expect(rows).toMatchObject([
+      { displayZone: "main", requiredCount: 2, assignedCount: 2, missingCount: 0 },
+      { displayZone: "sideboard", requiredCount: 1, assignedCount: 0, missingCount: 1 }
+    ]);
   });
 });

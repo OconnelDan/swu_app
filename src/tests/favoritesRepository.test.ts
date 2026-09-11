@@ -9,6 +9,7 @@ import {
   prioritizeFavoriteDeckCard,
   renameFavoriteDeck,
   saveFavoriteDeck,
+  transferFavoriteDeckCard,
   unmountFavoriteDeck,
   updateFavoriteDeck,
   updateFavoriteResult
@@ -18,7 +19,7 @@ import { compareDeckWithCollection } from "@/lib/compareDeckWithCollection";
 
 describe("persistencia de favoritos (IndexedDB)", () => {
   beforeEach(async () => {
-    await db.favoriteDecks.clear();
+    await Promise.all([db.favoriteDecks.clear(), db.collectionEntries.clear()]);
   });
 
   it("actualiza un borrador conservando su identidad y sin crear duplicados", async () => {
@@ -153,6 +154,40 @@ describe("persistencia de favoritos (IndexedDB)", () => {
 
     await unmountFavoriteDeck(target.id);
     expect((await db.favoriteDecks.get(target.id))?.preferredCardIds).toEqual([]);
+  });
+
+  it("guarda de qué mazos se retiran las copias elegidas", async () => {
+    await db.collectionEntries.put({
+      cardId: "SOR_001",
+      setCode: "SOR",
+      cardNumber: "001",
+      ownedCount: 6
+    });
+    const deck = normalizeDeckJson({
+      name: "Mazo",
+      deck: [{ id: "SOR_001", count: 3 }]
+    });
+    const first = await saveFavoriteDeck({ ...deck, name: "Primero" });
+    const second = await saveFavoriteDeck({ ...deck, name: "Segundo" });
+    const target = await saveFavoriteDeck({ ...deck, name: "Objetivo" });
+    await mountFavoriteDeck(first.id);
+    await mountFavoriteDeck(second.id);
+    await mountFavoriteDeck(target.id);
+
+    await transferFavoriteDeckCard(target.id, "SOR_001", [
+      { favoriteId: first.id, count: 1 },
+      { favoriteId: second.id, count: 2 }
+    ]);
+
+    expect((await db.favoriteDecks.get(first.id))?.cardAllocationOverrides).toMatchObject({
+      SOR_001: 2
+    });
+    expect((await db.favoriteDecks.get(second.id))?.cardAllocationOverrides).toMatchObject({
+      SOR_001: 1
+    });
+    expect((await db.favoriteDecks.get(target.id))?.cardAllocationOverrides).toMatchObject({
+      SOR_001: 3
+    });
   });
 
   it("actualiza el resultado y la huella de colección de un favorito", async () => {
