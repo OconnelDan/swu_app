@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import type { CardComparison, DeckZone } from "@/types/deck";
 import type { FriendCardAvailability } from "@/lib/friendsRepository";
 import type { CardTransferPlan } from "@/lib/cardAllocation";
@@ -7,6 +7,7 @@ import { ArrowRightLeft } from "lucide-react";
 import { useSettings } from "@/hooks/useSettings";
 import { tryGetCardImageUrl } from "@/lib/cardImageUrl";
 import { SwUnlimitedDbCardProvider } from "@/providers/cardProvider/SwUnlimitedDbCardProvider";
+import { buildDeckDisplayRows } from "@/lib/deckResultOrder";
 import { CardDetailsModal } from "./CardDetailsModal";
 import { CardImageThumbnail } from "./CardImageThumbnail";
 
@@ -43,7 +44,8 @@ function fallbackCardInfo(row: CardComparison): CardInfo {
     cardNumber: separatorIndex > 0 ? row.cardId.slice(separatorIndex + 1) : "",
     name: row.cardName,
     localizedName: row.localizedCardName,
-    imageUrl: row.imageUrl
+    imageUrl: row.imageUrl,
+    cost: row.cost
   };
 }
 
@@ -99,8 +101,10 @@ export function DeckResultTable({
   const [detailsCard, setDetailsCard] = useState<CardInfo | undefined>();
   const [detailsLoading, setDetailsLoading] = useState(false);
   const [detailsError, setDetailsError] = useState<string | null>(null);
-  const rows = showAll ? comparisons : comparisons.filter((c) => c.status === "missing");
+  const orderedRows = useMemo(() => buildDeckDisplayRows(comparisons), [comparisons]);
+  const rows = showAll ? orderedRows : orderedRows.filter((c) => c.status === "missing");
   const mountedDeckView = comparisons.some((comparison) => comparison.assignedCount !== undefined);
+  const tableColumnCount = 8 + (mountedDeckView ? 1 : 0) + (onMoveCard ? 1 : 0);
 
   useEffect(() => {
     if (!detailsRow) return;
@@ -198,140 +202,158 @@ export function DeckResultTable({
           </tr>
         </thead>
         <tbody>
-          {rows.map((row) => (
-            <tr key={row.cardId} className="border-b border-space-800">
-              <td className="py-2 pr-2 font-mono text-slate-300">{row.cardId}</td>
-              <td className="py-2 pr-2">
-                <div className="flex items-center gap-2">
-                  {settings.showImages && (
-                    <ResultCardThumbnail
-                      row={row}
-                      className="h-10 w-auto rounded"
-                      onOpen={openDetails}
-                    />
-                  )}
-                  <span>{row.cardName ?? "—"}</span>
-                </div>
-              </td>
-              <td className="py-2 pr-2 text-right">{row.requiredCount}</td>
-              <td className="py-2 pr-2 text-right">{row.ownedCount}</td>
-              {mountedDeckView && (
-                <td className="py-2 pr-2 text-right">{row.assignedCount ?? 0}</td>
+          {rows.map((row, index) => (
+            <Fragment key={row.rowKey}>
+              {(index === 0 || rows[index - 1].displayZone !== row.displayZone) && (
+                <tr className="border-b border-space-700 bg-space-900/70">
+                  <th
+                    colSpan={tableColumnCount}
+                    className="px-2 py-2 font-display text-xs uppercase tracking-wide text-saber-blue"
+                  >
+                    {ZONE_LABELS[row.displayZone]}
+                  </th>
+                </tr>
               )}
-              <td className="py-2 pr-2 text-right font-semibold">
-                <span className={row.missingCount > 0 ? "text-saber-red" : "text-saber-green"}>
-                  {row.missingCount}
-                </span>
-              </td>
-              <td className="py-2 pr-2 text-slate-400">{zoneLabel(row.zones)}</td>
-              <td className="py-2 pr-2 text-xs text-slate-400">
-                {usedElsewhereLabel(row) ?? "—"}
-                {(row.copiesMissingFromCollection ?? 0) > 0 && (
-                  <span className="mt-1 block text-saber-red">
-                    No poseídas: {row.copiesMissingFromCollection}
-                  </span>
-                )}
-              </td>
-              <td className="py-2 pr-2 text-xs text-slate-400">
-                {friendsLabel(friendAvailability?.get(row.cardId)) ?? "—"}
-              </td>
-              {onMoveCard && (
+              <tr className="border-b border-space-800">
+                <td className="py-2 pr-2 font-mono text-slate-300">{row.cardId}</td>
                 <td className="py-2 pr-2">
-                  {transferPlans?.has(row.cardId) ? (
-                    <button
-                      type="button"
-                      className="btn-secondary whitespace-nowrap text-xs"
-                      disabled={busyCardId !== null && busyCardId !== undefined}
-                      onClick={() => onMoveCard(row.cardId)}
-                    >
-                      <ArrowRightLeft size={14} />
-                      {busyCardId === row.cardId ? "Moviendo..." : "Mover cartas a este mazo"}
-                    </button>
-                  ) : (
-                    "—"
+                  <div className="flex items-center gap-2">
+                    {settings.showImages && (
+                      <ResultCardThumbnail
+                        row={row}
+                        className="h-10 w-auto rounded"
+                        onOpen={openDetails}
+                      />
+                    )}
+                    <span>{row.cardName ?? "—"}</span>
+                  </div>
+                </td>
+                <td className="py-2 pr-2 text-right">{row.requiredCount}</td>
+                <td className="py-2 pr-2 text-right">{row.ownedCount}</td>
+                {mountedDeckView && (
+                  <td className="py-2 pr-2 text-right">{row.assignedCount ?? 0}</td>
+                )}
+                <td className="py-2 pr-2 text-right font-semibold">
+                  <span className={row.missingCount > 0 ? "text-saber-red" : "text-saber-green"}>
+                    {row.missingCount}
+                  </span>
+                </td>
+                <td className="py-2 pr-2 text-slate-400">{zoneLabel(row.zones)}</td>
+                <td className="py-2 pr-2 text-xs text-slate-400">
+                  {usedElsewhereLabel(row) ?? "—"}
+                  {(row.copiesMissingFromCollection ?? 0) > 0 && (
+                    <span className="mt-1 block text-saber-red">
+                      No poseídas: {row.copiesMissingFromCollection}
+                    </span>
                   )}
                 </td>
-              )}
-            </tr>
+                <td className="py-2 pr-2 text-xs text-slate-400">
+                  {friendsLabel(friendAvailability?.get(row.cardId)) ?? "—"}
+                </td>
+                {onMoveCard && (
+                  <td className="py-2 pr-2">
+                    {transferPlans?.has(row.cardId) ? (
+                      <button
+                        type="button"
+                        className="btn-secondary whitespace-nowrap text-xs"
+                        disabled={busyCardId !== null && busyCardId !== undefined}
+                        onClick={() => onMoveCard(row.cardId)}
+                      >
+                        <ArrowRightLeft size={14} />
+                        {busyCardId === row.cardId ? "Asignando..." : "Asignar cartas a este mazo"}
+                      </button>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
+                )}
+              </tr>
+            </Fragment>
           ))}
         </tbody>
       </table>
 
       {/* Tarjetas en móvil */}
-      <ul className="space-y-2 sm:hidden">
-        {rows.map((row) => (
-          <li
-            key={row.cardId}
-            className={`card ${row.status === "missing" ? "border-saber-red/40" : "border-saber-green/40"}`}
-          >
-            <div className="flex items-start justify-between gap-2">
-              <div className="flex items-start gap-2">
-                {settings.showImages && (
-                  <ResultCardThumbnail
-                    row={row}
-                    className="h-14 w-auto rounded"
-                    onOpen={openDetails}
-                  />
+      <ul className="space-y-2 sm:hidden" aria-label="Cartas del mazo ordenadas por curva">
+        {rows.map((row, index) => (
+          <Fragment key={row.rowKey}>
+            {(index === 0 || rows[index - 1].displayZone !== row.displayZone) && (
+              <li className="pt-2 font-display text-sm uppercase tracking-wide text-saber-blue">
+                {ZONE_LABELS[row.displayZone]}
+              </li>
+            )}
+            <li
+              className={`card ${row.status === "missing" ? "border-saber-red/40" : "border-saber-green/40"}`}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex items-start gap-2">
+                  {settings.showImages && (
+                    <ResultCardThumbnail
+                      row={row}
+                      className="h-14 w-auto rounded"
+                      onOpen={openDetails}
+                    />
+                  )}
+                  <div>
+                    <p className="font-mono text-xs text-slate-400">{row.cardId}</p>
+                    <p className="font-semibold">{row.cardName ?? "Carta sin nombre en caché"}</p>
+                    <p className="mt-1 text-xs text-slate-400">{zoneLabel(row.zones)}</p>
+                  </div>
+                </div>
+                <span className={row.status === "missing" ? "badge-missing" : "badge-complete"}>
+                  {row.status === "missing" ? `Faltan ${row.missingCount}` : "Completa"}
+                </span>
+              </div>
+              <dl
+                className={`mt-2 grid gap-2 text-center text-xs ${mountedDeckView ? "grid-cols-2" : "grid-cols-3"}`}
+              >
+                <div>
+                  <dt className="text-slate-400">Necesitas</dt>
+                  <dd className="font-semibold">{row.requiredCount}</dd>
+                </div>
+                <div>
+                  <dt className="text-slate-400">Tienes</dt>
+                  <dd className="font-semibold">{row.ownedCount}</dd>
+                </div>
+                {mountedDeckView && (
+                  <div>
+                    <dt className="text-slate-400">Asignadas aquí</dt>
+                    <dd className="font-semibold">{row.assignedCount ?? 0}</dd>
+                  </div>
                 )}
                 <div>
-                  <p className="font-mono text-xs text-slate-400">{row.cardId}</p>
-                  <p className="font-semibold">{row.cardName ?? "Carta sin nombre en caché"}</p>
-                  <p className="mt-1 text-xs text-slate-400">{zoneLabel(row.zones)}</p>
+                  <dt className="text-slate-400">Te faltan</dt>
+                  <dd className="font-semibold">{row.missingCount}</dd>
                 </div>
-              </div>
-              <span className={row.status === "missing" ? "badge-missing" : "badge-complete"}>
-                {row.status === "missing" ? `Faltan ${row.missingCount}` : "Completa"}
-              </span>
-            </div>
-            <dl
-              className={`mt-2 grid gap-2 text-center text-xs ${mountedDeckView ? "grid-cols-2" : "grid-cols-3"}`}
-            >
-              <div>
-                <dt className="text-slate-400">Necesitas</dt>
-                <dd className="font-semibold">{row.requiredCount}</dd>
-              </div>
-              <div>
-                <dt className="text-slate-400">Tienes</dt>
-                <dd className="font-semibold">{row.ownedCount}</dd>
-              </div>
-              {mountedDeckView && (
-                <div>
-                  <dt className="text-slate-400">Asignadas aquí</dt>
-                  <dd className="font-semibold">{row.assignedCount ?? 0}</dd>
-                </div>
+              </dl>
+              {usedElsewhereLabel(row) && (
+                <p className="mt-2 text-xs text-slate-400">
+                  Usadas en mazos montados: {usedElsewhereLabel(row)}
+                </p>
               )}
-              <div>
-                <dt className="text-slate-400">Te faltan</dt>
-                <dd className="font-semibold">{row.missingCount}</dd>
-              </div>
-            </dl>
-            {usedElsewhereLabel(row) && (
-              <p className="mt-2 text-xs text-slate-400">
-                Usadas en mazos montados: {usedElsewhereLabel(row)}
-              </p>
-            )}
-            {(row.copiesMissingFromCollection ?? 0) > 0 && (
-              <p className="mt-1 text-xs text-saber-red">
-                No está en tu colección: {row.copiesMissingFromCollection} copia(s).
-              </p>
-            )}
-            {friendsLabel(friendAvailability?.get(row.cardId)) && (
-              <p className="mt-1 text-xs text-saber-green">
-                Amigos con esta carta: {friendsLabel(friendAvailability?.get(row.cardId))}
-              </p>
-            )}
-            {onMoveCard && transferPlans?.has(row.cardId) && (
-              <button
-                type="button"
-                className="btn-secondary mt-3 w-full"
-                disabled={busyCardId !== null && busyCardId !== undefined}
-                onClick={() => onMoveCard(row.cardId)}
-              >
-                <ArrowRightLeft size={16} />
-                {busyCardId === row.cardId ? "Moviendo..." : "Mover cartas a este mazo"}
-              </button>
-            )}
-          </li>
+              {(row.copiesMissingFromCollection ?? 0) > 0 && (
+                <p className="mt-1 text-xs text-saber-red">
+                  No está en tu colección: {row.copiesMissingFromCollection} copia(s).
+                </p>
+              )}
+              {friendsLabel(friendAvailability?.get(row.cardId)) && (
+                <p className="mt-1 text-xs text-saber-green">
+                  Amigos con esta carta: {friendsLabel(friendAvailability?.get(row.cardId))}
+                </p>
+              )}
+              {onMoveCard && transferPlans?.has(row.cardId) && (
+                <button
+                  type="button"
+                  className="btn-secondary mt-3 w-full"
+                  disabled={busyCardId !== null && busyCardId !== undefined}
+                  onClick={() => onMoveCard(row.cardId)}
+                >
+                  <ArrowRightLeft size={16} />
+                  {busyCardId === row.cardId ? "Asignando..." : "Asignar cartas a este mazo"}
+                </button>
+              )}
+            </li>
+          </Fragment>
         ))}
       </ul>
 
