@@ -6,7 +6,7 @@ import {
 } from "@/lib/cloudSyncData";
 import { supabase } from "@/lib/supabaseClient";
 import type { CollectionCard, CollectionCardIdentity } from "@/types/collection";
-import type { FavoriteDeck } from "@/types/deck";
+import type { CardAllocationOverrideUpdate, FavoriteDeck } from "@/types/deck";
 
 interface SyncStateRow {
   updated_at: string;
@@ -79,7 +79,7 @@ export async function loadCloudDataSnapshot(): Promise<CloudDataSnapshot> {
     client
       .from("favorite_decks")
       .select(
-        "id, name, author, original_json, normalized_deck, created_at, updated_at, last_result, last_result_fingerprint, is_mounted, mounted_at, allocation_priority, preferred_card_ids"
+        "id, name, author, original_json, normalized_deck, created_at, updated_at, last_result, last_result_fingerprint, is_mounted, mounted_at, allocation_priority, preferred_card_ids, card_allocation_overrides"
       )
       .eq("user_id", userId)
       .order("updated_at", { ascending: false }),
@@ -214,6 +214,24 @@ export async function prioritizeCloudFavoriteDeckCard(
   const { data, error } = await client.rpc("prioritize_my_mounted_deck_card", {
     p_id: favoriteId,
     p_card_id: cardId
+  });
+  if (error) throw new Error(error.message);
+  return parseUpdatedAt(data);
+}
+
+/** Guarda de forma atómica el reparto elegido para una carta entre todos sus mazos. */
+export async function setCloudMountedCardAllocations(
+  cardId: string,
+  allocations: CardAllocationOverrideUpdate[]
+): Promise<string> {
+  const client = requireClient();
+  await requireUserId();
+  const { data, error } = await client.rpc("set_my_mounted_card_allocations", {
+    p_card_id: cardId,
+    p_allocations: allocations.map((allocation) => ({
+      favorite_id: allocation.favoriteId,
+      assigned_count: allocation.assignedCount
+    }))
   });
   if (error) throw new Error(error.message);
   return parseUpdatedAt(data);

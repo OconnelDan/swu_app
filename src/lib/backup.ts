@@ -45,13 +45,29 @@ export async function importBackupFromText(text: string): Promise<void> {
             )
           ]
         : [];
+    const cardAllocationOverrides =
+      hasValidMountedState &&
+      typeof deck.cardAllocationOverrides === "object" &&
+      deck.cardAllocationOverrides !== null &&
+      !Array.isArray(deck.cardAllocationOverrides)
+        ? Object.fromEntries(
+            Object.entries(deck.cardAllocationOverrides).filter(
+              ([cardId, count]) =>
+                /^[A-Z][A-Z0-9]{1,9}_[A-Z]{0,3}[0-9]{1,4}$/.test(cardId) &&
+                typeof count === "number" &&
+                Number.isInteger(count) &&
+                count >= 0
+            )
+          )
+        : {};
 
     return {
       ...deck,
       isMounted: hasValidMountedState,
       mountedAt: hasValidMountedState ? deck.mountedAt : undefined,
       allocationPriority: hasValidMountedState ? deck.allocationPriority : undefined,
-      preferredCardIds
+      preferredCardIds,
+      cardAllocationOverrides
     };
   });
 

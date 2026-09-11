@@ -1,6 +1,15 @@
 import { v4 as uuid } from "@/lib/uuid";
 import { db } from "@/db/db";
-import type { DeckComparisonResult, FavoriteDeck, NormalizedDeck } from "@/types/deck";
+import {
+  buildCardTransferAllocationUpdates,
+  reconcileCardAllocationOverrides
+} from "@/lib/cardAllocation";
+import type {
+  CardTransferSelection,
+  DeckComparisonResult,
+  FavoriteDeck,
+  NormalizedDeck
+} from "@/types/deck";
 
 export async function saveFavoriteDeck(
   normalizedDeck: NormalizedDeck,
@@ -18,7 +27,8 @@ export async function saveFavoriteDeck(
     lastResult: result,
     lastResultFingerprint: result?.collectionFingerprint,
     isMounted: false,
-    preferredCardIds: []
+    preferredCardIds: [],
+    cardAllocationOverrides: {}
   };
   await db.favoriteDecks.put(favorite);
   return favorite;
@@ -41,7 +51,10 @@ export async function updateFavoriteDeck(
     normalizedDeck,
     updatedAt: new Date().toISOString(),
     lastResult: result,
-    lastResultFingerprint: result?.collectionFingerprint
+    lastResultFingerprint: result?.collectionFingerprint,
+    cardAllocationOverrides: favorite.isMounted
+      ? reconcileCardAllocationOverrides(favorite.cardAllocationOverrides, normalizedDeck)
+      : {}
   };
   await db.favoriteDecks.put(updated);
   return updated;
@@ -94,6 +107,7 @@ export async function mountFavoriteDeck(favoriteId: string): Promise<void> {
       mountedAt: now,
       allocationPriority: nextPriority,
       preferredCardIds: [],
+      cardAllocationOverrides: {},
       updatedAt: now
     });
   });
@@ -113,6 +127,7 @@ export async function unmountFavoriteDeck(favoriteId: string): Promise<void> {
       mountedAt: undefined,
       allocationPriority: undefined,
       preferredCardIds: [],
+      cardAllocationOverrides: {},
       updatedAt: now
     });
   });
@@ -131,7 +146,8 @@ export async function duplicateFavoriteDeck(favoriteId: string): Promise<Favorit
     isMounted: false,
     mountedAt: undefined,
     allocationPriority: undefined,
-    preferredCardIds: []
+    preferredCardIds: [],
+    cardAllocationOverrides: {}
   };
   await db.favoriteDecks.put(copy);
   return copy;
@@ -170,6 +186,49 @@ export async function prioritizeFavoriteDeckCard(
     });
 
     if (updates.length > 0) await db.favoriteDecks.bulkPut(updates);
+  });
+}
+
+/** Persiste el reparto exacto elegido para una carta entre mazos montados. */
+export async function transferFavoriteDeckCard(
+  targetFavoriteId: string,
+  cardId: string,
+  selections: CardTransferSelection[]
+): Promise<void> {
+  await db.transaction("rw", db.collectionEntries, db.favoriteDecks, async () => {
+    const [collection, favorites] = await Promise.all([
+      db.collectionEntries.toArray(),
+      db.favoriteDecks.toArray()
+    ]);
+    const updates = buildCardTransferAllocationUpdates(
+      collection,
+      favorites,
+      targetFavoriteId,
+      cardId,
+      selections
+    );
+    const updateByFavorite = new Map(updates.map((entry) => [entry.favoriteId, entry]));
+    const now = new Date().toISOString();
+    const changed = favorites.flatMap((favorite) => {
+      const allocation = updateByFavorite.get(favorite.id);
+      if (!allocation) return [];
+
+      return [
+        {
+          ...favorite,
+          preferredCardIds: (favorite.preferredCardIds ?? []).filter(
+            (preferredCardId) => preferredCardId !== cardId
+          ),
+          cardAllocationOverrides: {
+            ...(favorite.cardAllocationOverrides ?? {}),
+            [cardId]: allocation.assignedCount
+          },
+          updatedAt: now
+        }
+      ];
+    });
+
+    if (changed.length > 0) await db.favoriteDecks.bulkPut(changed);
   });
 }
 

@@ -1,6 +1,8 @@
 import type { CollectionCard } from "@/types/collection";
 import type {
   CardAllocation,
+  CardAllocationOverrideUpdate,
+  CardTransferSelection,
   DeckComparisonResult,
   FavoriteDeck,
   NormalizedDeck
@@ -25,6 +27,31 @@ function compareDeckPriority(a: FavoriteDeck, b: FavoriteDeck): number {
 
 function prefersCard(favorite: FavoriteDeck, cardId: string): boolean {
   return favorite.preferredCardIds?.includes(cardId) ?? false;
+}
+
+function manualCardAllocation(favorite: FavoriteDeck, cardId: string): number | undefined {
+  const value = favorite.cardAllocationOverrides?.[cardId];
+  return Number.isInteger(value) && value !== undefined && value >= 0 ? value : undefined;
+}
+
+/** Elimina repartos obsoletos y limita los restantes a la nueva composición. */
+export function reconcileCardAllocationOverrides(
+  overrides: Record<string, number> | undefined,
+  deck: NormalizedDeck
+): Record<string, number> {
+  if (!overrides) return {};
+  const requiredByCard = new Map(
+    deck.allRequiredCards.map((card) => [card.cardId, card.requiredCount])
+  );
+  return Object.fromEntries(
+    Object.entries(overrides).flatMap(([cardId, assignedCount]) => {
+      const requiredCount = requiredByCard.get(cardId);
+      if (requiredCount === undefined || !Number.isInteger(assignedCount) || assignedCount < 0) {
+        return [];
+      }
+      return [[cardId, Math.min(assignedCount, requiredCount)]];
+    })
+  );
 }
 
 /**
@@ -79,12 +106,22 @@ export function computeCardAllocations(
       return compareDeckPriority(a.favorite, b.favorite);
     });
 
-    for (const { favorite, requiredCount } of requirements) {
-      if (available <= 0) break;
-      const used = Math.min(available, requiredCount);
+    const assignedByFavorite = new Map<string, number>();
+
+    // Un reparto elegido manualmente se aplica primero como cantidad mínima.
+    // La segunda pasada sigue utilizando cualquier copia que quede libre, de
+    // modo que aumentar la colección pueda completar mazos automáticamente.
+    for (const { favorite, requiredCount } of requirements
+      .slice()
+      .sort((a, b) => compareDeckPriority(a.favorite, b.favorite))) {
+      const requested = manualCardAllocation(favorite, cardId);
+      if (requested === undefined || available <= 0) continue;
+
+      const used = Math.min(available, requiredCount, requested);
       if (used <= 0) continue;
 
       available -= used;
+      assignedByFavorite.set(favorite.id, used);
       allocation.allocatedCount += used;
       allocation.freeCount = allocation.ownedCount - allocation.allocatedCount;
       allocation.allocations.push({
@@ -92,6 +129,27 @@ export function computeCardAllocations(
         favoriteName: favorite.name,
         usedCount: used
       });
+    }
+
+    for (const { favorite, requiredCount } of requirements) {
+      if (available <= 0) break;
+      const alreadyAssigned = assignedByFavorite.get(favorite.id) ?? 0;
+      const used = Math.min(available, Math.max(requiredCount - alreadyAssigned, 0));
+      if (used <= 0) continue;
+
+      available -= used;
+      assignedByFavorite.set(favorite.id, alreadyAssigned + used);
+      allocation.allocatedCount += used;
+      allocation.freeCount = allocation.ownedCount - allocation.allocatedCount;
+      const existing = allocation.allocations.find((entry) => entry.favoriteId === favorite.id);
+      if (existing) existing.usedCount += used;
+      else {
+        allocation.allocations.push({
+          favoriteId: favorite.id,
+          favoriteName: favorite.name,
+          usedCount: used
+        });
+      }
     }
   }
 
@@ -280,7 +338,7 @@ export function buildMountedDeckComparisonResult(
 export interface CardTransferSource {
   favoriteId: string;
   favoriteName: string;
-  movedCount: number;
+  availableCount: number;
 }
 
 export interface CardTransferPlan {
@@ -296,8 +354,8 @@ export interface CardTransferPlan {
 }
 
 /**
- * Simula el traslado de una carta y describe qué mazos perderán copias antes
- * de persistir ninguna preferencia.
+ * Describe cuántas copias necesita el mazo objetivo y todos los mazos entre
+ * los que el usuario puede escoger el origen. No decide el origen por él.
  */
 export function planCardTransfer(
   collection: CollectionCard[],
@@ -312,26 +370,22 @@ export function planCardTransfer(
   if (!target || !targetCard) return undefined;
 
   const before = computeCardAllocations(collection, favorites).get(cardId);
-  const preferredFavorites = applyCardPreference(favorites, targetFavoriteId, cardId);
-  const after = computeCardAllocations(collection, preferredFavorites).get(cardId);
   const currentAssignedCount =
     before?.allocations.find((entry) => entry.favoriteId === targetFavoriteId)?.usedCount ?? 0;
-  const assignedAfterMoveCount =
-    after?.allocations.find((entry) => entry.favoriteId === targetFavoriteId)?.usedCount ?? 0;
-
-  const afterByFavorite = new Map(
-    (after?.allocations ?? []).map((entry) => [entry.favoriteId, entry.usedCount])
-  );
   const sources = (before?.allocations ?? [])
     .filter((entry) => entry.favoriteId !== targetFavoriteId)
     .map((entry) => ({
       favoriteId: entry.favoriteId,
       favoriteName: entry.favoriteName,
-      movedCount: Math.max(entry.usedCount - (afterByFavorite.get(entry.favoriteId) ?? 0), 0)
+      availableCount: entry.usedCount
     }))
-    .filter((entry) => entry.movedCount > 0);
-  const copiesToMove = sources.reduce((total, source) => total + source.movedCount, 0);
-  if (copiesToMove <= 0 || assignedAfterMoveCount <= currentAssignedCount) return undefined;
+    .filter((entry) => entry.availableCount > 0);
+  const copiesToMove = Math.min(
+    Math.max(targetCard.requiredCount - currentAssignedCount, 0),
+    sources.reduce((total, source) => total + source.availableCount, 0)
+  );
+  if (copiesToMove <= 0) return undefined;
+  const assignedAfterMoveCount = currentAssignedCount + copiesToMove;
 
   return {
     cardId,
@@ -342,9 +396,71 @@ export function planCardTransfer(
     assignedAfterMoveCount,
     copiesToMove,
     copiesStillMissingFromCollection: Math.max(
-      targetCard.requiredCount - (after?.ownedCount ?? 0),
+      targetCard.requiredCount - (before?.ownedCount ?? 0),
       0
     ),
     sources
   };
+}
+
+/**
+ * Valida la elección del usuario y calcula el reparto final exacto para todos
+ * los mazos montados que necesitan la carta. La suma elegida debe cubrir todas
+ * las copias transferibles; las copias que realmente no existen permanecen
+ * pendientes.
+ */
+export function buildCardTransferAllocationUpdates(
+  collection: CollectionCard[],
+  favorites: FavoriteDeck[],
+  targetFavoriteId: string,
+  cardId: string,
+  selections: CardTransferSelection[]
+): CardAllocationOverrideUpdate[] {
+  const plan = planCardTransfer(collection, favorites, targetFavoriteId, cardId);
+  if (!plan) throw new Error("Ya no hay copias asignadas a otros mazos para esta carta.");
+
+  const selectedBySource = new Map<string, number>();
+  for (const selection of selections) {
+    if (!Number.isInteger(selection.count) || selection.count <= 0) {
+      throw new Error("La cantidad elegida debe ser un número entero mayor que cero.");
+    }
+    if (selectedBySource.has(selection.favoriteId)) {
+      throw new Error("No puedes seleccionar dos veces el mismo mazo de origen.");
+    }
+    const source = plan.sources.find((entry) => entry.favoriteId === selection.favoriteId);
+    if (!source) throw new Error("Uno de los mazos de origen ya no tiene esta carta asignada.");
+    if (selection.count > source.availableCount) {
+      throw new Error(`«${source.favoriteName}» no tiene tantas copias asignadas.`);
+    }
+    selectedBySource.set(selection.favoriteId, selection.count);
+  }
+
+  const selectedCount = [...selectedBySource.values()].reduce((total, count) => total + count, 0);
+  if (selectedCount !== plan.copiesToMove) {
+    throw new Error(`Debes elegir exactamente ${plan.copiesToMove} copia(s) para reasignar.`);
+  }
+
+  const allocation = computeCardAllocations(collection, favorites).get(cardId);
+  const currentByFavorite = new Map(
+    (allocation?.allocations ?? []).map((entry) => [entry.favoriteId, entry.usedCount])
+  );
+
+  return favorites
+    .filter(
+      (favorite) =>
+        favorite.isMounted &&
+        favorite.normalizedDeck.allRequiredCards.some(
+          (card) => card.cardId === cardId && card.requiredCount > 0
+        )
+    )
+    .slice()
+    .sort(compareDeckPriority)
+    .map((favorite) => {
+      const current = currentByFavorite.get(favorite.id) ?? 0;
+      const assignedCount =
+        favorite.id === targetFavoriteId
+          ? current + selectedCount
+          : current - (selectedBySource.get(favorite.id) ?? 0);
+      return { favoriteId: favorite.id, assignedCount };
+    });
 }

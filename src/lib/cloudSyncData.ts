@@ -28,7 +28,18 @@ export interface CloudFavoriteDeckRow {
   mounted_at: string | null;
   allocation_priority: number | null;
   preferred_card_ids: string[];
+  card_allocation_overrides: Record<string, number>;
 }
+
+const cardAllocationOverridesSchema = z
+  .record(z.number().int().nonnegative())
+  .refine(
+    (overrides) =>
+      Object.keys(overrides).every((cardId) =>
+        /^[A-Z][A-Z0-9]{1,9}_[A-Z]{0,3}[0-9]{1,4}$/.test(cardId)
+      ),
+    { message: "El reparto manual contiene un código de carta inválido." }
+  );
 
 const cloudCollectionRowSchema = z
   .object({
@@ -57,13 +68,17 @@ const cloudFavoriteDeckRowSchema = z
     is_mounted: z.boolean().default(false),
     mounted_at: z.string().datetime({ offset: true }).nullable().optional(),
     allocation_priority: z.number().int().positive().nullable().optional(),
-    preferred_card_ids: z.array(z.string().min(1)).max(500).default([])
+    preferred_card_ids: z.array(z.string().min(1)).max(500).default([]),
+    card_allocation_overrides: cardAllocationOverridesSchema.default({})
   })
   .refine(
     (row) =>
       row.is_mounted
         ? Boolean(row.mounted_at && row.allocation_priority)
-        : !row.mounted_at && !row.allocation_priority && row.preferred_card_ids.length === 0,
+        : !row.mounted_at &&
+          !row.allocation_priority &&
+          row.preferred_card_ids.length === 0 &&
+          Object.keys(row.card_allocation_overrides).length === 0,
     { message: "El estado de montaje del mazo no es coherente." }
   );
 
@@ -118,7 +133,8 @@ export function buildCloudFavoriteDeckRows(favoriteDecks: FavoriteDeck[]): Cloud
     is_mounted: favorite.isMounted,
     mounted_at: favorite.mountedAt ?? null,
     allocation_priority: favorite.allocationPriority ?? null,
-    preferred_card_ids: favorite.preferredCardIds ?? []
+    preferred_card_ids: favorite.preferredCardIds ?? [],
+    card_allocation_overrides: favorite.cardAllocationOverrides ?? {}
   }));
 }
 
@@ -151,7 +167,8 @@ export function parseCloudFavoriteDeckRows(rows: unknown[]): FavoriteDeck[] {
       isMounted: row.is_mounted,
       mountedAt: row.mounted_at ? new Date(row.mounted_at).toISOString() : undefined,
       allocationPriority: row.allocation_priority ?? undefined,
-      preferredCardIds: row.preferred_card_ids
+      preferredCardIds: row.preferred_card_ids,
+      cardAllocationOverrides: row.card_allocation_overrides
     };
   });
 }
