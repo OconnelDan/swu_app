@@ -111,7 +111,8 @@ Abre `http://localhost:5173`.
    **Copiar JSON** junto a **Eliminar** y debajo de **Duplicar**. La copia se
    reconstruye con la composición actual en el formato `metadata`, `leader`,
    `base`, `deck` y `sideboard`, lista para pegarla en Karabast u otros
-   importadores compatibles.
+   importadores compatibles. En móvil, modificar, montar y comprobar ocupan
+   una primera fila uniforme para evitar saltos desiguales entre botones.
 6. **Mazos → Montados**: consulta los mazos que sí reservan cartas, su reparto
    físico real y las copias pendientes. Al abrir un mazo incompleto, cada carta
    disponible en otros mazos tiene su propio botón **Asignar cartas a este
@@ -125,7 +126,8 @@ Abre `http://localhost:5173`.
    borrar su JSON. En ambos listados, el borde izquierdo de cada tarjeta usa el
    color del líder y el derecho el de la base, con una unión diagonal arriba y
    abajo. Los líderes con varios aspectos de color combinan varias franjas en
-   su lado del marco.
+   su lado del marco. En móvil, modificar y comprobar comparten la primera fila;
+   desmontar y copiar JSON ocupan la segunda.
 7. **Buscar**: recorre todo el catálogo y utiliza la misma búsqueda avanzada y
    los mismos filtros manuales del creador: aspectos, tipo y arena, colecciones,
    rarezas, coste máximo y cartas poseídas o libres. Aquí no existen aspectos
