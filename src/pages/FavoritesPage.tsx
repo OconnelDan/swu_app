@@ -281,32 +281,32 @@ export function FavoritesPage({ onOpenResult }: FavoritesPageProps) {
                 )}
 
                 <div className="mt-3 space-y-2">
-                  <div className="flex flex-wrap gap-2">
+                  <div className="grid grid-cols-3 gap-2">
                     <button
                       type="button"
-                      className="btn-secondary"
+                      className="btn-secondary h-full min-w-0 flex-col gap-1 px-1 py-2 text-center text-[11px] leading-tight sm:flex-row sm:px-3 sm:text-sm"
                       disabled={busyId !== null}
                       onClick={() => navigate(`/mazos/editar/${favorite.id}`)}
                     >
-                      <Pencil size={14} />
+                      <Pencil className="shrink-0" size={16} />
                       {draftIncomplete ? "Continuar editando" : "Modificar mazo"}
                     </button>
                     <button
                       type="button"
-                      className="btn-primary"
+                      className="btn-primary h-full min-w-0 flex-col gap-1 px-1 py-2 text-center text-[11px] leading-tight sm:flex-row sm:px-3 sm:text-sm"
                       disabled={busyId !== null || deckLegality.loading || !legality?.valid}
                       onClick={() => void handleMount(favorite)}
                     >
-                      <Hammer size={14} />
+                      <Hammer className="shrink-0" size={16} />
                       Montar mazo
                     </button>
                     <button
                       type="button"
-                      className="btn-secondary"
+                      className="btn-secondary h-full min-w-0 flex-col gap-1 px-1 py-2 text-center text-[11px] leading-tight sm:flex-row sm:px-3 sm:text-sm"
                       disabled={busyId !== null}
                       onClick={() => handleRecheck(favorite)}
                     >
-                      <RefreshCw size={14} />
+                      <RefreshCw className="shrink-0" size={16} />
                       Comprobar de nuevo
                     </button>
                   </div>
