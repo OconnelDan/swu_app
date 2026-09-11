@@ -266,6 +266,12 @@ describe("Favoritos y mazos montados", () => {
       </DataSourceContext.Provider>
     );
 
+    const primaryActions = screen.getByRole("button", { name: "Modificar mazo" }).parentElement!;
+    expect(primaryActions).toHaveClass("grid-cols-3");
+    expect(within(primaryActions).getByRole("button", { name: "Montar mazo" })).toBeInTheDocument();
+    expect(
+      within(primaryActions).getByRole("button", { name: "Comprobar de nuevo" })
+    ).toBeInTheDocument();
     const copyButton = screen.getByRole("button", { name: "Copiar JSON" });
     const managementActions = copyButton.parentElement!;
     expect(within(managementActions).getByRole("button", { name: "Duplicar" })).toBeInTheDocument();
@@ -301,6 +307,15 @@ describe("Favoritos y mazos montados", () => {
       </DataSourceContext.Provider>
     );
 
+    const mountedActions = screen.getByRole("button", { name: "Modificar mazo" }).parentElement!;
+    expect(mountedActions).toHaveClass("grid-cols-2");
+    expect(
+      within(mountedActions).getByRole("button", { name: "Comprobar y ver cartas" })
+    ).toBeInTheDocument();
+    expect(
+      within(mountedActions).getByRole("button", { name: "Desmontar mazo" })
+    ).toBeInTheDocument();
+    expect(within(mountedActions).getByRole("button", { name: "Copiar JSON" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Copiar JSON" }));
 
     await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
