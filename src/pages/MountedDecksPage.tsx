@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { PackageOpen, Pencil, RefreshCw } from "lucide-react";
+import { ClipboardCopy, PackageOpen, Pencil, RefreshCw } from "lucide-react";
+import { DeckCardFrame } from "@/components/DeckCardFrame";
 import {
   DeckFormatBadge,
   DeckFormatFilter,
@@ -14,6 +15,7 @@ import { useFavorites } from "@/hooks/useFavorites";
 import { useDeckLegality } from "@/hooks/useDeckLegality";
 import { computeCardAllocations, summarizeMountedDeckAllocation } from "@/lib/cardAllocation";
 import { compareDeckWithCollection } from "@/lib/compareDeckWithCollection";
+import { buildDeckClipboardText } from "@/lib/deckClipboard";
 import { SwUnlimitedDbCardProvider } from "@/providers/cardProvider/SwUnlimitedDbCardProvider";
 import { getDeckBaseIds, getDeckFormat, getDeckLeaderIds } from "@/lib/deckFormats";
 import type { DeckComparisonResult, FavoriteDeck, NormalizedDeck } from "@/types/deck";
@@ -99,6 +101,20 @@ export function MountedDecksPage({ onOpenResult }: MountedDecksPageProps) {
     }
   };
 
+  const handleCopyJson = async (deck: FavoriteDeck) => {
+    setError(null);
+    setMessage(null);
+    setBusyId(deck.id);
+    try {
+      await navigator.clipboard.writeText(buildDeckClipboardText(deck));
+      setMessage(`JSON de «${deck.name}» copiado al portapapeles.`);
+    } catch {
+      setError("No se ha podido copiar el JSON. Revisa el permiso del portapapeles del navegador.");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   if (favorites === undefined || collection === undefined) {
     return <SkeletonLines count={5} />;
   }
@@ -147,7 +163,11 @@ export function MountedDecksPage({ onOpenResult }: MountedDecksPageProps) {
             const legality = deckLegality.byDeckId.get(deck.id);
 
             return (
-              <li key={deck.id} className="card">
+              <DeckCardFrame
+                key={deck.id}
+                deck={deck.normalizedDeck}
+                cardsById={deckLegality.cardsById}
+              >
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <div className="flex flex-wrap items-center gap-2">
@@ -241,8 +261,17 @@ export function MountedDecksPage({ onOpenResult }: MountedDecksPageProps) {
                     <PackageOpen size={14} />
                     Desmontar mazo
                   </button>
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    disabled={busyId !== null}
+                    onClick={() => void handleCopyJson(deck)}
+                  >
+                    <ClipboardCopy size={14} />
+                    Copiar JSON
+                  </button>
                 </div>
-              </li>
+              </DeckCardFrame>
             );
           })}
         </ul>

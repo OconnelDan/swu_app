@@ -107,7 +107,11 @@ Abre `http://localhost:5173`.
    actualiza el mismo favorito sin crear duplicados. Solo un mazo legal y con la
    estructura completa puede montarse y reservar cartas de la colección. Los
    mazos terminados también pueden volver a abrirse con **Modificar mazo** para
-   cambiar líder, base, mazo principal o banquillo.
+   cambiar líder, base, mazo principal o banquillo. Cada tarjeta tiene
+   **Copiar JSON** junto a **Eliminar** y debajo de **Duplicar**. La copia se
+   reconstruye con la composición actual en el formato `metadata`, `leader`,
+   `base`, `deck` y `sideboard`, lista para pegarla en Karabast u otros
+   importadores compatibles.
 6. **Mazos → Montados**: consulta los mazos que sí reservan cartas, su reparto
    físico real y las copias pendientes. Al abrir un mazo incompleto, cada carta
    disponible en otros mazos tiene su propio botón **Asignar cartas a este
@@ -116,8 +120,12 @@ Abre `http://localhost:5173`.
    por curva: mazo principal de menor a mayor coste y, al final, banquillo con
    el mismo orden. **Modificar mazo** permite cambiar su composición sin
    desmontarlo; al guardar conserva su prioridad y recalcula automáticamente
-   las copias reservadas. **Desmontar mazo** libera las cartas y devuelve la
-   lista a Favoritos sin borrar su JSON.
+   las copias reservadas. Los mazos montados también ofrecen **Copiar JSON**.
+   **Desmontar mazo** libera las cartas y devuelve la lista a Favoritos sin
+   borrar su JSON. En ambos listados, el borde izquierdo de cada tarjeta usa el
+   color del líder y el derecho el de la base, con una unión diagonal arriba y
+   abajo. Los líderes con varios aspectos de color combinan varias franjas en
+   su lado del marco.
 7. **Buscar**: recorre todo el catálogo y utiliza la misma búsqueda avanzada y
    los mismos filtros manuales del creador: aspectos, tipo y arena, colecciones,
    rarezas, coste máximo y cartas poseídas o libres. Aquí no existen aspectos
@@ -291,6 +299,12 @@ Se admite cualquier combinación de estas claves:
 
 Si una carta aparece tanto en el mazo principal como en el banquillo, sus
 copias necesarias se **suman** para la comparación contra tu colección.
+
+El botón **Copiar JSON** de Favoritos y Montados genera siempre una versión
+limpia a partir de la composición guardada. En Twin Suns conserva el segundo
+líder mediante `secondleader`; en Trilogy conserva sus tres listas dentro de
+`trilogyDecks`, ya que no pueden representarse como un único mazo sin perder
+información.
 
 ## Arquitectura
 

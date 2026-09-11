@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Copy, Hammer, Pencil, RefreshCw, Trash2 } from "lucide-react";
+import { ClipboardCopy, Copy, Hammer, Pencil, RefreshCw, Trash2 } from "lucide-react";
+import { DeckCardFrame } from "@/components/DeckCardFrame";
 import {
   DeckFormatBadge,
   DeckFormatFilter,
@@ -17,6 +18,7 @@ import { compareDeckWithCollection } from "@/lib/compareDeckWithCollection";
 import { isDeckDraftIncomplete } from "@/lib/deckBuilder";
 import { computeCardAllocations, summarizeMountAvailability } from "@/lib/cardAllocation";
 import { buildMountDeckConfirmationMessage } from "@/lib/mountDeckConfirmation";
+import { buildDeckClipboardText } from "@/lib/deckClipboard";
 import { SwUnlimitedDbCardProvider } from "@/providers/cardProvider/SwUnlimitedDbCardProvider";
 import { getDeckBaseIds, getDeckFormat, getDeckLeaderIds } from "@/lib/deckFormats";
 import type { DeckComparisonResult, FavoriteDeck, NormalizedDeck } from "@/types/deck";
@@ -33,6 +35,7 @@ export function FavoritesPage({ onOpenResult }: FavoritesPageProps) {
   const navigate = useNavigate();
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
   const [formatFilter, setFormatFilter] = useState<DeckFormatFilterValue>("all");
   const allFavoriteDecks = useMemo(
     () => (favorites ?? []).filter((deck) => !deck.isMounted),
@@ -54,6 +57,7 @@ export function FavoritesPage({ onOpenResult }: FavoritesPageProps) {
 
   const handleRecheck = async (favorite: FavoriteDeck) => {
     setError(null);
+    setMessage(null);
     setBusyId(favorite.id);
     try {
       const cardIds = favorite.normalizedDeck.allRequiredCards.map((c) => c.cardId);
@@ -83,6 +87,7 @@ export function FavoritesPage({ onOpenResult }: FavoritesPageProps) {
 
   const handleDuplicate = async (favoriteId: string) => {
     setError(null);
+    setMessage(null);
     setBusyId(favoriteId);
     try {
       await duplicateFavoriteDeck(favoriteId);
@@ -93,9 +98,24 @@ export function FavoritesPage({ onOpenResult }: FavoritesPageProps) {
     }
   };
 
+  const handleCopyJson = async (favorite: FavoriteDeck) => {
+    setError(null);
+    setMessage(null);
+    setBusyId(favorite.id);
+    try {
+      await navigator.clipboard.writeText(buildDeckClipboardText(favorite));
+      setMessage(`JSON de «${favorite.name}» copiado al portapapeles.`);
+    } catch {
+      setError("No se ha podido copiar el JSON. Revisa el permiso del portapapeles del navegador.");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   const handleDelete = async (favorite: FavoriteDeck) => {
     if (!confirm(`¿Eliminar "${favorite.name}" de favoritos?`)) return;
     setError(null);
+    setMessage(null);
     setBusyId(favorite.id);
     try {
       await deleteFavoriteDeck(favorite.id);
@@ -107,6 +127,7 @@ export function FavoritesPage({ onOpenResult }: FavoritesPageProps) {
   };
 
   const handleMount = async (favorite: FavoriteDeck) => {
+    setMessage(null);
     const legality = deckLegality.byDeckId.get(favorite.id);
     if (deckLegality.loading) {
       setError("Espera a que termine la comprobación de legalidad del mazo.");
@@ -123,6 +144,7 @@ export function FavoritesPage({ onOpenResult }: FavoritesPageProps) {
     if (!confirmed) return;
 
     setError(null);
+    setMessage(null);
     setBusyId(favorite.id);
     try {
       await mountFavoriteDeck(favorite.id);
@@ -156,6 +178,12 @@ export function FavoritesPage({ onOpenResult }: FavoritesPageProps) {
         </p>
       )}
 
+      {message && (
+        <p role="status" className="card border-saber-green/50 text-sm text-saber-green">
+          {message}
+        </p>
+      )}
+
       {error && (
         <p role="alert" className="card border-saber-red/50 text-sm text-saber-red">
           {error}
@@ -182,7 +210,11 @@ export function FavoritesPage({ onOpenResult }: FavoritesPageProps) {
               : "No comprobado";
 
             return (
-              <li key={favorite.id} className="card">
+              <DeckCardFrame
+                key={favorite.id}
+                deck={favorite.normalizedDeck}
+                cardsById={deckLegality.cardsById}
+              >
                 <div className="flex items-start justify-between gap-2">
                   <div>
                     <div className="flex flex-wrap items-center gap-2">
@@ -248,54 +280,67 @@ export function FavoritesPage({ onOpenResult }: FavoritesPageProps) {
                   </p>
                 )}
 
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    className="btn-secondary"
-                    disabled={busyId !== null}
-                    onClick={() => navigate(`/mazos/editar/${favorite.id}`)}
-                  >
-                    <Pencil size={14} />
-                    {draftIncomplete ? "Continuar editando" : "Modificar mazo"}
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-primary"
-                    disabled={busyId !== null || deckLegality.loading || !legality?.valid}
-                    onClick={() => void handleMount(favorite)}
-                  >
-                    <Hammer size={14} />
-                    Montar mazo
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-secondary"
-                    disabled={busyId !== null}
-                    onClick={() => handleRecheck(favorite)}
-                  >
-                    <RefreshCw size={14} />
-                    Comprobar de nuevo
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-secondary"
-                    disabled={busyId !== null}
-                    onClick={() => void handleDuplicate(favorite.id)}
-                  >
-                    <Copy size={14} />
-                    Duplicar
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-danger"
-                    disabled={busyId !== null}
-                    onClick={() => void handleDelete(favorite)}
-                  >
-                    <Trash2 size={14} />
-                    Eliminar
-                  </button>
+                <div className="mt-3 space-y-2">
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      disabled={busyId !== null}
+                      onClick={() => navigate(`/mazos/editar/${favorite.id}`)}
+                    >
+                      <Pencil size={14} />
+                      {draftIncomplete ? "Continuar editando" : "Modificar mazo"}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-primary"
+                      disabled={busyId !== null || deckLegality.loading || !legality?.valid}
+                      onClick={() => void handleMount(favorite)}
+                    >
+                      <Hammer size={14} />
+                      Montar mazo
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      disabled={busyId !== null}
+                      onClick={() => handleRecheck(favorite)}
+                    >
+                      <RefreshCw size={14} />
+                      Comprobar de nuevo
+                    </button>
+                  </div>
+                  <div className="grid max-w-sm grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      className="btn-secondary col-span-2"
+                      disabled={busyId !== null}
+                      onClick={() => void handleDuplicate(favorite.id)}
+                    >
+                      <Copy size={14} />
+                      Duplicar
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      disabled={busyId !== null}
+                      onClick={() => void handleCopyJson(favorite)}
+                    >
+                      <ClipboardCopy size={14} />
+                      Copiar JSON
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-danger"
+                      disabled={busyId !== null}
+                      onClick={() => void handleDelete(favorite)}
+                    >
+                      <Trash2 size={14} />
+                      Eliminar
+                    </button>
+                  </div>
                 </div>
-              </li>
+              </DeckCardFrame>
             );
           })}
         </ul>
