@@ -233,41 +233,41 @@ export function MountedDecksPage({ onOpenResult }: MountedDecksPageProps) {
                   </p>
                 )}
 
-                <div className="mt-3 flex flex-wrap gap-2">
+                <div className="mt-3 grid grid-cols-2 gap-2 sm:max-w-2xl">
                   <button
                     type="button"
-                    className="btn-secondary"
+                    className="btn-secondary h-full min-w-0 flex-col gap-1 px-2 py-2 text-center text-xs leading-tight sm:flex-row sm:px-3 sm:text-sm"
                     disabled={busyId !== null}
                     onClick={() => navigate(`/mazos/editar/${deck.id}`)}
                   >
-                    <Pencil size={14} />
+                    <Pencil className="shrink-0" size={16} />
                     Modificar mazo
                   </button>
                   <button
                     type="button"
-                    className="btn-secondary"
+                    className="btn-secondary h-full min-w-0 flex-col gap-1 px-2 py-2 text-center text-xs leading-tight sm:flex-row sm:px-3 sm:text-sm"
                     disabled={busyId !== null}
                     onClick={() => void handleRecheck(deck)}
                   >
-                    <RefreshCw size={14} />
+                    <RefreshCw className="shrink-0" size={16} />
                     Comprobar y ver cartas
                   </button>
                   <button
                     type="button"
-                    className="btn-secondary"
+                    className="btn-secondary h-full min-w-0 flex-col gap-1 px-2 py-2 text-center text-xs leading-tight sm:flex-row sm:px-3 sm:text-sm"
                     disabled={busyId !== null}
                     onClick={() => void handleUnmount(deck)}
                   >
-                    <PackageOpen size={14} />
+                    <PackageOpen className="shrink-0" size={16} />
                     Desmontar mazo
                   </button>
                   <button
                     type="button"
-                    className="btn-secondary"
+                    className="btn-secondary h-full min-w-0 flex-col gap-1 px-2 py-2 text-center text-xs leading-tight sm:flex-row sm:px-3 sm:text-sm"
                     disabled={busyId !== null}
                     onClick={() => void handleCopyJson(deck)}
                   >
-                    <ClipboardCopy size={14} />
+                    <ClipboardCopy className="shrink-0" size={16} />
                     Copiar JSON
                   </button>
                 </div>
