@@ -9,6 +9,7 @@ import { FavoritesPage } from "@/pages/FavoritesPage";
 import { MountedDecksPage } from "@/pages/MountedDecksPage";
 import { ResultPage } from "@/pages/ResultPage";
 import type { CollectionCard } from "@/types/collection";
+import type { CardInfo } from "@/types/card";
 import type { FavoriteDeck } from "@/types/deck";
 
 vi.mock("@/hooks/useAuth", () => ({
@@ -17,13 +18,15 @@ vi.mock("@/hooks/useAuth", () => ({
 
 const deckLegalityMock = vi.hoisted(() => ({
   invalidDeckIds: new Set<string>(),
-  incompleteDeckIds: new Set<string>()
+  incompleteDeckIds: new Set<string>(),
+  cardsById: new Map<string, CardInfo>()
 }));
 
 vi.mock("@/hooks/useDeckLegality", () => ({
   useDeckLegality: (decks: FavoriteDeck[] | undefined) => ({
     loading: false,
     error: null,
+    cardsById: deckLegalityMock.cardsById,
     byDeckId: new Map(
       (decks ?? []).map((deck) => [
         deck.id,
@@ -122,11 +125,16 @@ const collection: CollectionCard[] = [
 
 beforeEach(() => {
   localStorage.clear();
+  Object.defineProperty(navigator, "clipboard", {
+    configurable: true,
+    value: undefined
+  });
 });
 
 afterEach(() => {
   deckLegalityMock.invalidDeckIds.clear();
   deckLegalityMock.incompleteDeckIds.clear();
+  deckLegalityMock.cardsById.clear();
   vi.restoreAllMocks();
 });
 
@@ -227,6 +235,122 @@ describe("Favoritos y mazos montados", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Modificar mazo" }));
     expect(await screen.findByText("Editar mazo montado")).toBeInTheDocument();
+  });
+
+  it("copia el JSON compatible desde Favoritos y lo coloca junto a Eliminar", async () => {
+    const normalizedDeck = normalizeDeckJson({
+      metadata: { name: "Original", author: "Dani" },
+      leader: { id: "ASH_011", count: 1 },
+      base: { id: "JTL_030", count: 1 },
+      deck: [{ id: "LAW_174", count: 3 }],
+      sideboard: [{ id: "LAW_149", count: 2 }]
+    });
+    const favorite: FavoriteDeck = {
+      ...savedDeck("copy", "Mazo para Karabast", 1, false),
+      name: "Mazo para Karabast",
+      author: "Dani",
+      normalizedDeck,
+      originalJson: normalizedDeck.originalJson
+    };
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText }
+    });
+
+    render(
+      <DataSourceContext.Provider value={dataSource([favorite], collection)}>
+        <MemoryRouter>
+          <FavoritesPage onOpenResult={vi.fn()} />
+        </MemoryRouter>
+      </DataSourceContext.Provider>
+    );
+
+    const copyButton = screen.getByRole("button", { name: "Copiar JSON" });
+    const managementActions = copyButton.parentElement!;
+    expect(within(managementActions).getByRole("button", { name: "Duplicar" })).toBeInTheDocument();
+    expect(within(managementActions).getByRole("button", { name: "Eliminar" })).toBeInTheDocument();
+    fireEvent.click(copyButton);
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
+    expect(JSON.parse(writeText.mock.calls[0][0])).toEqual({
+      metadata: { name: "Mazo para Karabast", author: "Dani" },
+      leader: { id: "ASH_011", count: 1 },
+      base: { id: "JTL_030", count: 1 },
+      deck: [{ id: "LAW_174", count: 3 }],
+      sideboard: [{ id: "LAW_149", count: 2 }]
+    });
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "JSON de «Mazo para Karabast» copiado al portapapeles."
+    );
+  });
+
+  it("permite copiar el mismo JSON desde un mazo montado", async () => {
+    const mounted = savedDeck("mounted-copy", "Mazo montado copiable", 1, true, 1);
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText }
+    });
+
+    render(
+      <DataSourceContext.Provider value={dataSource([mounted], collection)}>
+        <MemoryRouter>
+          <MountedDecksPage onOpenResult={vi.fn()} />
+        </MemoryRouter>
+      </DataSourceContext.Provider>
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Copiar JSON" }));
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
+    expect(JSON.parse(writeText.mock.calls[0][0])).toMatchObject({
+      metadata: { name: "Mazo montado copiable", author: "" },
+      deck: [{ id: "SOR_001", count: 1 }],
+      sideboard: []
+    });
+    expect(await screen.findByRole("status")).toHaveTextContent("copiado al portapapeles");
+  });
+
+  it("muestra el aspecto del líder a la izquierda y el de la base a la derecha", () => {
+    const normalizedDeck = normalizeDeckJson({
+      metadata: { name: "Mazo con borde" },
+      leader: { id: "ASH_007", count: 1 },
+      base: { id: "ASH_019", count: 1 },
+      deck: [{ id: "SOR_001", count: 1 }]
+    });
+    const favorite: FavoriteDeck = {
+      ...savedDeck("border", "Mazo con borde", 1, false),
+      normalizedDeck,
+      originalJson: normalizedDeck.originalJson
+    };
+    deckLegalityMock.cardsById.set("ASH_007", {
+      cardId: "ASH_007",
+      setCode: "ASH",
+      cardNumber: "007",
+      aspects: ["Command", "Villainy"]
+    });
+    deckLegalityMock.cardsById.set("ASH_019", {
+      cardId: "ASH_019",
+      setCode: "ASH",
+      cardNumber: "019",
+      aspects: ["Vigilance"]
+    });
+
+    render(
+      <DataSourceContext.Provider value={dataSource([favorite], collection)}>
+        <MemoryRouter>
+          <FavoritesPage onOpenResult={vi.fn()} />
+        </MemoryRouter>
+      </DataSourceContext.Provider>
+    );
+
+    const deckCard = screen.getByText("Mazo con borde").closest("li");
+    expect(deckCard).toHaveAttribute("data-leader-border-colors", "#3ddc84");
+    expect(deckCard).toHaveAttribute("data-base-border-colors", "#4da6ff");
+    expect(deckCard).toHaveStyle({
+      backgroundImage: "linear-gradient(115deg, #3ddc84 0%, #3ddc84 46%, #4da6ff 54%, #4da6ff 100%)"
+    });
   });
 
   it("un favorito no consume cartas y puede montarse de forma explícita", async () => {
