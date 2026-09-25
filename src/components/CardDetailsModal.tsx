@@ -1,7 +1,8 @@
-import { useEffect, useId, type ReactNode } from "react";
-import { X } from "lucide-react";
+import { useEffect, useId, useState, type ReactNode } from "react";
+import { AlertTriangle, X } from "lucide-react";
 import { CardImageThumbnail } from "@/components/CardImageThumbnail";
 import { tryGetCardImageUrl } from "@/lib/cardImageUrl";
+import { getPremierPrereleaseNotice } from "@/lib/cardRelease";
 import type { CardInfo } from "@/types/card";
 
 const ASPECT_LABELS: Record<string, string> = {
@@ -91,11 +92,24 @@ export function CardDetailsModal({
   children
 }: CardDetailsModalProps) {
   const titleId = useId();
+  const [showLeaderUnit, setShowLeaderUnit] = useState(false);
   const name = displayName(card, cardId);
+  const isLeader = card?.type === "Leader";
+  const hasDeployedLeaderUnit = isLeader && card?.leaderBackHorizontal !== true;
+  const leaderUnitImageUrl = card?.leaderUnitImageUrl;
+  const canToggleLeaderFace = showImage && isLeader && Boolean(leaderUnitImageUrl);
+  const frontImageUrl = imageUrl ?? card?.imageUrl ?? tryGetCardImageUrl(cardId);
   const activeImageUrl = showImage
-    ? (imageUrl ?? card?.imageUrl ?? tryGetCardImageUrl(cardId))
+    ? showLeaderUnit && leaderUnitImageUrl
+      ? leaderUnitImageUrl
+      : frontImageUrl
     : undefined;
   const rulesText = card?.localizedText ?? card?.text;
+  const leaderEpicAction = card?.localizedLeaderEpicAction ?? card?.leaderEpicAction;
+  const leaderUnitText = card?.localizedLeaderUnitText ?? card?.leaderUnitText;
+  const prereleaseNotice = card ? getPremierPrereleaseNotice(card.setCode) : undefined;
+
+  useEffect(() => setShowLeaderUnit(false), [cardId]);
 
   useEffect(() => {
     const closeWithEscape = (event: KeyboardEvent) => {
@@ -137,36 +151,143 @@ export function CardDetailsModal({
           </button>
         </header>
 
+        {prereleaseNotice && (
+          <p className="mt-4 flex items-start gap-2 rounded-lg border border-saber-yellow/40 bg-saber-yellow/10 p-3 text-sm text-saber-yellow">
+            <AlertTriangle size={17} className="mt-0.5 shrink-0" /> {prereleaseNotice}
+          </p>
+        )}
+
         <div
           className={`mt-4 grid gap-5 ${showImage ? "md:grid-cols-[minmax(220px,300px)_minmax(0,1fr)]" : ""}`}
         >
           {showImage && (
             <div>
               {activeImageUrl ? (
-                <CardImageThumbnail
-                  src={activeImageUrl}
-                  fallbackSrc={tryGetCardImageUrl(cardId)}
-                  alt={name}
-                  className="mx-auto max-h-[65dvh] w-auto max-w-full rounded-lg shadow-xl md:max-h-[70dvh]"
-                  zoomOnClick={false}
-                />
+                canToggleLeaderFace ? (
+                  <button
+                    type="button"
+                    className="block w-full rounded-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-saber-blue"
+                    aria-label={
+                      showLeaderUnit
+                        ? hasDeployedLeaderUnit
+                          ? "Mostrar la cara sin desplegar del líder"
+                          : "Mostrar la cara inicial del líder"
+                        : hasDeployedLeaderUnit
+                          ? "Mostrar la cara desplegada del líder"
+                          : "Mostrar la cara opuesta del líder"
+                    }
+                    onClick={() => setShowLeaderUnit((current) => !current)}
+                  >
+                    <CardImageThumbnail
+                      src={activeImageUrl}
+                      fallbackSrc={showLeaderUnit ? undefined : tryGetCardImageUrl(cardId)}
+                      alt={`${name}, ${
+                        showLeaderUnit
+                          ? hasDeployedLeaderUnit
+                            ? "líder desplegado"
+                            : "cara opuesta del líder"
+                          : hasDeployedLeaderUnit
+                            ? "líder sin desplegar"
+                            : "cara inicial del líder"
+                      }`}
+                      className="mx-auto max-h-[65dvh] w-auto max-w-full rounded-lg shadow-xl md:max-h-[70dvh]"
+                      zoomOnClick={false}
+                    />
+                  </button>
+                ) : (
+                  <CardImageThumbnail
+                    src={activeImageUrl}
+                    fallbackSrc={tryGetCardImageUrl(cardId)}
+                    alt={name}
+                    className="mx-auto max-h-[65dvh] w-auto max-w-full rounded-lg shadow-xl md:max-h-[70dvh]"
+                    zoomOnClick={false}
+                  />
+                )
               ) : (
                 <div className="flex min-h-64 items-center justify-center rounded-lg bg-space-950 px-4 text-center text-sm text-slate-400">
                   No hay una imagen disponible para esta impresión.
                 </div>
               )}
+              {canToggleLeaderFace && (
+                <p className="mt-3 text-center text-xs text-saber-blue">
+                  {showLeaderUnit
+                    ? `${hasDeployedLeaderUnit ? "Líder desplegado" : "Cara opuesta"} · pulsa la imagen para volver`
+                    : hasDeployedLeaderUnit
+                      ? "Pulsa la imagen para ver el líder desplegado"
+                      : "Pulsa la imagen para ver la cara opuesta del líder"}
+                </p>
+              )}
             </div>
           )}
 
           <div className="min-w-0">
-            <section aria-label="Texto de la carta">
-              <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-                Texto
-              </h3>
-              <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-slate-200">
-                {rulesText || "Esta carta no tiene texto de reglas."}
-              </p>
-            </section>
+            {isLeader ? (
+              <div className="space-y-4">
+                <section
+                  aria-label={
+                    hasDeployedLeaderUnit
+                      ? "Información del líder sin desplegar"
+                      : "Información de la cara inicial del líder"
+                  }
+                  className={`rounded-lg border p-4 ${
+                    showLeaderUnit
+                      ? "border-space-700 bg-space-950/50"
+                      : "border-saber-blue/50 bg-saber-blue/5"
+                  }`}
+                >
+                  <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-300">
+                    {hasDeployedLeaderUnit ? "Líder sin desplegar" : "Cara inicial del líder"}
+                  </h3>
+                  <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-slate-200">
+                    {rulesText || "Esta cara no tiene texto de reglas."}
+                  </p>
+                  {leaderEpicAction && (
+                    <div className="mt-3 border-t border-space-700 pt-3">
+                      <p className="text-xs font-semibold text-slate-400">Acción épica</p>
+                      <p className="mt-1 whitespace-pre-line text-sm leading-relaxed text-slate-200">
+                        {leaderEpicAction}
+                      </p>
+                    </div>
+                  )}
+                </section>
+
+                <section
+                  aria-label={
+                    hasDeployedLeaderUnit
+                      ? "Información del líder desplegado"
+                      : "Información de la cara opuesta del líder"
+                  }
+                  className={`rounded-lg border p-4 ${
+                    showLeaderUnit
+                      ? "border-saber-blue/50 bg-saber-blue/5"
+                      : "border-space-700 bg-space-950/50"
+                  }`}
+                >
+                  <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-300">
+                    {hasDeployedLeaderUnit ? "Líder desplegado" : "Cara opuesta del líder"}
+                  </h3>
+                  <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-slate-200">
+                    {leaderUnitText || "Esta cara no tiene texto de reglas."}
+                  </p>
+                  {hasDeployedLeaderUnit && (
+                    <dl className="mt-3 grid grid-cols-3 gap-3 border-t border-space-700 pt-3">
+                      <Detail label="Coste de despliegue" value={valueOrDash(card?.cost)} />
+                      <Detail label="Poder" value={valueOrDash(card?.power)} />
+                      <Detail label="PG" value={valueOrDash(card?.hp)} />
+                    </dl>
+                  )}
+                </section>
+              </div>
+            ) : (
+              <section aria-label="Texto de la carta">
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                  Texto
+                </h3>
+                <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-slate-200">
+                  {rulesText || "Esta carta no tiene texto de reglas."}
+                </p>
+              </section>
+            )}
 
             <dl className="mt-5 grid grid-cols-2 gap-x-5 gap-y-4 sm:grid-cols-3">
               <Detail label="Aspecto(s)" value={listValue(card?.aspects, ASPECT_LABELS)} />
@@ -185,14 +306,14 @@ export function CardDetailsModal({
                 }
               />
               <Detail label="Palabra(s) clave" value={listValue(card?.keywords, KEYWORD_LABELS)} />
-              <Detail label="Coste" value={valueOrDash(card?.cost)} />
+              {!isLeader && <Detail label="Coste" value={valueOrDash(card?.cost)} />}
               <Detail label="Rasgo(s)" value={listValue(card?.traits)} />
-              <Detail label="Poder" value={valueOrDash(card?.power)} />
+              {!isLeader && <Detail label="Poder" value={valueOrDash(card?.power)} />}
               <Detail
                 label="Rareza"
                 value={valueOrDash(RARITY_LABELS[card?.rarity ?? ""] ?? card?.rarity)}
               />
-              <Detail label="PG" value={valueOrDash(card?.hp)} />
+              {!isLeader && <Detail label="PG" value={valueOrDash(card?.hp)} />}
               <Detail label="Colección" value={card?.setName ?? card?.setCode ?? "—"} />
               <Detail label="Mejora de Poder" value={valueOrDash(card?.upgradePower)} />
               <Detail label="Número de carta" value={card?.cardNumber ?? "—"} />
