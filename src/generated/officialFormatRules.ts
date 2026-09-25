@@ -1,5 +1,5 @@
 // Archivo generado por `npm run catalog:sync`. No editar manualmente.
-export const OFFICIAL_FORMAT_RULES_LAST_UPDATED = "2026-07-08T21:59:27.277Z";
+export const OFFICIAL_FORMAT_RULES_LAST_UPDATED = "2026-09-02T17:59:54.944Z";
 export const OFFICIAL_CORE_SET_SEQUENCE = [
   "SOR",
   "SHD",
@@ -9,9 +9,11 @@ export const OFFICIAL_CORE_SET_SEQUENCE = [
   "SEC",
   "LAW",
   "ASH",
+  "HMW",
 ] as const;
 export const OFFICIAL_PREMIER_SET_CODES = [
   "ASH",
+  "HMW",
   "IBH",
   "JTL",
   "LAW",
@@ -22,7 +24,13 @@ export const OFFICIAL_ROTATED_CORE_SET_CODES = ["SOR", "SHD", "TWI"] as const;
 export const OFFICIAL_NON_PREMIER_SPECIAL_SET_CODES = ["TS26"] as const;
 export const OFFICIAL_UNREVIEWED_SPECIAL_SET_CODES = [] as const;
 export const OFFICIAL_SUSPENDED_CARDS = {
-  premier: [],
+  premier: [
+    {
+      cardId: "ASH_011",
+      cardKey: "5648009238",
+      name: "Cad Bane, Still Faster than You",
+    },
+  ],
   twinSuns: [],
   eternal: [
     {
