@@ -8,6 +8,11 @@ import {
   OFFICIAL_SUSPENDED_CARDS,
   OFFICIAL_UNREVIEWED_SPECIAL_SET_CODES
 } from "@/generated/officialFormatRules";
+import {
+  getPremierPrereleaseNotice,
+  getUpcomingPremierSetRelease,
+  isPremierSetReleased
+} from "@/lib/cardRelease";
 import type { CardInfo } from "@/types/card";
 import type { DeckFormat, NormalizedDeck, TrilogyCardPool } from "@/types/deck";
 
@@ -30,7 +35,7 @@ export const DECK_FORMAT_DESCRIPTIONS: Record<DeckFormat, string> = {
 export const DECK_FORMATS = ["premier", "eternal", "twin-suns", "trilogy"] as const;
 
 export interface CardLegalityIndex {
-  premierCardKeys: ReadonlySet<string>;
+  premierSetCodesByCardKey: ReadonlyMap<string, ReadonlySet<string>>;
   suspendedCardKeys: {
     premier: ReadonlySet<string>;
     eternal: ReadonlySet<string>;
@@ -42,12 +47,16 @@ export interface CardLegalityIndex {
 export interface CardLegality {
   legal: boolean;
   reason?: string;
+  warning?: string;
+  releaseDate?: string;
 }
 
 export interface DeckCardLegality {
   legal: boolean;
   reasons: string[];
+  warnings: string[];
   illegalCardIds: string[];
+  prereleaseCardIds: string[];
 }
 
 function foldFormat(value: string): string {
@@ -133,9 +142,13 @@ export function getEffectiveCardPool(
 
 export function buildCardLegalityIndex(cards: CardInfo[]): CardLegalityIndex {
   const premierSets = new Set<string>(OFFICIAL_PREMIER_SET_CODES);
-  const premierCardKeys = new Set<string>();
+  const premierSetCodesByCardKey = new Map<string, Set<string>>();
   for (const card of cards) {
-    if (premierSets.has(card.setCode)) premierCardKeys.add(card.cardKey ?? card.cardId);
+    if (!premierSets.has(card.setCode)) continue;
+    const cardKey = card.cardKey ?? card.cardId;
+    const setCodes = premierSetCodesByCardKey.get(cardKey) ?? new Set<string>();
+    setCodes.add(card.setCode);
+    premierSetCodesByCardKey.set(cardKey, setCodes);
   }
 
   const suspendedNames = new Map<string, string>();
@@ -151,7 +164,7 @@ export function buildCardLegalityIndex(cards: CardInfo[]): CardLegalityIndex {
   };
 
   return {
-    premierCardKeys,
+    premierSetCodesByCardKey,
     suspendedCardKeys: {
       premier: toSuspendedSet(OFFICIAL_SUSPENDED_CARDS.premier),
       eternal: toSuspendedSet(OFFICIAL_SUSPENDED_CARDS.eternal),
@@ -165,7 +178,8 @@ export function getCardLegality(
   card: CardInfo,
   format: DeckFormat,
   index: CardLegalityIndex,
-  trilogyCardPool: TrilogyCardPool = "premier"
+  trilogyCardPool: TrilogyCardPool = "premier",
+  now: Date = new Date()
 ): CardLegality {
   const pool = getEffectiveCardPool(format, trilogyCardPool);
   const cardKey = card.cardKey ?? card.cardId;
@@ -178,7 +192,27 @@ export function getCardLegality(
   }
 
   if (pool !== "premier") return { legal: true };
-  if (index.premierCardKeys.has(cardKey)) return { legal: true };
+  const premierSetCodes = index.premierSetCodesByCardKey.get(cardKey) ?? new Set<string>();
+  if ([...premierSetCodes].some((setCode) => isPremierSetReleased(setCode, now))) {
+    return { legal: true };
+  }
+
+  const upcomingSet = [...premierSetCodes]
+    .map((setCode) => ({
+      setCode,
+      release: getUpcomingPremierSetRelease(setCode, now)
+    }))
+    .filter((entry): entry is { setCode: string; release: NonNullable<typeof entry.release> } =>
+      Boolean(entry.release)
+    )
+    .sort((left, right) => left.release.releaseDate.localeCompare(right.release.releaseDate))[0];
+  if (upcomingSet) {
+    return {
+      legal: true,
+      warning: getPremierPrereleaseNotice(upcomingSet.setCode, now),
+      releaseDate: upcomingSet.release.releaseDate
+    };
+  }
 
   if ((OFFICIAL_ROTATED_CORE_SET_CODES as readonly string[]).includes(card.setCode)) {
     return {
@@ -217,7 +251,9 @@ export function validateDeckCardLegality(
   const format = getDeckFormat(deck);
   const trilogyCardPool = getTrilogyCardPool(deck);
   const reasons: string[] = [];
+  const warnings: string[] = [];
   const illegalCardIds: string[] = [];
+  const prereleaseCardIds: string[] = [];
   const checkedCardIds = new Set<string>();
 
   for (const required of deck.allRequiredCards) {
@@ -230,12 +266,22 @@ export function validateDeckCardLegality(
       continue;
     }
     const legality = getCardLegality(card, format, index, trilogyCardPool);
-    if (legality.legal) continue;
-    illegalCardIds.push(required.cardId);
-    reasons.push(`${card.localizedName ?? card.name ?? card.cardId}: ${legality.reason}`);
+    if (!legality.legal) {
+      illegalCardIds.push(required.cardId);
+      reasons.push(`${card.localizedName ?? card.name ?? card.cardId}: ${legality.reason}`);
+    } else if (legality.warning) {
+      prereleaseCardIds.push(required.cardId);
+      warnings.push(`${card.localizedName ?? card.name ?? card.cardId}: ${legality.warning}`);
+    }
   }
 
-  return { legal: reasons.length === 0, reasons, illegalCardIds };
+  return {
+    legal: reasons.length === 0,
+    reasons,
+    warnings,
+    illegalCardIds,
+    prereleaseCardIds
+  };
 }
 
 function textDeckSizeModifier(card: CardInfo | undefined): number {

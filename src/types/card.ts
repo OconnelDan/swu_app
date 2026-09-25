@@ -14,6 +14,10 @@ export interface CardInfo {
   type?: string;
   rarity?: string;
   imageUrl?: string;
+  /** Imagen oficial del reverso de un líder. */
+  leaderUnitImageUrl?: string;
+  /** Distingue los líderes que cambian entre dos caras horizontales. */
+  leaderBackHorizontal?: boolean;
   setName?: string;
   cost?: number;
   aspects?: string[];
@@ -21,6 +25,12 @@ export interface CardInfo {
   arena?: string;
   text?: string;
   localizedText?: string;
+  /** Acción épica impresa en la cara horizontal del líder. */
+  leaderEpicAction?: string;
+  localizedLeaderEpicAction?: string;
+  /** Texto de reglas de la cara desplegada del líder. */
+  leaderUnitText?: string;
+  localizedLeaderUnitText?: string;
   power?: number;
   hp?: number;
   upgradePower?: number;

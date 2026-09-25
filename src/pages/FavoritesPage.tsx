@@ -8,6 +8,7 @@ import {
   type DeckFormatFilterValue
 } from "@/components/DeckFormatFilter";
 import { DecksTabs } from "@/components/DecksTabs";
+import { DeckPrereleaseNotice } from "@/components/DeckPrereleaseNotice";
 import { useDataSource } from "@/contexts/DataSourceContext";
 import { useFavorites } from "@/hooks/useFavorites";
 import { useCollection } from "@/hooks/useCollection";
@@ -200,6 +201,9 @@ export function FavoritesPage({ onOpenResult }: FavoritesPageProps) {
           {favoriteDecks.map((favorite) => {
             const legality = deckLegality.byDeckId.get(favorite.id);
             const draftIncomplete = legality ? isDeckDraftIncomplete(legality) : false;
+            const prerelease = Boolean(
+              legality?.valid && legality.prereleaseCardIds.length > 0 && !draftIncomplete
+            );
             const outdated = collection
               ? isFavoriteOutdated(favorite, collection.fingerprint)
               : false;
@@ -251,12 +255,20 @@ export function FavoritesPage({ onOpenResult }: FavoritesPageProps) {
                         className={
                           draftIncomplete
                             ? "badge-warning"
-                            : legality.valid
-                              ? "badge-complete"
-                              : "badge-missing"
+                            : !legality.valid
+                              ? "badge-missing"
+                              : prerelease
+                                ? "badge-warning"
+                                : "badge-complete"
                         }
                       >
-                        {draftIncomplete ? "Mazo inacabado" : legality.valid ? "Legal" : "No legal"}
+                        {draftIncomplete
+                          ? "Mazo inacabado"
+                          : !legality.valid
+                            ? "No legal"
+                            : prerelease
+                              ? "Prepublicación"
+                              : "Legal"}
                       </span>
                     )}
                   </div>
@@ -273,6 +285,8 @@ export function FavoritesPage({ onOpenResult }: FavoritesPageProps) {
                     )}
                   </div>
                 )}
+
+                {legality && <DeckPrereleaseNotice validation={legality} />}
 
                 {outdated && (
                   <p className="mt-2 text-xs text-saber-yellow">

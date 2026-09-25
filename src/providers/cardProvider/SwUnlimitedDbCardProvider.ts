@@ -23,16 +23,22 @@ type CatalogCardTuple = [
   unique: boolean,
   keywords: string[],
   cardKey: string,
-  deckLimit: number
+  deckLimit: number,
+  leaderEpicAction: string,
+  localizedLeaderEpicAction: string,
+  leaderUnitText: string,
+  localizedLeaderUnitText: string,
+  leaderBackHorizontal: boolean
 ];
 
 interface BundledCardCatalog {
-  version: 3;
+  version: 4;
   sets: string[];
   setNames: Record<string, string>;
   cards: Record<string, CatalogCardTuple>;
   aliases: Record<string, string>;
   images: Record<string, string>;
+  leaderUnitImages: Record<string, string>;
 }
 
 const CATALOG_FILE = "data/swu-card-catalog.json";
@@ -52,12 +58,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function parseCatalog(value: unknown): BundledCardCatalog {
   if (
     !isRecord(value) ||
-    value.version !== 3 ||
+    value.version !== 4 ||
     !Array.isArray(value.sets) ||
     !isRecord(value.setNames) ||
     !isRecord(value.cards) ||
     !isRecord(value.aliases) ||
-    !isRecord(value.images)
+    !isRecord(value.images) ||
+    !isRecord(value.leaderUnitImages)
   ) {
     throw new Error("El catálogo de cartas incluido no tiene el formato esperado.");
   }
@@ -109,7 +116,12 @@ function resolveCatalogCard(
     unique,
     keywords,
     cardKey,
-    deckLimit
+    deckLimit,
+    leaderEpicAction,
+    localizedLeaderEpicAction,
+    leaderUnitText,
+    localizedLeaderUnitText,
+    leaderBackHorizontal
   ] = entry;
   const { setCode, cardNumber } = parseCardId(canonicalCardId);
   return {
@@ -131,6 +143,11 @@ function resolveCatalogCard(
     arena: arena || undefined,
     text: text || undefined,
     localizedText: localizedText || undefined,
+    leaderEpicAction: leaderEpicAction || undefined,
+    localizedLeaderEpicAction: localizedLeaderEpicAction || undefined,
+    leaderUnitText: leaderUnitText || undefined,
+    localizedLeaderUnitText: localizedLeaderUnitText || undefined,
+    leaderBackHorizontal,
     power: power ?? undefined,
     hp: hp ?? undefined,
     upgradePower: upgradePower ?? undefined,
@@ -144,7 +161,9 @@ function resolveCatalogCard(
     imageUrl:
       catalog.images[requestedCardId] ??
       catalog.images[canonicalCardId] ??
-      tryGetCardImageUrl(requestedCardId)
+      tryGetCardImageUrl(requestedCardId),
+    leaderUnitImageUrl:
+      catalog.leaderUnitImages[requestedCardId] ?? catalog.leaderUnitImages[canonicalCardId]
   };
 }
 

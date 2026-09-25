@@ -63,9 +63,7 @@ describe("texto de reglas para búsquedas", () => {
     const text =
       "Ambush (When you play this unit, it may attack an enemy unit.)\n" +
       "Saboteur (When this unit attacks, ignore Sentinel and defeat Shields.)";
-    expect(stripKeywordReminderText(text, ["Ambush", "Saboteur"]).trim()).toBe(
-      "Ambush \nSaboteur"
-    );
+    expect(stripKeywordReminderText(text, ["Ambush", "Saboteur"]).trim()).toBe("Ambush \nSaboteur");
   });
 
   it("combina frases separadas por barras y exige que se cumplan todas", () => {
@@ -81,6 +79,20 @@ describe("texto de reglas para búsquedas", () => {
     expect(matchesCardSearchQuery(target, "cuando se juegue / rebelde / 3")).toBe(true);
     expect(matchesCardSearchQuery(target, "rebelde / cuando se juegue / centinela")).toBe(true);
     expect(matchesCardSearchQuery(target, "cuando se juegue / imperial")).toBe(false);
+  });
+
+  it("encuentra el texto de la acción épica y de la cara desplegada de un líder", () => {
+    const target = card({
+      type: "Leader",
+      localizedText: "Acción [Agota]: Juega una mejora desde tus recursos.",
+      localizedLeaderEpicAction:
+        "Acción épica: Si controlas al menos 5 recursos, despliega este líder.",
+      localizedLeaderUnitText:
+        "Cuando termine un ataque: Convierte en recurso la primera carta de tu mazo."
+    });
+
+    expect(matchesCardSearchQuery(target, "despliega este líder")).toBe(true);
+    expect(matchesCardSearchQuery(target, "cuando termine un ataque / recurso")).toBe(true);
   });
 
   it("interpreta una condición numérica como coste exacto", () => {

@@ -148,20 +148,30 @@ function getPrintedId(card) {
   return `${getPrintedSetCode(card)}_${normalizeNumber(getPrintedNumber(card))}`;
 }
 
-function getImageUrl(card) {
-  const attributes = relationAttributes(card.attributes.artFront);
+function getArtworkUrl(card, side) {
+  const attributes = relationAttributes(card.attributes[side]);
   const url = attributes.formats?.card?.url ?? attributes.url ?? "";
   if (!url) return "";
 
   const parsedUrl = new URL(url);
   if (parsedUrl.protocol !== "https:" || parsedUrl.hostname !== "cdn.starwarsunlimited.com") {
-    throw new Error(`La carta ${card.id} utiliza una URL de imagen oficial no reconocida: ${url}`);
+    throw new Error(
+      `La carta ${card.id} utiliza una URL de imagen oficial no reconocida en ${side}: ${url}`
+    );
   }
 
   // La doble barra tras el dominio forma parte de la clave publicada por el
   // CDN oficial. No debe normalizarse: /card_... puede devolver 403 mientras
   // que //card_... sirve correctamente la misma imagen.
   return url;
+}
+
+function getImageUrl(card) {
+  return getArtworkUrl(card, "artFront");
+}
+
+function getLeaderUnitImageUrl(card) {
+  return getArtworkUrl(card, "artBack");
 }
 
 function imagePriority(card, canonicalCard) {
@@ -409,7 +419,12 @@ for (const canonicalCard of new Map(
     attributes.unique === true,
     relationNames(attributes.keywords),
     getCardKey(canonicalCard) ?? canonicalId,
-    officialCopyLimits.get(getCardKey(canonicalCard)) ?? getDeckLimit(attributes.text)
+    officialCopyLimits.get(getCardKey(canonicalCard)) ?? getDeckLimit(attributes.text),
+    attributes.epicAction ?? "",
+    spanish.epicAction ?? "",
+    attributes.deployBox ?? "",
+    spanish.deployBox ?? "",
+    attributes.artBackHorizontal === true
   ];
 }
 
@@ -425,11 +440,14 @@ for (const card of scannableCards) {
 
 const aliases = {};
 const images = {};
+const leaderUnitImages = {};
 const ambiguousPrintCodes = [];
 
 for (const [canonicalId, canonicalCard] of canonicalCardByPrintedId) {
   const imageUrl = getImageUrl(canonicalCard);
   if (imageUrl) images[canonicalId] = imageUrl;
+  const leaderUnitImageUrl = getLeaderUnitImageUrl(canonicalCard);
+  if (leaderUnitImageUrl) leaderUnitImages[canonicalId] = leaderUnitImageUrl;
 }
 
 for (const [printedId, printings] of printingsById) {
@@ -448,6 +466,8 @@ for (const [printedId, printings] of printingsById) {
   )[0];
   const imageUrl = getImageUrl(preferred.card);
   if (imageUrl) images[printedId] = imageUrl;
+  const leaderUnitImageUrl = getLeaderUnitImageUrl(preferred.card);
+  if (leaderUnitImageUrl) leaderUnitImages[printedId] = leaderUnitImageUrl;
 }
 
 const correctedNumbers = scannableCards.filter(
@@ -551,13 +571,14 @@ for (const setCode of unreviewedSpecialSetCodes) {
 }
 
 const catalog = {
-  version: 3,
+  version: 4,
   source: `${API_BASE}/${CATALOG_ENDPOINT}?locale=${CATALOG_LOCALE}`,
   sets,
   setNames: sortRecord(setNames),
   cards: sortRecord(cards),
   aliases: sortRecord(aliases),
   images: sortRecord(images),
+  leaderUnitImages: sortRecord(leaderUnitImages),
   ambiguousPrintCodes: ambiguousPrintCodes.sort()
 };
 
@@ -617,6 +638,7 @@ console.log(
     `Catálogo oficial actualizado: ${Object.keys(cards).length} cartas base`,
     `${Object.keys(aliases).length} alias inequívocos`,
     `${Object.keys(images).length} imágenes`,
+    `${Object.keys(leaderUnitImages).length} reversos de líder`,
     `${sets.length} códigos de colección`,
     `${ambiguousPrintCodes.length} códigos ambiguos omitidos`,
     `${correctedNumbers.length} números corregidos mediante serialCode`,

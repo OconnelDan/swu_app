@@ -101,6 +101,43 @@ const saboteurReminder: CardInfo = {
   keywords: ["Saboteur"]
 };
 
+const leader: CardInfo = {
+  cardId: "ASH_001",
+  setCode: "ASH",
+  cardNumber: "001",
+  name: "The Armorer, Steel Shapes Us",
+  localizedName: "La Armera, El acero nos moldea",
+  type: "Leader",
+  rarity: "Rare",
+  imageUrl: "https://example.invalid/ash-001-front.png",
+  leaderUnitImageUrl: "https://example.invalid/ash-001-back.png",
+  setName: "Cenizas del Imperio",
+  cost: 5,
+  aspects: ["Vigilance", "Command"],
+  traits: ["Mandalorian"],
+  arena: "Ground",
+  localizedText: "Acción [Agota]: Juega una mejora desde tus recursos.",
+  localizedLeaderEpicAction:
+    "Acción épica: Si controlas al menos 5 recursos, despliega este líder.",
+  localizedLeaderUnitText: "Cuando termine un ataque: Puedes jugar una mejora desde tus recursos.",
+  power: 4,
+  hp: 6
+};
+
+const base: CardInfo = {
+  cardId: "ASH_023",
+  setCode: "ASH",
+  cardNumber: "023",
+  name: "Blue Base",
+  localizedName: "Base azul",
+  type: "Base",
+  rarity: "Common",
+  imageUrl: "https://example.invalid/ash-023.png",
+  setName: "Cenizas del Imperio",
+  aspects: ["Vigilance"],
+  hp: 30
+};
+
 let catalogCards: CardInfo[] = [card];
 
 function dataSource(
@@ -244,6 +281,70 @@ describe("Buscar cartas", () => {
     expect(await screen.findByText(/2 resultado\(s\)/i)).toBeInTheDocument();
     expect(screen.getByText("Unidad rebelde detallada")).toBeInTheDocument();
     expect(screen.getByText("Centinela terrestre de Mando")).toBeInTheDocument();
+  });
+
+  it("permite mostrar únicamente líderes o únicamente bases", async () => {
+    catalogCards = [card, leader, base];
+    render(
+      <DataSourceContext.Provider value={dataSource(vi.fn(), [])}>
+        <CardFinderPage />
+      </DataSourceContext.Provider>
+    );
+
+    expect(await screen.findByText(/3 resultado\(s\)/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByText("Filtros"));
+    fireEvent.click(screen.getByRole("button", { name: "Líderes" }));
+
+    expect(await screen.findByText(/1 resultado\(s\)/i)).toBeInTheDocument();
+    expect(screen.getByText("La Armera, El acero nos moldea")).toBeInTheDocument();
+    expect(screen.queryByText("Base azul")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Todos los tipos" }));
+    fireEvent.click(screen.getByRole("button", { name: "Bases" }));
+
+    expect(await screen.findByText(/1 resultado\(s\)/i)).toBeInTheDocument();
+    expect(screen.getByText("Base azul")).toBeInTheDocument();
+    expect(screen.queryByText("La Armera, El acero nos moldea")).not.toBeInTheDocument();
+  });
+
+  it("muestra y alterna las dos caras y la información completa de un líder", async () => {
+    catalogCards = [leader];
+    render(
+      <DataSourceContext.Provider value={dataSource(vi.fn(), [])}>
+        <CardFinderPage />
+      </DataSourceContext.Provider>
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: /ASH_001/i }));
+    const dialog = screen.getByRole("dialog", { name: "La Armera, El acero nos moldea" });
+
+    expect(
+      within(dialog).getByRole("heading", { name: "Líder sin desplegar" })
+    ).toBeInTheDocument();
+    expect(within(dialog).getByText(/Juega una mejora desde tus recursos/i)).toBeInTheDocument();
+    expect(within(dialog).getByText(/Si controlas al menos 5 recursos/i)).toBeInTheDocument();
+    expect(within(dialog).getByRole("heading", { name: "Líder desplegado" })).toBeInTheDocument();
+    expect(within(dialog).getByText(/Cuando termine un ataque/i)).toBeInTheDocument();
+    expect(within(dialog).getByText("Coste de despliegue")).toBeInTheDocument();
+
+    expect(
+      within(dialog).getByRole("img", {
+        name: "La Armera, El acero nos moldea, líder sin desplegar"
+      })
+    ).toHaveAttribute("src", leader.imageUrl);
+
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Mostrar la cara desplegada del líder" })
+    );
+
+    expect(
+      within(dialog).getByRole("img", {
+        name: "La Armera, El acero nos moldea, líder desplegado"
+      })
+    ).toHaveAttribute("src", leader.leaderUnitImageUrl);
+    expect(
+      within(dialog).getByRole("button", { name: "Mostrar la cara sin desplegar del líder" })
+    ).toBeInTheDocument();
   });
 
   it("combina condiciones con barra, interpreta números como coste y conserva alias de código", async () => {

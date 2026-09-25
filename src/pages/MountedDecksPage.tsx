@@ -8,6 +8,7 @@ import {
   type DeckFormatFilterValue
 } from "@/components/DeckFormatFilter";
 import { DecksTabs } from "@/components/DecksTabs";
+import { DeckPrereleaseNotice } from "@/components/DeckPrereleaseNotice";
 import { SkeletonLines } from "@/components/Skeleton";
 import { useDataSource } from "@/contexts/DataSourceContext";
 import { useCollection } from "@/hooks/useCollection";
@@ -161,6 +162,7 @@ export function MountedDecksPage({ onOpenResult }: MountedDecksPageProps) {
           {mountedDecks.map((deck) => {
             const status = summarizeMountedDeckAllocation(deck, allocations);
             const legality = deckLegality.byDeckId.get(deck.id);
+            const prerelease = Boolean(legality?.valid && legality.prereleaseCardIds.length > 0);
 
             return (
               <DeckCardFrame
@@ -191,8 +193,16 @@ export function MountedDecksPage({ onOpenResult }: MountedDecksPageProps) {
                       {status.complete ? "Montado completo" : "Montado incompleto"}
                     </span>
                     {!deckLegality.loading && legality && (
-                      <span className={legality.valid ? "badge-complete" : "badge-missing"}>
-                        {legality.valid ? "Legal" : "No legal"}
+                      <span
+                        className={
+                          !legality.valid
+                            ? "badge-missing"
+                            : prerelease
+                              ? "badge-warning"
+                              : "badge-complete"
+                        }
+                      >
+                        {!legality.valid ? "No legal" : prerelease ? "Prepublicación" : "Legal"}
                       </span>
                     )}
                   </div>
@@ -208,6 +218,8 @@ export function MountedDecksPage({ onOpenResult }: MountedDecksPageProps) {
                     ))}
                   </div>
                 )}
+
+                {legality && <DeckPrereleaseNotice validation={legality} />}
 
                 <dl className="mt-3 grid grid-cols-3 gap-2 text-center text-xs">
                   <div>

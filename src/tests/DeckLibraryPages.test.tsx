@@ -19,6 +19,7 @@ vi.mock("@/hooks/useAuth", () => ({
 const deckLegalityMock = vi.hoisted(() => ({
   invalidDeckIds: new Set<string>(),
   incompleteDeckIds: new Set<string>(),
+  prereleaseDeckIds: new Set<string>(),
   cardsById: new Map<string, CardInfo>()
 }));
 
@@ -45,7 +46,13 @@ vi.mock("@/hooks/useDeckLegality", () => ({
           minimumMainCount: 50,
           sideboardLimit: 10,
           aspectPenaltyCopies: 0,
-          illegalCardIds: []
+          illegalCardIds: [],
+          prereleaseCardIds: deckLegalityMock.prereleaseDeckIds.has(deck.id) ? ["HMW_100"] : [],
+          prereleaseWarnings: deckLegalityMock.prereleaseDeckIds.has(deck.id)
+            ? [
+                "Carta de Mundos de origen: Prepublicación: Mundos de origen (HMW) será legal en Premier desde el 9/10/2026."
+              ]
+            : []
         }
       ])
     )
@@ -134,6 +141,7 @@ beforeEach(() => {
 afterEach(() => {
   deckLegalityMock.invalidDeckIds.clear();
   deckLegalityMock.incompleteDeckIds.clear();
+  deckLegalityMock.prereleaseDeckIds.clear();
   deckLegalityMock.cardsById.clear();
   vi.restoreAllMocks();
 });
@@ -578,6 +586,24 @@ describe("Favoritos y mazos montados", () => {
     expect(mountFavoriteDeck).not.toHaveBeenCalled();
   });
 
+  it("avisa de la prepublicación sin bloquear el montaje del favorito", () => {
+    const preview = savedDeck("preview", "Mazo HMW anticipado", 1, false);
+    deckLegalityMock.prereleaseDeckIds.add(preview.id);
+
+    render(
+      <DataSourceContext.Provider value={dataSource([preview], collection)}>
+        <MemoryRouter>
+          <FavoritesPage onOpenResult={vi.fn()} />
+        </MemoryRouter>
+      </DataSourceContext.Provider>
+    );
+
+    expect(screen.getByText("Prepublicación")).toBeInTheDocument();
+    expect(screen.getByText(/todavía no es legal en Premier/i)).toBeInTheDocument();
+    expect(screen.getByText(/será legal en Premier desde el 9\/10\/2026/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Montar mazo" })).toBeEnabled();
+  });
+
   it("mantiene montado un mazo que deja de ser legal y permite desmontarlo", () => {
     const mounted = savedDeck("mounted-illegal", "Mazo antiguo", 1, true, 1);
     deckLegalityMock.invalidDeckIds.add(mounted.id);
@@ -593,6 +619,23 @@ describe("Favoritos y mazos montados", () => {
     expect(screen.getByText("Mazo antiguo")).toBeInTheDocument();
     expect(screen.getByText("No legal")).toBeInTheDocument();
     expect(screen.getByText(/Se conserva montado/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Desmontar mazo" })).toBeEnabled();
+  });
+
+  it("mantiene el aviso de prepublicación en un mazo ya montado", () => {
+    const preview = savedDeck("mounted-preview", "HMW ya preparado", 1, true, 1);
+    deckLegalityMock.prereleaseDeckIds.add(preview.id);
+
+    render(
+      <DataSourceContext.Provider value={dataSource([preview], collection)}>
+        <MemoryRouter>
+          <MountedDecksPage onOpenResult={vi.fn()} />
+        </MemoryRouter>
+      </DataSourceContext.Provider>
+    );
+
+    expect(screen.getByText("Prepublicación")).toBeInTheDocument();
+    expect(screen.getByText(/todavía no es legal en Premier/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Desmontar mazo" })).toBeEnabled();
   });
 });
