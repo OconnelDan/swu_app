@@ -38,6 +38,8 @@ export interface DeckValidation {
   sideboardLimit: number;
   aspectPenaltyCopies: number;
   illegalCardIds: string[];
+  prereleaseCardIds: string[];
+  prereleaseWarnings: string[];
 }
 
 export type PremierDeckValidation = DeckValidation;
@@ -46,9 +48,7 @@ export type PremierDeckValidation = DeckValidation;
  * Distingue un borrador estructuralmente incompleto de un mazo completo que
  * incumple otra regla (rotación, alineamiento, copias, etc.).
  */
-export function isDeckDraftIncomplete(
-  validation: DeckValidation
-): boolean {
+export function isDeckDraftIncomplete(validation: DeckValidation): boolean {
   return (
     validation.mainCount < validation.minimumMainCount ||
     validation.errors.some(
@@ -85,7 +85,9 @@ const TWIN_SUNS_STARTING_ALIGNMENT_BY_CARD_KEY: Readonly<Record<string, "Heroism
   "0026166404": "Heroism"
 };
 
-function getTwinSunsStartingAlignment(card: CardInfo | undefined): "Heroism" | "Villainy" | undefined {
+function getTwinSunsStartingAlignment(
+  card: CardInfo | undefined
+): "Heroism" | "Villainy" | undefined {
   if (!card) return undefined;
 
   const specialStartingAlignment =
@@ -151,6 +153,8 @@ function validateSingleDeck(
   const errors: string[] = [];
   const warnings: string[] = [];
   const illegalCardIds: string[] = [];
+  const prereleaseCardIds: string[] = [];
+  const prereleaseWarnings: string[] = [];
   const leaders = compositionLeaderIds(composition);
   const expectedLeaders = options.format === "twin-suns" ? 2 : 1;
   const mainCount = totalCounts(composition.mainCounts);
@@ -210,6 +214,11 @@ function validateSingleDeck(
     if (!legality.legal) {
       illegalCardIds.push(cardId);
       errors.push(`${prefix}${displayName(card, cardId)}: ${legality.reason}`);
+    } else if (legality.warning) {
+      const warning = `${prefix}${displayName(card, cardId)}: ${legality.warning}`;
+      prereleaseCardIds.push(cardId);
+      prereleaseWarnings.push(warning);
+      warnings.push(warning);
     }
   }
 
@@ -271,7 +280,9 @@ function validateSingleDeck(
     minimumMainCount,
     sideboardLimit,
     aspectPenaltyCopies,
-    illegalCardIds
+    illegalCardIds,
+    prereleaseCardIds,
+    prereleaseWarnings
   };
 }
 
@@ -299,6 +310,8 @@ export function validateDeck(
   const errors: string[] = [];
   const warnings: string[] = [];
   const illegalCardIds: string[] = [];
+  const prereleaseCardIds: string[] = [];
+  const prereleaseWarnings: string[] = [];
   if (!composition.name.trim()) errors.push("Escribe un nombre para el conjunto Trilogy.");
   if ((composition.trilogyDecks?.length ?? 0) !== 3) {
     errors.push("Trilogy necesita exactamente tres mazos.");
@@ -316,6 +329,8 @@ export function validateDeck(
     errors.push(...result.errors);
     warnings.push(...result.warnings);
     illegalCardIds.push(...result.illegalCardIds);
+    prereleaseCardIds.push(...result.prereleaseCardIds);
+    prereleaseWarnings.push(...result.prereleaseWarnings);
   }
 
   const leadersAndBases = new Map<string, { count: number; card?: CardInfo; cardId: string }>();
@@ -369,7 +384,9 @@ export function validateDeck(
     minimumMainCount: results.reduce((total, result) => total + result.minimumMainCount, 0),
     sideboardLimit: 0,
     aspectPenaltyCopies: results.reduce((total, result) => total + result.aspectPenaltyCopies, 0),
-    illegalCardIds: [...new Set(illegalCardIds)]
+    illegalCardIds: [...new Set(illegalCardIds)],
+    prereleaseCardIds: [...new Set(prereleaseCardIds)],
+    prereleaseWarnings: uniqueMessages(prereleaseWarnings)
   };
 }
 

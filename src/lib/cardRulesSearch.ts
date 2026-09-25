@@ -133,6 +133,10 @@ export function buildCardRulesSearchText(card: CardInfo): string {
   return [
     stripKeywordReminderText(card.text, card.keywords),
     stripKeywordReminderText(card.localizedText, card.keywords),
+    stripKeywordReminderText(card.leaderEpicAction, card.keywords),
+    stripKeywordReminderText(card.localizedLeaderEpicAction, card.keywords),
+    stripKeywordReminderText(card.leaderUnitText, card.keywords),
+    stripKeywordReminderText(card.localizedLeaderUnitText, card.keywords),
     ...(card.traits ?? []).flatMap((trait) => LOCALIZED_TRAIT_LABELS[trait] ?? [trait]),
     ...(card.keywords ?? [])
   ]
@@ -150,10 +154,7 @@ function foldSearchPhrase(value: string): string {
  * demás se buscan como frases completas dentro de los datos de la carta.
  */
 export function matchesCardSearchQuery(card: CardInfo, query: string): boolean {
-  const conditions = query
-    .split("/")
-    .map(foldSearchPhrase)
-    .filter(Boolean);
+  const conditions = query.split("/").map(foldSearchPhrase).filter(Boolean);
   if (conditions.length === 0) return true;
 
   const searchableText = foldSearchPhrase(
