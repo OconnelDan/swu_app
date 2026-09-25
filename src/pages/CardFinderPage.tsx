@@ -10,6 +10,7 @@ import { useFavorites } from "@/hooks/useFavorites";
 import { useSettings } from "@/hooks/useSettings";
 import { computeCardAllocations, getCardLocationStatus } from "@/lib/cardAllocation";
 import { tryGetCardImageUrl } from "@/lib/cardImageUrl";
+import { getPremierPrereleaseNotice } from "@/lib/cardRelease";
 import { matchesCardSearchQuery } from "@/lib/cardRulesSearch";
 import { searchCards } from "@/lib/cardSearch";
 import { SwUnlimitedDbCardProvider } from "@/providers/cardProvider/SwUnlimitedDbCardProvider";
@@ -21,7 +22,7 @@ interface CardCandidate {
 }
 
 type OwnedFilter = "all" | "owned" | "free";
-type CardTypeFilter = "ground-unit" | "space-unit" | "event" | "upgrade";
+type CardTypeFilter = "leader" | "base" | "ground-unit" | "space-unit" | "event" | "upgrade";
 
 const SEARCH_PAGE_SIZE = 30;
 
@@ -35,6 +36,8 @@ const ASPECT_LABELS: Record<string, string> = {
 };
 
 const CARD_TYPE_FILTERS: { value: CardTypeFilter; label: string }[] = [
+  { value: "leader", label: "Líderes" },
+  { value: "base", label: "Bases" },
   { value: "ground-unit", label: "Unidades terrestres" },
   { value: "space-unit", label: "Unidades espaciales" },
   { value: "event", label: "Eventos" },
@@ -58,6 +61,8 @@ function toggleSelection<T extends string>(values: T[], value: T): T[] {
 }
 
 function getCardTypeFilter(card: CardInfo): CardTypeFilter | undefined {
+  if (card.type === "Leader") return "leader";
+  if (card.type === "Base") return "base";
   if (card.type === "Event") return "event";
   if (card.type === "Upgrade") return "upgrade";
   if (card.type !== "Unit") return undefined;
@@ -550,6 +555,7 @@ export function CardFinderPage() {
           const status = getCardLocationStatus(allocation);
           const info = cardInfos.get(candidate.cardId);
           const imageUrl = info?.imageUrl ?? tryGetCardImageUrl(candidate.cardId);
+          const prereleaseNotice = info ? getPremierPrereleaseNotice(info.setCode) : undefined;
           return (
             <li key={candidate.cardId}>
               <button
@@ -572,6 +578,9 @@ export function CardFinderPage() {
                   <div className="flex-1">
                     <p className="font-mono text-xs text-slate-400">{candidate.cardId}</p>
                     <p className="font-semibold">{displayName(info)}</p>
+                    {prereleaseNotice && (
+                      <span className="badge-warning mt-1 inline-flex">Prepublicación Premier</span>
+                    )}
                     {status === "not_owned" ? (
                       <span className="badge-missing mt-1 inline-block">
                         No está en tu colección

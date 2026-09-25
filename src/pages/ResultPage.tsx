@@ -4,6 +4,7 @@ import { Users } from "lucide-react";
 import { DeckSummary } from "@/components/DeckSummary";
 import { DeckResultTable } from "@/components/DeckResultTable";
 import { CardTransferDialog } from "@/components/CardTransferDialog";
+import { DeckPrereleaseNotice } from "@/components/DeckPrereleaseNotice";
 import { useDataSource } from "@/contexts/DataSourceContext";
 import { useAuth } from "@/hooks/useAuth";
 import { useDeckLegality } from "@/hooks/useDeckLegality";
@@ -231,6 +232,8 @@ export function ResultPage({ deck, result, favoriteId = null, onFavoriteSaved }:
           ))}
         </div>
       )}
+
+      {activeFavorite && activeLegality && <DeckPrereleaseNotice validation={activeLegality} />}
 
       {activeFavorite && deckLegality.error && (
         <p className="card border-saber-yellow/50 text-sm text-saber-yellow">

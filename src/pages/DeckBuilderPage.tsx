@@ -197,6 +197,7 @@ function BuilderCardItem({
   ownedCount,
   freeCount,
   blockedReason,
+  warning,
   selected = false,
   onOpenDetails,
   children
@@ -205,6 +206,7 @@ function BuilderCardItem({
   ownedCount: number;
   freeCount: number;
   blockedReason?: string;
+  warning?: string;
   selected?: boolean;
   onOpenDetails: () => void;
   children: ReactNode;
@@ -216,7 +218,9 @@ function BuilderCardItem({
           ? "border-saber-red/40 bg-space-950"
           : selected
             ? "border-saber-blue bg-space-800"
-            : "border-space-700 bg-space-900"
+            : warning
+              ? "border-saber-yellow/50 bg-space-900"
+              : "border-space-700 bg-space-900"
       }`}
     >
       <div className="flex gap-3">
@@ -261,6 +265,12 @@ function BuilderCardItem({
       {blockedReason && (
         <p className="mt-2 flex items-start gap-1 text-xs text-saber-red">
           <AlertTriangle size={14} className="mt-0.5 shrink-0" /> {blockedReason}
+        </p>
+      )}
+
+      {!blockedReason && warning && (
+        <p className="mt-2 flex items-start gap-1 text-xs text-saber-yellow">
+          <AlertTriangle size={14} className="mt-0.5 shrink-0" /> {warning}
         </p>
       )}
 
@@ -965,6 +975,12 @@ export function DeckBuilderPage() {
     return legality.legal ? roleConflictReason(card) : legality.reason;
   };
 
+  const cardSelectionWarning = (card: CardInfo): string | undefined => {
+    if (!format) return undefined;
+    const legality = getCardLegality(card, format, legalityIndex, trilogyCardPool);
+    return legality.legal ? legality.warning : undefined;
+  };
+
   const compareCardOrder = useCallback(
     (left: CardInfo, right: CardInfo) => {
       if (cardSorts.includes("cost")) {
@@ -1661,6 +1677,7 @@ export function DeckBuilderPage() {
                           const copyLimit = getCardCopyLimit(format, card);
                           const copyLimitReached = selectedCopies >= copyLimit;
                           const blockedReason = cardSelectionReason(card);
+                          const prereleaseWarning = cardSelectionWarning(card);
                           const sideboardRoom = Math.max(0, sideboardLimit - currentSideboardCount);
                           const maximumMove = Math.min(mainCount, sideboardRoom);
                           return (
@@ -1670,6 +1687,7 @@ export function DeckBuilderPage() {
                               ownedCount={allocation?.ownedCount ?? 0}
                               freeCount={allocation?.freeCount ?? 0}
                               blockedReason={blockedReason}
+                              warning={prereleaseWarning}
                               selected
                               onOpenDetails={() => setDetailsCard(card)}
                             >
@@ -1816,6 +1834,7 @@ export function DeckBuilderPage() {
                         const copyLimit = getCardCopyLimit(format, card);
                         const copyLimitReached = selectedCopies >= copyLimit;
                         const blockedReason = cardSelectionReason(card);
+                        const prereleaseWarning = cardSelectionWarning(card);
                         return (
                           <BuilderCardItem
                             key={card.cardId}
@@ -1823,6 +1842,7 @@ export function DeckBuilderPage() {
                             ownedCount={allocation?.ownedCount ?? 0}
                             freeCount={allocation?.freeCount ?? 0}
                             blockedReason={blockedReason}
+                            warning={prereleaseWarning}
                             onOpenDetails={() => setDetailsCard(card)}
                           >
                             <button
@@ -1877,6 +1897,7 @@ export function DeckBuilderPage() {
                 const selected =
                   leaderIds.includes(card.cardId) || card.cardId === currentDeck.baseId;
                 const blockedReason = cardSelectionReason(card);
+                const prereleaseWarning = cardSelectionWarning(card);
                 return (
                   <BuilderCardItem
                     key={card.cardId}
@@ -1884,6 +1905,7 @@ export function DeckBuilderPage() {
                     ownedCount={allocation?.ownedCount ?? 0}
                     freeCount={allocation?.freeCount ?? 0}
                     blockedReason={blockedReason}
+                    warning={prereleaseWarning}
                     selected={selected}
                     onOpenDetails={() => setDetailsCard(card)}
                   >
@@ -1974,9 +1996,16 @@ export function DeckBuilderPage() {
       <section className="card space-y-2">
         <h2 className="font-display text-base">Validación {formatLabel}</h2>
         {validation.valid ? (
-          <p className="flex items-center gap-2 text-sm text-saber-green">
-            <CheckCircle2 size={17} /> La estructura y la legalidad del mazo son válidas.
-          </p>
+          validation.prereleaseCardIds.length > 0 ? (
+            <p className="flex items-center gap-2 text-sm text-saber-yellow">
+              <AlertTriangle size={17} /> El mazo puede prepararse, pero contiene cartas en
+              prepublicación.
+            </p>
+          ) : (
+            <p className="flex items-center gap-2 text-sm text-saber-green">
+              <CheckCircle2 size={17} /> La estructura y la legalidad del mazo son válidas.
+            </p>
+          )
         ) : (
           <ul className="space-y-1 text-sm text-saber-red">
             {validation.errors.map((message, index) => (
