@@ -290,6 +290,35 @@ describe("constructor Premier", () => {
     expect(result.errors.some((message) => message.includes("ha rotado"))).toBe(false);
   });
 
+  it("permite preparar HMW antes del lanzamiento y lo marca como prepublicación", () => {
+    const homeworldsCard = card("HMW_100", {
+      name: "Carta de Mundos de origen",
+      cardKey: "hmw-preview"
+    });
+    const index = buildCardLegalityIndex([homeworldsCard]);
+
+    expect(
+      getCardLegality(homeworldsCard, "premier", index, "premier", new Date(2026, 8, 25))
+    ).toMatchObject({
+      legal: true,
+      releaseDate: "2026-10-09",
+      warning: expect.stringContaining("Prepublicación")
+    });
+    expect(
+      getCardLegality(homeworldsCard, "premier", index, "premier", new Date(2026, 9, 9))
+    ).toEqual({ legal: true });
+  });
+
+  it("no avisa si la identidad HMW ya tiene una reimpresión Premier publicada", () => {
+    const homeworldsPrinting = card("HMW_100", { cardKey: "shared-preview" });
+    const currentPrinting = card("SEC_100", { cardKey: "shared-preview" });
+    const index = buildCardLegalityIndex([homeworldsPrinting, currentPrinting]);
+
+    expect(
+      getCardLegality(homeworldsPrinting, "premier", index, "premier", new Date(2026, 8, 25))
+    ).toEqual({ legal: true });
+  });
+
   it("mantiene toda la colección IBH disponible en Premier después de sincronizar", () => {
     expect(OFFICIAL_PREMIER_SET_CODES).toContain("IBH");
     expect(OFFICIAL_NON_PREMIER_SPECIAL_SET_CODES).not.toContain("IBH");

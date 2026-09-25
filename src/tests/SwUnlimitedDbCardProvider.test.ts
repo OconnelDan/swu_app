@@ -16,6 +16,7 @@ const catalog = JSON.parse(catalogJson) as {
   cards: Record<string, unknown>;
   aliases: Record<string, string>;
   images: Record<string, string>;
+  leaderUnitImages: Record<string, string>;
 };
 
 describe("catálogo de cartas incluido", () => {
@@ -38,7 +39,7 @@ describe("catálogo de cartas incluido", () => {
 
   it("se genera desde la API oficial e incluye todas sus nomenclaturas publicadas", () => {
     expect(catalog).toMatchObject({
-      version: 3,
+      version: 4,
       source: "https://admin.starwarsunlimited.com/api/card-list?locale=en"
     });
     expect(catalog.sets).toEqual(
@@ -127,6 +128,25 @@ describe("catálogo de cartas incluido", () => {
       arena: "Ground"
     });
     expect(vultureDroid?.deckLimit).toBe(15);
+  });
+
+  it("incluye la imagen y los textos de ambas caras de los líderes", async () => {
+    const provider = new SwUnlimitedDbCardProvider();
+
+    await expect(provider.getCard("ASH_001")).resolves.toMatchObject({
+      type: "Leader",
+      leaderUnitImageUrl: expect.stringMatching(/^https:\/\/cdn\.starwarsunlimited\.com\//),
+      localizedLeaderEpicAction: expect.stringContaining("despliega este líder"),
+      localizedLeaderUnitText: expect.stringContaining("Cuando termine un ataque")
+    });
+    await expect(provider.getCard("TWI_017")).resolves.toMatchObject({
+      type: "Leader",
+      leaderBackHorizontal: true,
+      leaderUnitImageUrl: expect.stringMatching(/^https:\/\/cdn\.starwarsunlimited\.com\//)
+    });
+    expect(catalog.leaderUnitImages.ASH_001).toMatch(
+      /^https:\/\/cdn\.starwarsunlimited\.com\/\/card_/
+    );
   });
 
   it("convierte una impresión variante en el ID base que utiliza la colección", async () => {
