@@ -38,6 +38,9 @@ export default defineConfig({
       },
       workbox: {
         cleanupOutdatedCaches: true,
+        // El catálogo incluye las dos caras y textos de todos los líderes para
+        // que sus fichas sigan funcionando sin conexión.
+        maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
         globPatterns: ["**/*.{js,css,html,json,svg,png,ico,woff2}"],
         runtimeCaching: [
           {

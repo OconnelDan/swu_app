@@ -84,7 +84,10 @@ Abre `http://localhost:5173`.
    representa el coste exacto. Los resultados se paginan sin ocultar las cartas
    posteriores a la primera página. Al pulsar la miniatura de una carta se abre
    una ficha persistente con su imagen grande, texto traducido y datos de juego;
-   se cierra manualmente y no modifica la composición del mazo. Los líderes y
+   se cierra manualmente y no modifica la composición del mazo. En los líderes,
+   la ficha separa el texto de la cara sin desplegar, la acción épica y la
+   habilidad con estadísticas de la cara desplegada; al pulsar su imagen se
+   alternan las dos caras oficiales. Los líderes y
    bases elegidos se mantienen al principio de sus listas. En la pestaña Cartas,
    las seleccionadas aparecen primero en una caja plegable —visible desde la
    primera elección— y las disponibles permanecen en otra caja independiente;
@@ -105,7 +108,13 @@ Abre `http://localhost:5173`.
    todavía falten líderes, base o cartas. Los borradores muestran el aviso
    **Mazo inacabado** y se recuperan con **Continuar editando**. Guardar cambios
    actualiza el mismo favorito sin crear duplicados. Solo un mazo legal y con la
-   estructura completa puede montarse y reservar cartas de la colección. Los
+   estructura completa puede montarse y reservar cartas de la colección. Las
+   colecciones ya publicadas en el catálogo antes de su lanzamiento oficial se
+   identifican como **Prepublicación**: sus cartas pueden buscarse, utilizarse para
+   preparar y montar mazos y reservar copias, pero un aviso amarillo indica la fecha
+   desde la que serán legales en Premier. El aviso desaparece automáticamente al
+   llegar ese día. Una ilegalidad real por rotación, producto excluido o carta
+   inhabilitada continúa bloqueando el montaje. Los
    mazos terminados también pueden volver a abrirse con **Modificar mazo** para
    cambiar líder, base, mazo principal o banquillo. Cada tarjeta tiene
    **Copiar JSON** junto a **Eliminar** y debajo de **Duplicar**. La copia se
@@ -129,8 +138,8 @@ Abre `http://localhost:5173`.
    su lado del marco. En móvil, modificar y comprobar comparten la primera fila;
    desmontar y copiar JSON ocupan la segunda.
 7. **Buscar**: recorre todo el catálogo y utiliza la misma búsqueda avanzada y
-   los mismos filtros manuales del creador: aspectos, tipo y arena, colecciones,
-   rarezas, coste máximo y cartas poseídas o libres. Aquí no existen aspectos
+   los mismos filtros manuales del creador: aspectos, líderes, bases, tipo y arena,
+   colecciones, rarezas, coste máximo y cartas poseídas o libres. Aquí no existen aspectos
    automáticos de líder/base y todos los filtros comienzan sin restringir. Se
    pueden combinar texto de reglas, rasgos o palabras clave con `/`, y un número
    aislado representa el coste exacto. Comprueba si cada carta está libre o en
@@ -375,6 +384,8 @@ diferentes:
   por la propia web del juego. Incluye códigos de expansión, números impresos,
   tipos de variante, `variantOf`, `validationId`, nombres y textos localizados,
   coste, aspectos, arena, rasgos, estadísticas y las imágenes del CDN oficial.
+  Para los líderes también conserva la acción épica, el texto de la cara
+  desplegada y la imagen oficial de ese reverso.
   La API solo permite peticiones del origen de la web oficial mediante CORS, por
   lo que GitHub Pages no la consulta directamente. El comando
   `npm run catalog:sync` descarga sus páginas durante el desarrollo y genera
