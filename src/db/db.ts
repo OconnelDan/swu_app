@@ -1,5 +1,9 @@
 import Dexie, { type Table } from "dexie";
-import type { CollectionCard, CollectionImportResult } from "@/types/collection";
+import type {
+  CollectionCard,
+  CollectionCardIdentity,
+  CollectionImportResult
+} from "@/types/collection";
 import type { CardInfo } from "@/types/card";
 import type { DeckComparisonResult, FavoriteDeck } from "@/types/deck";
 
@@ -53,6 +57,29 @@ export async function replaceCollection(
     await db.collectionEntries.clear();
     await db.collectionEntries.bulkPut(cards);
     await db.collectionImports.add(importResult);
+  });
+}
+
+/** Añade copias en modo invitado, creando la fila cuando todavía no existe. */
+export async function addCollectionCard(
+  card: CollectionCardIdentity,
+  quantity = 1
+): Promise<number> {
+  if (!Number.isInteger(quantity) || quantity < 1 || quantity > 99) {
+    throw new Error("La cantidad debe estar entre 1 y 99.");
+  }
+
+  return db.transaction("rw", db.collectionEntries, async () => {
+    const current = await db.collectionEntries.get(card.cardId);
+    const ownedCount = (current?.ownedCount ?? 0) + quantity;
+    await db.collectionEntries.put({
+      cardId: card.cardId,
+      setCode: card.setCode,
+      cardNumber: card.cardNumber,
+      name: card.name ?? current?.name,
+      ownedCount
+    });
+    return ownedCount;
   });
 }
 

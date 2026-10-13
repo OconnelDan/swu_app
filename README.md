@@ -140,13 +140,16 @@ Abre `http://localhost:5173`.
 7. **Buscar**: recorre todo el catálogo y utiliza la misma búsqueda avanzada y
    los mismos filtros manuales del creador: aspectos, líderes, bases, tipo y arena,
    colecciones, rarezas, coste máximo y cartas poseídas o libres. Aquí no existen aspectos
-   automáticos de líder/base y todos los filtros comienzan sin restringir. Se
+   automáticos de líder/base y todos los filtros comienzan sin restringir. Cuando
+   seleccionas varios aspectos, una carta debe contenerlos todos; por ejemplo,
+   `Mando + Villanía` no incluye cartas que tengan solamente uno de los dos. Se
    pueden combinar texto de reglas, rasgos o palabras clave con `/`, y un número
    aislado representa el coste exacto. Comprueba si cada carta está libre o en
-   qué mazos montados está usada y pulsa sobre ella para restar una copia. Si la
-   copia está asignada, se confirma qué mazo puede quedar incompleto. Todas las
+   qué mazos montados está usada y pulsa sobre ella para añadir o restar una copia.
+   La suma funciona también cuando todavía no tienes esa carta. Si una copia que
+   vas a restar está asignada, se confirma qué mazo puede quedar incompleto. Todas las
    coincidencias son accesibles mediante paginación y la ficha ampliada conserva
-   el control para restar una copia de la colección.
+   controles para añadir y restar copias de la colección.
 8. **Ajustes**: tema y mostrar/ocultar imágenes. En modo invitado también
    permite exportar/importar una copia local y borrar los datos del dispositivo.
 9. **Cuenta y amigos** _(opcional, requiere configurar Supabase)_: crea una

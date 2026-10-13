@@ -68,6 +68,32 @@ const commandSpaceUnit: CardInfo = {
   arena: "Space"
 };
 
+const villainyGroundUnit: CardInfo = {
+  cardId: "JTL_111",
+  setCode: "JTL",
+  cardNumber: "111",
+  name: "Villainy Ground Unit",
+  localizedName: "Unidad terrestre de Villanía",
+  type: "Unit",
+  rarity: "Common",
+  cost: 3,
+  aspects: ["Villainy"],
+  arena: "Ground"
+};
+
+const commandVillainyUnit: CardInfo = {
+  cardId: "JTL_112",
+  setCode: "JTL",
+  cardNumber: "112",
+  name: "Command Villainy Unit",
+  localizedName: "Unidad de Mando y Villanía",
+  type: "Unit",
+  rarity: "Rare",
+  cost: 4,
+  aspects: ["Command", "Villainy"],
+  arena: "Ground"
+};
+
 const colorlessEvent: CardInfo = {
   cardId: "SOR_245",
   setCode: "SOR",
@@ -144,7 +170,8 @@ function dataSource(
   removeCollectionCard: DataSourceValue["removeCollectionCard"],
   collectionCards: CollectionCard[] = [
     { cardId: card.cardId, setCode: "SEC", cardNumber: "101", ownedCount: 2 }
-  ]
+  ],
+  addCollectionCard: DataSourceValue["addCollectionCard"] = vi.fn()
 ): DataSourceValue {
   return {
     mode: "guest",
@@ -162,7 +189,7 @@ function dataSource(
     refreshing: false,
     refresh: vi.fn(),
     replaceCollection: vi.fn(),
-    addCollectionCard: vi.fn(),
+    addCollectionCard,
     removeCollectionCard,
     saveFavoriteDeck: vi.fn(),
     updateFavoriteDeck: vi.fn(),
@@ -218,6 +245,36 @@ describe("Buscar cartas", () => {
 
     fireEvent.click(within(dialog).getByRole("button", { name: "Restar una copia" }));
     await waitFor(() => expect(removeCollectionCard).toHaveBeenCalledWith("SEC_101", 1));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("Ahora tienes 1");
+  });
+
+  it("permite añadir desde el modal una carta que todavía no está en la colección", async () => {
+    const addCollectionCard = vi.fn().mockResolvedValue(1);
+    render(
+      <DataSourceContext.Provider value={dataSource(vi.fn(), [], addCollectionCard)}>
+        <CardFinderPage />
+      </DataSourceContext.Provider>
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: /SEC_101/i }));
+    const dialog = screen.getByRole("dialog", { name: "Unidad rebelde detallada" });
+    expect(within(dialog).getByRole("button", { name: "Añadir una copia" })).toBeEnabled();
+    expect(within(dialog).getByRole("button", { name: "Restar una copia" })).toBeDisabled();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Añadir una copia" }));
+
+    await waitFor(() =>
+      expect(addCollectionCard).toHaveBeenCalledWith(
+        {
+          cardId: "SEC_101",
+          setCode: "SEC",
+          cardNumber: "101",
+          name: "Unidad rebelde detallada"
+        },
+        1
+      )
+    );
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent("Ahora tienes 1");
   });
@@ -281,6 +338,27 @@ describe("Buscar cartas", () => {
     expect(await screen.findByText(/2 resultado\(s\)/i)).toBeInTheDocument();
     expect(screen.getByText("Unidad rebelde detallada")).toBeInTheDocument();
     expect(screen.getByText("Centinela terrestre de Mando")).toBeInTheDocument();
+  });
+
+  it("exige simultáneamente todos los aspectos seleccionados", async () => {
+    catalogCards = [commandGroundUnit, villainyGroundUnit, commandVillainyUnit];
+    render(
+      <DataSourceContext.Provider value={dataSource(vi.fn(), [])}>
+        <CardFinderPage />
+      </DataSourceContext.Provider>
+    );
+
+    expect(await screen.findByText(/3 resultado\(s\)/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByText("Filtros"));
+    fireEvent.click(screen.getByRole("button", { name: "Mando" }));
+    expect(await screen.findByText(/2 resultado\(s\)/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Villanía" }));
+
+    expect(await screen.findByText(/1 resultado\(s\)/i)).toBeInTheDocument();
+    expect(screen.getByText("Unidad de Mando y Villanía")).toBeInTheDocument();
+    expect(screen.queryByText("Centinela terrestre de Mando")).not.toBeInTheDocument();
+    expect(screen.queryByText("Unidad terrestre de Villanía")).not.toBeInTheDocument();
   });
 
   it("permite mostrar únicamente líderes o únicamente bases", async () => {

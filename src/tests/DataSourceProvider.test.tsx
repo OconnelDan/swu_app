@@ -226,6 +226,31 @@ describe("origen de datos según la sesión", () => {
     expect(mocks.replaceCloudCollection).not.toHaveBeenCalled();
   });
 
+  it("permite a un invitado añadir una carta nueva e incrementar sus copias", async () => {
+    render(
+      <DataSourceProvider>
+        <Probe />
+      </DataSourceProvider>
+    );
+
+    await waitFor(() => expect(screen.getByTestId("mode")).toHaveTextContent("guest"));
+    fireEvent.click(screen.getByRole("button", { name: "añadir carta" }));
+    await waitFor(() =>
+      expect(db.collectionEntries.get("LAW_038")).resolves.toMatchObject({
+        name: "Carta de la cuenta",
+        ownedCount: 2
+      })
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "añadir carta" }));
+    await waitFor(() =>
+      expect(db.collectionEntries.get("LAW_038")).resolves.toMatchObject({
+        ownedCount: 4
+      })
+    );
+    expect(mocks.addCloudCollectionCard).not.toHaveBeenCalled();
+  });
+
   it("con una cuenta usa Supabase aunque IndexedDB contenga otra colección", async () => {
     await db.collectionEntries.put(localCard);
     const collectionRead = vi.spyOn(db.collectionEntries, "toArray");
@@ -263,7 +288,7 @@ describe("origen de datos según la sesión", () => {
     expect(await db.collectionEntries.count()).toBe(0);
   });
 
-  it("añade copias escaneadas solo a la colección de Supabase", async () => {
+  it("añade copias de una cuenta solo a la colección de Supabase", async () => {
     mocks.auth.session = { user: { id: "user-1" } };
     const updatedCard = { ...cloudCard, ownedCount: 6 };
     mocks.loadCloudDataSnapshot

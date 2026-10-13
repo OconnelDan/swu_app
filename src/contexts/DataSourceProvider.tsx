@@ -8,6 +8,7 @@ import {
   type DataSourceValue
 } from "@/contexts/DataSourceContext";
 import {
+  addCollectionCard as addLocalCollectionCard,
   db,
   removeCollectionCard as removeLocalCollectionCard,
   replaceCollection as replaceLocalCollection
@@ -235,9 +236,7 @@ export function DataSourceProvider({ children }: DataSourceProviderProps) {
 
   const addCollectionCard = useCallback(
     async (card: CollectionCardIdentity, quantity = 1): Promise<number> => {
-      if (!userId) {
-        throw new Error("Debes iniciar sesión para añadir cartas con la cámara.");
-      }
+      if (!userId) return addLocalCollectionCard(card, quantity);
 
       requireAccountSnapshot();
       let ownedCount = 0;
