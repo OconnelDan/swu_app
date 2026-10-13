@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Filter, Minus, RotateCcw, Search } from "lucide-react";
+import { Filter, Minus, Plus, RotateCcw, Search } from "lucide-react";
 import { CardDetailsModal } from "@/components/CardDetailsModal";
 import { CardImageThumbnail } from "@/components/CardImageThumbnail";
 import { PaginationControls } from "@/components/PaginationControls";
@@ -12,6 +12,7 @@ import { computeCardAllocations, getCardLocationStatus } from "@/lib/cardAllocat
 import { tryGetCardImageUrl } from "@/lib/cardImageUrl";
 import { getPremierPrereleaseNotice } from "@/lib/cardRelease";
 import { matchesCardSearchQuery } from "@/lib/cardRulesSearch";
+import { parseCardId } from "@/lib/normalizeCardId";
 import { searchCards } from "@/lib/cardSearch";
 import { SwUnlimitedDbCardProvider } from "@/providers/cardProvider/SwUnlimitedDbCardProvider";
 import type { CardInfo } from "@/types/card";
@@ -158,7 +159,7 @@ export function CardFinderPage() {
   const [catalogCards, setCatalogCards] = useState<CardInfo[] | null>(null);
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [pendingAction, setPendingAction] = useState<"add" | "remove" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [selectedAspects, setSelectedAspects] = useState<string[]>([]);
@@ -173,7 +174,8 @@ export function CardFinderPage() {
   const collection = useCollection();
   const favorites = useFavorites();
   const { settings } = useSettings();
-  const { removeCollectionCard } = useDataSource();
+  const { addCollectionCard, removeCollectionCard } = useDataSource();
+  const busy = pendingAction !== null;
 
   const allocations = useMemo(
     () => computeCardAllocations(collection?.cards ?? [], favorites ?? []),
@@ -241,7 +243,7 @@ export function CardFinderPage() {
           if (selectedAspects.length > 0) {
             if (cardAspects.length === 0) {
               if (!includeColorless) return false;
-            } else if (!cardAspects.some((aspect) => selectedAspects.includes(aspect))) {
+            } else if (!selectedAspects.every((aspect) => cardAspects.includes(aspect))) {
               return false;
             }
           }
@@ -329,6 +331,32 @@ export function CardFinderPage() {
     setOwnedFilter("all");
   };
 
+  const handleAdd = async () => {
+    if (!selectedId) return;
+
+    setPendingAction("add");
+    setError(null);
+    setMessage(null);
+    try {
+      const { setCode, cardNumber } = selectedInfo ?? parseCardId(selectedId);
+      const ownedCount = await addCollectionCard(
+        {
+          cardId: selectedId,
+          setCode,
+          cardNumber,
+          name: selectedInfo?.localizedName ?? selectedInfo?.name
+        },
+        1
+      );
+      setMessage(`Se ha añadido una copia. Ahora tienes ${ownedCount}.`);
+      setSelectedId(null);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "No se ha podido añadir la carta.");
+    } finally {
+      setPendingAction(null);
+    }
+  };
+
   const handleRemove = async () => {
     if (!selectedId || !selectedAllocation || selectedAllocation.ownedCount <= 0) return;
 
@@ -341,7 +369,7 @@ export function CardFinderPage() {
       if (!confirmed) return;
     }
 
-    setBusy(true);
+    setPendingAction("remove");
     setError(null);
     setMessage(null);
     try {
@@ -355,7 +383,7 @@ export function CardFinderPage() {
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "No se ha podido restar la carta.");
     } finally {
-      setBusy(false);
+      setPendingAction(null);
     }
   };
 
@@ -407,8 +435,8 @@ export function CardFinderPage() {
             <fieldset className="space-y-2">
               <legend className="text-xs font-semibold text-slate-200">Aspectos</legend>
               <p className="text-[11px] text-slate-400">
-                No hay aspectos automáticos: selecciona los que quieras combinar. Las incoloras se
-                incluyen mientras su filtro esté activo.
+                Cada carta debe incluir todos los aspectos seleccionados. Las incoloras se incluyen
+                mientras su filtro esté activo.
               </p>
               <div className="flex flex-wrap gap-2">
                 <FilterChip
@@ -665,14 +693,26 @@ export function CardFinderPage() {
             </ul>
           )}
 
-          <button
-            type="button"
-            className="btn-danger mt-4 w-full"
-            disabled={busy || !selectedAllocation?.ownedCount}
-            onClick={() => void handleRemove()}
-          >
-            <Minus size={16} /> {busy ? "Restando..." : "Restar una copia"}
-          </button>
+          <div className="mt-4 grid gap-2 sm:grid-cols-2">
+            <button
+              type="button"
+              className="btn-primary w-full"
+              disabled={busy}
+              onClick={() => void handleAdd()}
+            >
+              <Plus size={16} />
+              {pendingAction === "add" ? "Añadiendo..." : "Añadir una copia"}
+            </button>
+            <button
+              type="button"
+              className="btn-danger w-full"
+              disabled={busy || !selectedAllocation?.ownedCount}
+              onClick={() => void handleRemove()}
+            >
+              <Minus size={16} />
+              {pendingAction === "remove" ? "Restando..." : "Restar una copia"}
+            </button>
+          </div>
           {!selectedAllocation?.ownedCount && (
             <p className="mt-2 text-center text-xs text-slate-400">
               No puedes restarla porque no está en tu colección.
