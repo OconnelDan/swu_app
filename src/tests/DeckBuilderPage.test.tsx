@@ -164,6 +164,17 @@ const catalogCards: CardInfo[] = [
     cardKey: "command-event"
   },
   {
+    cardId: "SEC_109",
+    setCode: "SEC",
+    cardNumber: "109",
+    name: "Unidad agresiva de mando",
+    type: "Unit",
+    arena: "Ground",
+    rarity: "Uncommon",
+    aspects: ["Aggression", "Command"],
+    cardKey: "aggression-command-unit"
+  },
+  {
     cardId: "LAW_105",
     setCode: "LAW",
     cardNumber: "105",
@@ -711,6 +722,7 @@ describe("constructor por formatos", () => {
     fireEvent.click(screen.getByRole("button", { name: "Agresividad" }));
 
     expect(screen.getByText("Unidad agresiva espacial")).toBeInTheDocument();
+    expect(screen.getByText("Unidad agresiva de mando")).toBeInTheDocument();
     expect(screen.getByText("Unidad incolora")).toBeInTheDocument();
     expect(screen.queryByText("Unidad de vigilancia")).not.toBeInTheDocument();
     expect(screen.queryByText("Evento de mando")).not.toBeInTheDocument();
@@ -719,9 +731,13 @@ describe("constructor por formatos", () => {
     expect(screen.queryByText("Unidad incolora")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Mando" }));
-    expect(screen.getByText("Unidad agresiva espacial")).toBeInTheDocument();
-    expect(screen.getByText("Evento de mando")).toBeInTheDocument();
+    expect(screen.getByText("Unidad agresiva de mando")).toBeInTheDocument();
+    expect(screen.queryByText("Unidad agresiva espacial")).not.toBeInTheDocument();
+    expect(screen.queryByText("Evento de mando")).not.toBeInTheDocument();
     expect(screen.queryByText("Unidad de vigilancia")).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/Las cartas con aspectos deben contener todos los seleccionados/)
+    ).toBeInTheDocument();
   });
 
   it("combina por defecto los dos líderes y la base de Twin Suns", async () => {
