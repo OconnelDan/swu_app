@@ -81,8 +81,10 @@ Abre `http://localhost:5173`.
    correspondan. Puedes filtrar por aspectos, tipo, arena, colección, rareza,
    coste y copias poseídas o libres. La búsqueda admite varias condiciones
    separadas por `/` (por ejemplo, `centinela / rebelde / 3`); un número aislado
-   representa el coste exacto. Los resultados se paginan sin ocultar las cartas
-   posteriores a la primera página. Al pulsar la miniatura de una carta se abre
+   representa el coste exacto. Al seleccionar manualmente varios aspectos, las
+   cartas con aspectos deben contenerlos todos; el filtro automático de líder y
+   base continúa mostrando todas las cartas compatibles con el mazo. Los resultados
+   se paginan sin ocultar las cartas posteriores a la primera página. Al pulsar la miniatura de una carta se abre
    una ficha persistente con su imagen grande, texto traducido y datos de juego;
    se cierra manualmente y no modifica la composición del mazo. En los líderes,
    la ficha separa el texto de la cara sin desplegar, la acción épica y la

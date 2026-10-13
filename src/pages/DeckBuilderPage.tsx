@@ -1020,7 +1020,12 @@ export function DeckBuilderPage() {
         if (cardAspects.length === 0) {
           if (!includeColorless) return false;
         } else if (manualAspects !== null) {
-          if (!cardAspects.some((item) => manualAspects.includes(item))) return false;
+          if (
+            manualAspects.length === 0 ||
+            !manualAspects.every((aspect) => cardAspects.includes(aspect))
+          ) {
+            return false;
+          }
         } else if (automaticAspectReady && !hasNoAspectPenalty(card, leaders, base)) {
           return false;
         }
@@ -1493,7 +1498,7 @@ export function DeckBuilderPage() {
                   ? automaticAspectReady
                     ? `Automático: ${automaticAspects.map((item) => ASPECT_LABELS[item] ?? item).join(" · ") || "sin aspectos"}${includeColorless ? " + incoloras" : ""}.`
                     : "El filtro automático se aplicará al completar el líder y la base."
-                  : `Manual: ${manualAspects.map((item) => ASPECT_LABELS[item] ?? item).join(" · ") || "ningún aspecto"}${includeColorless ? " + incoloras" : ""}.`}
+                  : `Manual: ${manualAspects.map((item) => ASPECT_LABELS[item] ?? item).join(" · ") || "ningún aspecto"}${includeColorless ? " + incoloras" : ""}. Las cartas con aspectos deben contener todos los seleccionados.`}
               </p>
               <div className="flex flex-wrap gap-2">
                 <FilterChip
