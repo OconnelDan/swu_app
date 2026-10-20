@@ -13,6 +13,26 @@ export interface CardmarketPrice {
   productUrl: string;
 }
 
+export interface CardmarketPriceSelection {
+  updatedAt: string;
+  prices: Map<string, CardmarketPrice>;
+}
+
+export interface CardmarketDeckCard {
+  cardId: string;
+  requiredCount: number;
+  missingCount: number;
+  copiesMissingFromCollection?: number;
+}
+
+export interface CardmarketDeckValue {
+  totalCents: number;
+  missingCents: number;
+  unpricedTotalCopies: number;
+  unpricedMissingCopies: number;
+  updatedAt: string;
+}
+
 const CATALOG_FILE = "data/cardmarket-prices.json";
 let catalogPromise: Promise<CardmarketPriceCatalog> | null = null;
 
@@ -56,15 +76,11 @@ function loadCatalog(): Promise<CardmarketPriceCatalog> {
   return catalogPromise;
 }
 
-export function buildCardmarketProductUrl(productId: number): string {
-  const url = new URL("https://www.cardmarket.com/StarWarsUnlimited/Products");
-  url.searchParams.set("idProduct", String(productId));
-  return url.toString();
-}
-
-export async function getCardmarketPrice(cardId: string): Promise<CardmarketPrice | undefined> {
+function priceFromCatalog(
+  catalog: CardmarketPriceCatalog,
+  cardId: string
+): CardmarketPrice | undefined {
   const normalizedCardId = cardId.trim().toUpperCase();
-  const catalog = await loadCatalog();
   const entry = catalog.prices[normalizedCardId];
   if (!entry) return undefined;
 
@@ -84,6 +100,66 @@ export async function getCardmarketPrice(cardId: string): Promise<CardmarketPric
     currency: "EUR",
     updatedAt: catalog.createdAt,
     productUrl: buildCardmarketProductUrl(productId)
+  };
+}
+
+export function buildCardmarketProductUrl(productId: number): string {
+  const url = new URL("https://www.cardmarket.com/StarWarsUnlimited/Products");
+  url.searchParams.set("idProduct", String(productId));
+  return url.toString();
+}
+
+export async function getCardmarketPrice(cardId: string): Promise<CardmarketPrice | undefined> {
+  const catalog = await loadCatalog();
+  return priceFromCatalog(catalog, cardId);
+}
+
+export async function getCardmarketPrices(cardIds: string[]): Promise<CardmarketPriceSelection> {
+  const catalog = await loadCatalog();
+  const prices = new Map<string, CardmarketPrice>();
+
+  for (const cardId of new Set(cardIds.map((value) => value.trim().toUpperCase()))) {
+    const price = priceFromCatalog(catalog, cardId);
+    if (price) prices.set(cardId, price);
+  }
+
+  return { updatedAt: catalog.createdAt, prices };
+}
+
+export function calculateCardmarketDeckValue(
+  cards: CardmarketDeckCard[],
+  selection: CardmarketPriceSelection
+): CardmarketDeckValue {
+  let totalCents = 0;
+  let missingCents = 0;
+  let unpricedTotalCopies = 0;
+  let unpricedMissingCopies = 0;
+
+  for (const card of cards) {
+    const requiredCount = Math.max(0, Math.trunc(card.requiredCount));
+    const missingCount = Math.min(
+      requiredCount,
+      Math.max(0, Math.trunc(card.copiesMissingFromCollection ?? card.missingCount))
+    );
+    const unitPrice = selection.prices.get(card.cardId.trim().toUpperCase())?.lowPrice;
+
+    if (unitPrice === null || unitPrice === undefined) {
+      unpricedTotalCopies += requiredCount;
+      unpricedMissingCopies += missingCount;
+      continue;
+    }
+
+    const unitCents = Math.round(unitPrice * 100);
+    totalCents += unitCents * requiredCount;
+    missingCents += unitCents * missingCount;
+  }
+
+  return {
+    totalCents,
+    missingCents,
+    unpricedTotalCopies,
+    unpricedMissingCopies,
+    updatedAt: selection.updatedAt
   };
 }
 

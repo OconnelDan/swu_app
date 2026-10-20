@@ -1,6 +1,11 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Check, Copy, Download, Hammer, Star, RefreshCw } from "lucide-react";
 import { cardIdParts, compareSetCodesByRelease } from "@/lib/cardCollectionOrder";
+import {
+  calculateCardmarketDeckValue,
+  getCardmarketPrices,
+  type CardmarketDeckValue
+} from "@/lib/cardmarketPrice";
 import { downloadTextFile } from "@/lib/downloadTextFile";
 import type { CardComparison, DeckComparisonResult, DeckZone } from "@/types/deck";
 
@@ -13,6 +18,32 @@ interface DeckSummaryProps {
   isMounted?: boolean;
   mounting?: boolean;
   mountDisabled?: boolean;
+}
+
+type MarketValueState =
+  { status: "loading" } | { status: "ready"; value: CardmarketDeckValue } | { status: "error" };
+
+const euroFormatter = new Intl.NumberFormat("es-ES", {
+  style: "currency",
+  currency: "EUR"
+});
+
+const dateFormatter = new Intl.DateTimeFormat("es-ES", {
+  day: "2-digit",
+  month: "2-digit",
+  year: "numeric"
+});
+
+function marketValueLabel(cents: number, unpricedCopies: number): string {
+  const value = euroFormatter.format(cents / 100);
+  if (unpricedCopies === 0) return value;
+  const pending = `${unpricedCopies} ${unpricedCopies === 1 ? "copia" : "copias"} sin precio`;
+  return cents > 0 ? `${value} + ${pending}` : pending;
+}
+
+function formattedDate(value: string): string | undefined {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? undefined : dateFormatter.format(date);
 }
 
 function buildMissingListText(result: DeckComparisonResult): string {
@@ -120,6 +151,7 @@ export function DeckSummary({
   mountDisabled
 }: DeckSummaryProps) {
   const [copied, setCopied] = useState(false);
+  const [marketValue, setMarketValue] = useState<MarketValueState>({ status: "loading" });
   const missingListText = useMemo(() => buildMissingListText(result), [result]);
   const deckListText = useMemo(() => buildDeckListText(result), [result]);
   const mountedDeckView = result.comparisons.some((card) => card.assignedCount !== undefined);
@@ -131,6 +163,28 @@ export function DeckSummary({
     (total, card) => total + (card.copiesMissingFromCollection ?? 0),
     0
   );
+
+  useEffect(() => {
+    if (!isFavorite) return;
+
+    let active = true;
+    setMarketValue({ status: "loading" });
+    void getCardmarketPrices(result.comparisons.map((card) => card.cardId))
+      .then((selection) => {
+        if (!active) return;
+        setMarketValue({
+          status: "ready",
+          value: calculateCardmarketDeckValue(result.comparisons, selection)
+        });
+      })
+      .catch(() => {
+        if (active) setMarketValue({ status: "error" });
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [isFavorite, result.comparisons]);
 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(missingListText || "No te falta ninguna carta.");
@@ -187,6 +241,53 @@ export function DeckSummary({
             </span>
           </dd>
         </div>
+        {isFavorite && (
+          <>
+            <div>
+              <dt className="text-slate-400">Valor de cartas faltantes</dt>
+              <dd className="font-semibold text-saber-yellow">
+                {marketValue.status === "loading"
+                  ? "Calculando…"
+                  : marketValue.status === "error"
+                    ? "No disponible"
+                    : marketValueLabel(
+                        marketValue.value.missingCents,
+                        marketValue.value.unpricedMissingCopies
+                      )}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-slate-400">Valor total del mazo</dt>
+              <dd className="font-semibold text-saber-blue">
+                {marketValue.status === "loading"
+                  ? "Calculando…"
+                  : marketValue.status === "error"
+                    ? "No disponible"
+                    : marketValueLabel(
+                        marketValue.value.totalCents,
+                        marketValue.value.unpricedTotalCopies
+                      )}
+              </dd>
+            </div>
+            <div className="col-span-2 text-xs text-slate-500">
+              {marketValue.status === "error" ? (
+                <p>No se ha podido cargar ahora la guía diaria de precios de Cardmarket.</p>
+              ) : (
+                <p>
+                  Precios mínimos orientativos por copia normal, sin gastos de envío.
+                  {marketValue.status === "ready" && formattedDate(marketValue.value.updatedAt)
+                    ? ` Actualizados el ${formattedDate(marketValue.value.updatedAt)}.`
+                    : ""}
+                  {marketValue.status === "ready" &&
+                  (marketValue.value.unpricedTotalCopies > 0 ||
+                    marketValue.value.unpricedMissingCopies > 0)
+                    ? " Las copias sin precio no están incluidas en el importe."
+                    : ""}
+                </p>
+              )}
+            </div>
+          </>
+        )}
       </dl>
 
       {!result.complete && (

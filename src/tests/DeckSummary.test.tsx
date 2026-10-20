@@ -1,5 +1,6 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { resetCardmarketPriceCache } from "@/lib/cardmarketPrice";
 import { compareDeckWithCollection } from "@/lib/compareDeckWithCollection";
 import { normalizeDeckJson } from "@/lib/normalizeDeckJson";
 import type { CardInfo } from "@/types/card";
@@ -17,6 +18,52 @@ import { DeckSummary } from "@/components/DeckSummary";
 describe("resumen y exportación del resultado", () => {
   beforeEach(() => {
     mocks.downloadTextFile.mockReset();
+  });
+
+  afterEach(() => {
+    resetCardmarketPriceCache();
+    vi.unstubAllGlobals();
+  });
+
+  it("muestra el valor de lo que falta y el valor completo de un mazo guardado", async () => {
+    const deck = normalizeDeckJson({
+      name: "Mazo valorado",
+      leader: { id: "SEC_001", count: 1 },
+      base: { id: "SEC_020", count: 1 },
+      deck: [{ id: "ASH_109", count: 3 }],
+      sideboard: [{ id: "SEC_101", count: 2 }]
+    });
+    const result = compareDeckWithCollection(deck, [
+      { cardId: "SEC_001", setCode: "SEC", cardNumber: "001", ownedCount: 1 },
+      { cardId: "SEC_020", setCode: "SEC", cardNumber: "020", ownedCount: 1 },
+      { cardId: "ASH_109", setCode: "ASH", cardNumber: "109", ownedCount: 1 }
+    ]);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: vi.fn().mockResolvedValue({
+          version: 1,
+          createdAt: "2026-10-20T02:45:11+0200",
+          prices: {
+            SEC_001: [853001, 1],
+            SEC_020: [853020, 0.5],
+            ASH_109: [896088, 2],
+            SEC_101: [853880, 0.25]
+          }
+        })
+      })
+    );
+
+    render(<DeckSummary result={result} isFavorite />);
+
+    const missingValue = screen.getByText("Valor de cartas faltantes").closest("div");
+    const totalValue = screen.getByText("Valor total del mazo").closest("div");
+    expect(missingValue).not.toBeNull();
+    expect(totalValue).not.toBeNull();
+    await waitFor(() => expect(missingValue).toHaveTextContent("4,50 €"));
+    expect(totalValue).toHaveTextContent("8,00 €");
+    expect(screen.getByText(/Actualizados el 20\/10\/2026/)).toBeInTheDocument();
   });
 
   it("genera las descargas TXT y CSV desde sus botones", () => {
