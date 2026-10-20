@@ -1,6 +1,7 @@
 import { useEffect, useId, useState, type ReactNode } from "react";
 import { AlertTriangle, X } from "lucide-react";
 import { CardImageThumbnail } from "@/components/CardImageThumbnail";
+import { CardmarketPriceLink } from "@/components/CardmarketPriceLink";
 import { tryGetCardImageUrl } from "@/lib/cardImageUrl";
 import { getPremierPrereleaseNotice } from "@/lib/cardRelease";
 import type { CardInfo } from "@/types/card";
@@ -78,6 +79,7 @@ interface CardDetailsModalProps {
   onClose: () => void;
   closeDisabled?: boolean;
   showImage?: boolean;
+  showCardmarketPrice?: boolean;
   children?: ReactNode;
 }
 
@@ -89,6 +91,7 @@ export function CardDetailsModal({
   onClose,
   closeDisabled = false,
   showImage = true,
+  showCardmarketPrice = false,
   children
 }: CardDetailsModalProps) {
   const titleId = useId();
@@ -319,6 +322,12 @@ export function CardDetailsModal({
               <Detail label="Número de carta" value={card?.cardNumber ?? "—"} />
               <Detail label="Mejora de PG" value={valueOrDash(card?.upgradeHp)} />
             </dl>
+
+            {showCardmarketPrice && (
+              <div className="mt-5">
+                <CardmarketPriceLink cardId={cardId} />
+              </div>
+            )}
 
             {children && <div className="mt-5 border-t border-space-700 pt-5">{children}</div>}
           </div>
