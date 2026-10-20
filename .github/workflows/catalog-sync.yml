@@ -43,6 +43,9 @@ jobs:
       - name: Descargar catálogo oficial
         run: npm run catalog:sync
 
+      - name: Actualizar precios públicos de Cardmarket
+        run: npm run cardmarket:sync
+
       - name: Comprobar tipos
         run: npm run typecheck
 
@@ -88,5 +91,6 @@ jobs:
             publicar el catálogo actualizado.
           add-paths: |
             public/data/swu-card-catalog.json
+            public/data/cardmarket-prices.json
             src/generated/officialCardCatalogMeta.ts
             src/generated/officialFormatRules.ts

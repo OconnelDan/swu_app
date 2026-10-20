@@ -47,17 +47,18 @@ Abre `http://localhost:5173`.
 
 ## Scripts disponibles
 
-| Script                 | Descripción                                        |
-| ---------------------- | -------------------------------------------------- |
-| `npm run dev`          | Servidor de desarrollo con recarga en caliente     |
-| `npm run build`        | Compila TypeScript y genera el build de producción |
-| `npm run preview`      | Sirve el build de producción localmente            |
-| `npm test`             | Ejecuta la suite de tests con Vitest (una vez)     |
-| `npm run test:watch`   | Tests en modo observador                           |
-| `npm run lint`         | ESLint                                             |
-| `npm run typecheck`    | Comprueba tipos sin generar archivos               |
-| `npm run format`       | Formatea el proyecto con Prettier                  |
-| `npm run catalog:sync` | Regenera el catálogo desde la API oficial SWU      |
+| Script                    | Descripción                                        |
+| ------------------------- | -------------------------------------------------- |
+| `npm run dev`             | Servidor de desarrollo con recarga en caliente     |
+| `npm run build`           | Compila TypeScript y genera el build de producción |
+| `npm run preview`         | Sirve el build de producción localmente            |
+| `npm test`                | Ejecuta la suite de tests con Vitest (una vez)     |
+| `npm run test:watch`      | Tests en modo observador                           |
+| `npm run lint`            | ESLint                                             |
+| `npm run typecheck`       | Comprueba tipos sin generar archivos               |
+| `npm run format`          | Formatea el proyecto con Prettier                  |
+| `npm run catalog:sync`    | Regenera el catálogo desde la API oficial SWU      |
+| `npm run cardmarket:sync` | Actualiza enlaces y precios públicos de Cardmarket |
 
 ## Cómo usar la app
 
@@ -68,8 +69,9 @@ Abre `http://localhost:5173`.
 2. **Comprobar**: pega o carga el JSON de un mazo. El resultado indica, para
    cada carta que ya tienes, si hay copias libres o si están comprometidas en
    otro mazo montado (y en cuál).
-3. **Resultado**: verás qué cartas te faltan, con opción de ver todas o solo
-   las faltantes, copiar la lista, descargar las faltantes en CSV o un TXT
+3. **Resultado**: verás qué cartas te faltan, con su precio mínimo diario por
+   copia normal en Cardmarket y un enlace directo al producto. También puedes
+   ver todas o solo las faltantes, copiar la lista, descargar las faltantes en CSV o un TXT
    completo con líderes, base, mazo principal, banquillo y faltantes, y guardar
    el mazo como favorito. El TXT separa cada zona y ordena sus cartas por la
    cronología de las colecciones; cada línea incluye código, cantidad y nombres
@@ -148,7 +150,8 @@ Abre `http://localhost:5173`.
    pueden combinar texto de reglas, rasgos o palabras clave con `/`, y un número
    aislado representa el coste exacto. Comprueba si cada carta está libre o en
    qué mazos montados está usada y pulsa sobre ella para añadir o restar una copia.
-   La suma funciona también cuando todavía no tienes esa carta. Si una copia que
+   La ficha muestra además el precio mínimo diario de la impresión normal y abre
+   directamente su producto en Cardmarket. La suma funciona también cuando todavía no tienes esa carta. Si una copia que
    vas a restar está asignada, se confirma qué mazo puede quedar incompleto. Todas las
    coincidencias son accesibles mediante paginación y la ficha ampliada conserva
    controles para añadir y restar copias de la colección.
@@ -401,14 +404,26 @@ diferentes:
   CDN oficial —incluida una posible doble barra tras el dominio—. Si una imagen
   concreta falla, la interfaz prueba automáticamente la ruta equivalente de
   `cdn.swu-db.com` antes de ocultar la miniatura.
+- **Cardmarket**: la aplicación no usa la API privada ni guarda credenciales.
+  `npm run cardmarket:sync` descarga el catálogo de productos y la guía de
+  precios que Cardmarket publica para Star Wars Unlimited, enlaza cada código
+  oficial con la impresión normal de su colección y genera el archivo compacto
+  `public/data/cardmarket-prices.json`. Si existen varias presentaciones
+  equivalentes dentro de la colección principal, conserva la que tenga el menor
+  precio publicado. Las colecciones `Extras`, Hyperspace, Showcase y promos no
+  se utilizan como sustitutas de una carta normal. El precio es orientativo,
+  corresponde al campo mínimo diario para no foil y no incluye envío. El enlace
+  usa el identificador estable del producto de Cardmarket, no un slug construido
+  a partir del nombre.
 
 ## Privacidad y seguridad
 
 - En modo invitado, colección y mazos se guardan **solo en tu dispositivo**.
   Con sesión iniciada, colección y mazos se guardan exclusivamente en Supabase;
   borrar la caché local no los elimina y vuelven a cargarse tras iniciar sesión.
-- Los nombres y las equivalencias de variantes se leen del catálogo compacto
-  incluido en la PWA; no se envían códigos de cartas a una API externa. Las
+- Los nombres, las equivalencias de variantes y los precios se leen de catálogos
+  compactos incluidos en la PWA; no se envían códigos de cartas ni datos de la
+  colección del usuario a una API externa. Las
   imágenes se solicitan mediante etiquetas de imagen al CDN oficial y, solo si
   este falla, a su espejo de respaldo. La ruta contiene únicamente el código
   impreso de la carta, nunca información de tu cuenta, colección o mazos. La
@@ -433,11 +448,15 @@ diferentes:
 
 ## Despliegue
 
-El proyecto incluye dos workflows de GitHub Actions:
+El proyecto incluye tres workflows de GitHub Actions:
 
 - `.github/workflows/ci.yml`: tests + build en cada push/PR.
+- `.github/workflows/catalog-sync.yml`: abre el PR mensual con el catálogo
+  oficial de cartas y regenera sus correspondencias de Cardmarket.
 - `.github/workflows/deploy.yml`: despliegue automático a **GitHub Pages**
-  al hacer push a `main`. Activa Pages en el repositorio
+  al hacer push a `main` y despliegue diario con la guía de Cardmarket recién
+  publicada. Si Cardmarket no responde, el despliegue falla y permanece activa
+  la versión anterior. Activa Pages en el repositorio
   (Settings → Pages → Source: GitHub Actions) y listo.
 
 También puedes desplegarlo en **Cloudflare Pages**, **Netlify** o **Vercel**

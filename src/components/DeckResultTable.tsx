@@ -10,6 +10,7 @@ import { SwUnlimitedDbCardProvider } from "@/providers/cardProvider/SwUnlimitedD
 import { buildDeckDisplayRows } from "@/lib/deckResultOrder";
 import { CardDetailsModal } from "./CardDetailsModal";
 import { CardImageThumbnail } from "./CardImageThumbnail";
+import { CardmarketPriceLink } from "./CardmarketPriceLink";
 
 const ZONE_LABELS: Record<DeckZone, string> = {
   leader: "Líder",
@@ -104,7 +105,7 @@ export function DeckResultTable({
   const orderedRows = useMemo(() => buildDeckDisplayRows(comparisons), [comparisons]);
   const rows = showAll ? orderedRows : orderedRows.filter((c) => c.status === "missing");
   const mountedDeckView = comparisons.some((comparison) => comparison.assignedCount !== undefined);
-  const tableColumnCount = 8 + (mountedDeckView ? 1 : 0) + (onMoveCard ? 1 : 0);
+  const tableColumnCount = 9 + (mountedDeckView ? 1 : 0) + (onMoveCard ? 1 : 0);
 
   useEffect(() => {
     if (!detailsRow) return;
@@ -192,6 +193,9 @@ export function DeckResultTable({
               Usadas en mazos montados
             </th>
             <th scope="col" className="py-2 pr-2">
+              Cardmarket
+            </th>
+            <th scope="col" className="py-2 pr-2">
               Amigos con esta carta
             </th>
             {onMoveCard && (
@@ -246,6 +250,9 @@ export function DeckResultTable({
                       No poseídas: {row.copiesMissingFromCollection}
                     </span>
                   )}
+                </td>
+                <td className="py-2 pr-2">
+                  {row.missingCount > 0 ? <CardmarketPriceLink cardId={row.cardId} compact /> : "—"}
                 </td>
                 <td className="py-2 pr-2 text-xs text-slate-400">
                   {friendsLabel(friendAvailability?.get(row.cardId)) ?? "—"}
@@ -335,6 +342,11 @@ export function DeckResultTable({
                 <p className="mt-1 text-xs text-saber-red">
                   No está en tu colección: {row.copiesMissingFromCollection} copia(s).
                 </p>
+              )}
+              {row.missingCount > 0 && (
+                <div className="mt-2">
+                  <CardmarketPriceLink cardId={row.cardId} compact />
+                </div>
               )}
               {friendsLabel(friendAvailability?.get(row.cardId)) && (
                 <p className="mt-1 text-xs text-saber-green">

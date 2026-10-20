@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DeckResultTable } from "@/components/DeckResultTable";
 import { buildDeckDisplayRows } from "@/lib/deckResultOrder";
 import { SwUnlimitedDbCardProvider } from "@/providers/cardProvider/SwUnlimitedDbCardProvider";
@@ -13,6 +13,23 @@ vi.mock("@/hooks/useSettings", () => ({
     updateSetting: vi.fn()
   })
 }));
+
+const cardmarketPriceMock = vi.hoisted(() => vi.fn());
+
+vi.mock("@/lib/cardmarketPrice", () => ({
+  getCardmarketPrice: cardmarketPriceMock
+}));
+
+beforeEach(() => {
+  cardmarketPriceMock.mockResolvedValue({
+    cardId: "SEC_101",
+    productId: 853880,
+    lowPrice: 0.25,
+    currency: "EUR",
+    updatedAt: "2026-10-20T02:45:11+0200",
+    productUrl: "https://www.cardmarket.com/StarWarsUnlimited/Products?idProduct=853880"
+  });
+});
 
 const card: CardInfo = {
   cardId: "SEC_101",
@@ -52,6 +69,20 @@ afterEach(() => {
 });
 
 describe("ficha de carta en el resultado de comprobar un mazo", () => {
+  it("muestra el precio y el enlace de Cardmarket para las cartas faltantes", async () => {
+    render(<DeckResultTable comparisons={[comparison]} showAll={false} />);
+
+    const links = await screen.findAllByRole("link", {
+      name: /Desde 0,25\s*€ en Cardmarket para SEC_101/i
+    });
+    expect(links).toHaveLength(2);
+    expect(links[0]).toHaveAttribute(
+      "href",
+      "https://www.cardmarket.com/StarWarsUnlimited/Products?idProduct=853880"
+    );
+    expect(links[0]).toHaveAttribute("target", "_blank");
+  });
+
   it("sustituye el zoom temporal por el modal informativo sin controles de colección", async () => {
     vi.spyOn(SwUnlimitedDbCardProvider.prototype, "getCard").mockResolvedValue(card);
     render(<DeckResultTable comparisons={[comparison]} showAll />);
