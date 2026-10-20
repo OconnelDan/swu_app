@@ -3,6 +3,9 @@ name: Deploy a GitHub Pages
 on:
   push:
     branches: [main]
+  schedule:
+    # Actualiza la guía pública de precios una vez al día.
+    - cron: "43 5 * * *"
   workflow_dispatch:
 
 permissions:
@@ -29,6 +32,9 @@ jobs:
 
       - name: Instalar dependencias
         run: npm ci
+
+      - name: Actualizar precios públicos de Cardmarket
+        run: npm run cardmarket:sync
 
       - name: Ejecutar tests
         run: npm test
