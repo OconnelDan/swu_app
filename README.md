@@ -183,7 +183,12 @@ que realmente no existen en la colección. Desde el detalle se puede dar
 prioridad a una carta concreta eligiendo de qué mazo o mazos salen sus copias.
 Los demás mazos conservan su composición, pero quedan marcados como incompletos
 si ceden alguna de sus copias físicas. El reparto elegido se conserva tanto en
-la cuenta como en el modo invitado.
+la cuenta como en el modo invitado. El resumen de cualquier mazo guardado,
+favorito o montado, muestra además el valor mínimo orientativo de toda su lista
+y el importe de las copias que realmente faltan en la colección. Ambos cálculos
+incluyen líderes, bases, mazo principal y banquillo, usan la guía diaria de
+Cardmarket para copias normales y no incluyen gastos de envío. Las copias que
+estén asignadas a otro mazo montado no se contabilizan como una compra pendiente.
 
 En `sample-data/` encontrarás un Excel de colección de ejemplo
 (`coleccion_ejemplo.xlsx`) y dos mazos de ejemplo (`mazo_ejemplo.json` y
