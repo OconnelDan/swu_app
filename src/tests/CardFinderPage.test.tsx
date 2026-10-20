@@ -14,6 +14,23 @@ vi.mock("@/hooks/useSettings", () => ({
   })
 }));
 
+const cardmarketPriceMock = vi.hoisted(() => vi.fn());
+
+vi.mock("@/lib/cardmarketPrice", () => ({
+  getCardmarketPrice: cardmarketPriceMock
+}));
+
+function mockCardmarketPrice() {
+  cardmarketPriceMock.mockResolvedValue({
+    cardId: "SEC_101",
+    productId: 853880,
+    lowPrice: 0.25,
+    currency: "EUR",
+    updatedAt: "2026-10-20T02:45:11+0200",
+    productUrl: "https://www.cardmarket.com/StarWarsUnlimited/Products?idProduct=853880"
+  });
+}
+
 const card: CardInfo = {
   cardId: "SEC_101",
   setCode: "SEC",
@@ -205,6 +222,7 @@ function dataSource(
 }
 
 beforeEach(() => {
+  mockCardmarketPrice();
   catalogCards = [card];
   Object.defineProperty(Element.prototype, "scrollIntoView", {
     configurable: true,
@@ -239,6 +257,14 @@ describe("Buscar cartas", () => {
     expect(within(dialog).getByText("Vigilancia, Heroísmo")).toBeInTheDocument();
     expect(within(dialog).getByText("Centinela")).toBeInTheDocument();
     expect(within(dialog).getByText("Secretos del poder")).toBeInTheDocument();
+    expect(
+      await within(dialog).findByRole("link", {
+        name: /Desde 0,25\s*€ en Cardmarket para SEC_101/i
+      })
+    ).toHaveAttribute(
+      "href",
+      "https://www.cardmarket.com/StarWarsUnlimited/Products?idProduct=853880"
+    );
     const ownedSummary = within(dialog).getByText("Tienes").closest("div");
     expect(ownedSummary).not.toBeNull();
     expect(within(ownedSummary!).getByText("2")).toBeInTheDocument();
@@ -395,6 +421,7 @@ describe("Buscar cartas", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: /ASH_001/i }));
     const dialog = screen.getByRole("dialog", { name: "La Armera, El acero nos moldea" });
+    await within(dialog).findByRole("link", { name: /Cardmarket para ASH_001/i });
 
     expect(
       within(dialog).getByRole("heading", { name: "Líder sin desplegar" })
