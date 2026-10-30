@@ -419,7 +419,9 @@ diferentes:
   se utilizan como sustitutas de una carta normal. El precio es orientativo,
   corresponde al campo mínimo diario para no foil y no incluye envío. El enlace
   usa el identificador estable del producto de Cardmarket, no un slug construido
-  a partir del nombre.
+  a partir del nombre. Si el catálogo oficial revela una colección antes de que
+  Cardmarket publique sus productos —como `IC27`—, las cartas se incorporan sin
+  precio y se vuelven a intentar enlazar automáticamente en cada actualización.
 
 ## Privacidad y seguridad
 
@@ -457,7 +459,9 @@ El proyecto incluye tres workflows de GitHub Actions:
 
 - `.github/workflows/ci.yml`: tests + build en cada push/PR.
 - `.github/workflows/catalog-sync.yml`: abre el PR mensual con el catálogo
-  oficial de cartas y regenera sus correspondencias de Cardmarket.
+  oficial de cartas y regenera sus correspondencias de Cardmarket. También se
+  puede ejecutar manualmente desde **Actions → Actualizar catálogo oficial SWU →
+  Run workflow**.
 - `.github/workflows/deploy.yml`: despliegue automático a **GitHub Pages**
   al hacer push a `main` y despliegue diario con la guía de Cardmarket recién
   publicada. Si Cardmarket no responde, el despliegue falla y permanece activa
@@ -486,7 +490,6 @@ ejemplo `/mi-repo/` para GitHub Pages).
   Supabase. Su servicio de correo integrado tiene límites bajos y está pensado
   para pruebas; una publicación con más usuarios debería configurar SMTP
   propio.
-- El listado de sets conocidos (`SOR, SHD, TWI, JTL, LOF, SEC, LAW, ASH, IBH,
-HMW, TS26`) se
-  usa solo para avisos informativos; sets desconocidos igualmente se
-  importan y comparan sin problema.
+- El listado de sets conocidos (`SOR, SHD, TWI, JTL, LOF, SEC, LAW, ASH, HMW,
+IBH, TS26, IC27`) se usa solo para avisos informativos; sets desconocidos
+  igualmente se importan y comparan sin problema.
