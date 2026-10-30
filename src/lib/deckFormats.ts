@@ -197,7 +197,12 @@ export function getCardLegality(
     return { legal: true };
   }
 
-  const upcomingSet = [...premierSetCodes]
+  // Una colección puede empezar a revelar cartas antes de que alcance el
+  // porcentaje necesario para aparecer en las reglas generadas de Premier.
+  // Incluimos el código impreso de la carta para aplicar igualmente su fecha
+  // oficial de lanzamiento. Las reimpresiones ya legales se resuelven arriba
+  // y no reciben un aviso de prepublicación innecesario.
+  const upcomingSet = [...new Set([...premierSetCodes, card.setCode])]
     .map((setCode) => ({
       setCode,
       release: getUpcomingPremierSetRelease(setCode, now)

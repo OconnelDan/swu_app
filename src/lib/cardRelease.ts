@@ -13,6 +13,10 @@ export const PREMIER_SET_RELEASES: Readonly<Record<string, PremierSetRelease>> =
   HMW: {
     name: "Mundos de origen",
     releaseDate: "2026-10-09"
+  },
+  IC27: {
+    name: "Icons 2027 Edition",
+    releaseDate: "2026-11-20"
   }
 };
 
