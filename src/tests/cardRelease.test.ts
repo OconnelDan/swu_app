@@ -28,6 +28,23 @@ describe("fechas de lanzamiento Premier", () => {
     expect(isPremierSetReleased("HMW", releaseDay)).toBe(true);
   });
 
+  it("mantiene IC27 en prepublicación hasta el 20 de noviembre de 2026", () => {
+    const beforeRelease = new Date(2026, 10, 19, 23, 59);
+
+    expect(getUpcomingPremierSetRelease("IC27", beforeRelease)).toMatchObject({
+      name: "Icons 2027 Edition",
+      releaseDate: "2026-11-20"
+    });
+    expect(getPremierPrereleaseNotice("IC27", beforeRelease)).toBe(
+      "Prepublicación: Icons 2027 Edition (IC27) será legal en Premier desde el 20/11/2026."
+    );
+    expect(isPremierSetReleased("IC27", beforeRelease)).toBe(false);
+
+    const releaseDay = new Date(2026, 10, 20, 0, 0);
+    expect(getPremierPrereleaseNotice("IC27", releaseDay)).toBeUndefined();
+    expect(isPremierSetReleased("IC27", releaseDay)).toBe(true);
+  });
+
   it("considera publicadas las colecciones sin una fecha futura configurada", () => {
     expect(isPremierSetReleased("JTL", new Date(2026, 8, 25))).toBe(true);
     expect(formatReleaseDate("2026-10-09")).toBe("9/10/2026");
