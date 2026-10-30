@@ -1,5 +1,5 @@
 // Archivo generado por `npm run catalog:sync`. No editar manualmente.
-export const OFFICIAL_FORMAT_RULES_LAST_UPDATED = "2026-09-02T17:59:54.944Z";
+export const OFFICIAL_FORMAT_RULES_LAST_UPDATED = "2026-10-06T22:37:23.786Z";
 export const OFFICIAL_CORE_SET_SEQUENCE = [
   "SOR",
   "SHD",
@@ -15,6 +15,7 @@ export const OFFICIAL_PREMIER_SET_CODES = [
   "ASH",
   "HMW",
   "IBH",
+  "IC27",
   "JTL",
   "LAW",
   "LOF",
@@ -32,18 +33,7 @@ export const OFFICIAL_SUSPENDED_CARDS = {
     },
   ],
   twinSuns: [],
-  eternal: [
-    {
-      cardId: "JTL_140",
-      cardKey: "3722493191",
-      name: "IG-2000, Assassin's Aggressor",
-    },
-    {
-      cardId: "JTL_170",
-      cardKey: "4203363893",
-      name: "War Juggernaut",
-    },
-  ],
+  eternal: [],
 } as const;
 export const OFFICIAL_CARD_COPY_LIMITS = {
   "2177194044": 15,
