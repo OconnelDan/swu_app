@@ -30,6 +30,13 @@ const KNOWN_MAIN_EXPANSION_IDS = {
   HMW: 6759
 };
 
+// Las cartas de una colección o promoción nueva pueden aparecer en el catálogo
+// oficial de SWU antes de que Cardmarket cree su producto. Los códigos todavía
+// no confirmados se conservan sin precio si no pueden detectarse con seguridad
+// y se vuelven a intentar en cada sincronización. Cuando Cardmarket publique
+// una colección principal completa, su ID debe pasar a
+// KNOWN_MAIN_EXPANSION_IDS para recuperar la validación estricta habitual.
+
 function assertRecord(value, label) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new Error(`${label} no tiene el formato esperado.`);
@@ -184,21 +191,36 @@ async function main() {
   const expansionIds = {};
   const outputPrices = {};
   const unmatched = [];
+  const pendingUnmatched = [];
   let availablePriceCount = 0;
 
   for (const [setCode, cards] of [...cardsBySet.entries()].sort(([left], [right]) =>
     left.localeCompare(right)
   )) {
-    const expansionId =
-      KNOWN_MAIN_EXPANSION_IDS[setCode] ??
-      detectMainExpansionId(setCode, cards, productsByExpansion);
+    let expansionId = KNOWN_MAIN_EXPANSION_IDS[setCode];
+    const strictMapping = expansionId !== undefined;
+    if (expansionId === undefined) {
+      try {
+        expansionId = detectMainExpansionId(setCode, cards, productsByExpansion);
+      } catch (cause) {
+        pendingUnmatched.push(...cards.map(([cardId]) => cardId));
+        console.warn(
+          `::warning::Cardmarket todavía no permite identificar ${setCode}; ` +
+            `${cards.length} carta(s) se conservarán temporalmente sin precio. ` +
+            `${cause instanceof Error ? cause.message : String(cause)}`
+        );
+        continue;
+      }
+    }
+
     const expansionProducts = productsByExpansion.get(expansionId) ?? [];
     expansionIds[setCode] = expansionId;
 
     for (const [cardId, entry] of cards) {
       const candidates = matchingProducts(expansionProducts, entry);
       if (candidates.length === 0) {
-        unmatched.push(cardId);
+        if (!strictMapping) pendingUnmatched.push(cardId);
+        else unmatched.push(cardId);
         continue;
       }
 
@@ -216,6 +238,13 @@ async function main() {
     );
   }
 
+  if (pendingUnmatched.length > 0) {
+    console.warn(
+      `::warning::Cardmarket: ${pendingUnmatched.length} carta(s) en prepublicación ` +
+        "todavía no tienen producto normal y se mostrarán sin precio."
+    );
+  }
+
   const output = {
     version: 1,
     source: "Cardmarket public product catalog and price guide",
@@ -229,6 +258,7 @@ async function main() {
   console.log(
     `Cardmarket: ${Object.keys(outputPrices).length} cartas enlazadas, ` +
       `${availablePriceCount} con precio mínimo, ` +
+      `${pendingUnmatched.length} en prepublicación sin precio, ` +
       `guía ${output.createdAt}.`
   );
 }

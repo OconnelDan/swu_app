@@ -25,12 +25,13 @@ const FORMAT_RULES_OUTPUT_PATH = resolve(
 );
 
 // La API todavía no publica de forma fiable la legalidad de los productos
-// especiales. Intro Battle: Hoth sí se admite en Premier; TS26 es exclusivo
-// de formatos sin rotación. Si aparece un producto especial nuevo, se genera
-// como pendiente de revisión y la aplicación lo bloquea hasta revisarlo.
+// especiales. Intro Battle: Hoth e Icons 2027 Edition sí se admiten en
+// Premier; TS26 es exclusivo de formatos sin rotación. Si aparece un producto
+// especial nuevo, se genera como pendiente de revisión y la aplicación lo
+// bloquea hasta revisarlo.
 // Estas listas se escriben también en officialFormatRules.ts en cada sync.
 const NON_PREMIER_SPECIAL_SET_CODES = new Set(["TS26"]);
-const PREMIER_SPECIAL_SET_CODES = new Set(["IBH"]);
+const PREMIER_SPECIAL_SET_CODES = new Set(["IBH", "IC27"]);
 
 function sleep(milliseconds) {
   return new Promise((resolvePromise) => setTimeout(resolvePromise, milliseconds));

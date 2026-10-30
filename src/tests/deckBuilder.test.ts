@@ -240,29 +240,29 @@ describe("constructor Premier", () => {
     expect(result.errors.some((message) => message.includes("el máximo es"))).toBe(false);
   });
 
-  it("bloquea en Eternal una carta suspendida oficialmente", () => {
-    const ig2000 = card("JTL_140", {
-      name: "IG-2000, Assassin's Aggressor",
-      cardKey: "3722493191"
+  it("bloquea en Premier una carta suspendida oficialmente", () => {
+    const cadBane = card("ASH_011", {
+      name: "Cad Bane, Still Faster than You",
+      cardKey: "5648009238",
+      type: "Leader"
     });
     const cards = new Map<string, CardInfo>([
-      ["JTL_001", card("JTL_001", { type: "Leader" })],
-      ["JTL_021", card("JTL_021", { type: "Base" })],
-      [ig2000.cardId, ig2000]
+      [cadBane.cardId, cadBane],
+      ["JTL_021", card("JTL_021", { type: "Base" })]
     ]);
     const result = validateDeck(
       {
         name: "Suspendida",
-        format: "eternal",
-        leaderId: "JTL_001",
+        format: "premier",
+        leaderId: "ASH_011",
         baseId: "JTL_021",
-        mainCounts: { JTL_140: 1 },
+        mainCounts: {},
         sideboardCounts: {}
       },
       cards
     );
 
-    expect(result.errors.some((message) => message.includes("está inhabilitada en Eternal"))).toBe(
+    expect(result.errors.some((message) => message.includes("está inhabilitada en Premier"))).toBe(
       true
     );
   });
@@ -317,6 +317,24 @@ describe("constructor Premier", () => {
     expect(
       getCardLegality(homeworldsPrinting, "premier", index, "premier", new Date(2026, 8, 25))
     ).toEqual({ legal: true });
+  });
+
+  it("marca IC27 como prepublicación aunque la colección todavía esté revelándose", () => {
+    const iconsCard = card("IC27_001", {
+      name: "Darth Vader, No One to Stop Us",
+      cardKey: "ic27-preview"
+    });
+    const index = buildCardLegalityIndex([iconsCard]);
+
+    expect(
+      getCardLegality(iconsCard, "premier", index, "premier", new Date(2026, 9, 30))
+    ).toMatchObject({
+      legal: true,
+      releaseDate: "2026-11-20",
+      warning: expect.stringContaining(
+        "Icons 2027 Edition (IC27) será legal en Premier desde el 20/11/2026"
+      )
+    });
   });
 
   it("mantiene toda la colección IBH disponible en Premier después de sincronizar", () => {
